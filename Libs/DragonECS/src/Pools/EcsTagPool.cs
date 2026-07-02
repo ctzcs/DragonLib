@@ -1,0 +1,571 @@
+#if DISABLE_DEBUG
+#undef DEBUG
+#endif
+using DCFApixels.DragonECS.Core;
+using DCFApixels.DragonECS.Core.Internal;
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
+#if ENABLE_IL2CPP
+using Unity.IL2CPP.CompilerServices;
+#endif
+
+namespace DCFApixels.DragonECS
+{
+    /// <summary>
+    /// Marker interface for tag components (data‑less flags) stored in a compact bool‑array storage.
+    /// </summary>
+    [MetaColor(MetaColor.DragonRose)]
+    [MetaGroup(EcsConsts.PACK_GROUP, EcsConsts.POOLS_GROUP)]
+    [MetaDescription(EcsConsts.AUTHOR, "Tag component or component without data.")]
+    [MetaID("DragonECS_8D3E547C92013C6A2C2DFC8D2F1FA297")]
+    public interface IEcsTagComponent : IEcsComponentMember { }
+
+    /// <summary>
+    /// Bool‑array based storage for tag components with add, remove, and has operations.
+    /// </summary>
+    /// <typeparam name="T">The tag component type, which must implement <see cref="IEcsTagComponent"/>.</typeparam>
+#if ENABLE_IL2CPP
+    [Il2CppSetOption(Option.NullChecks, false)]
+    [Il2CppSetOption(Option.ArrayBoundsChecks, false)]
+#endif
+    [MetaColor(MetaColor.DragonRose)]
+    [MetaGroup(EcsConsts.PACK_GROUP, EcsConsts.POOLS_GROUP)]
+    [MetaDescription(EcsConsts.AUTHOR, "Pool for IEcsTagComponent components. EcsTagPool is optimized for storing tag components or components without data.")]
+    [MetaID("DragonECS_9D80547C9201E852E4F17324EAC1E15A")]
+    [DebuggerDisplay("Count: {Count} Tag: {ComponentType}")]
+    public sealed class EcsTagPool<T> : IEcsPoolImplementation<T>, IEcsStructPool<T>, IEnumerable<T>, IComponentMask //IEnumerable<T> - IntelliSense hack
+        where T : struct, IEcsTagComponent
+    {
+        private EcsWorld.ComponentsRegistrar _registrar;
+        private readonly static EcsStaticMask _staticMask = EcsStaticMask.Inc<T>();
+
+        private bool[] _mapping;// index = entityID / value = itemIndex;/ value = 0 = no entityID
+        private int _count = 0;
+
+#if !DRAGONECS_DISABLE_POOLS_EVENTS
+        private StructList<IEcsPoolEventListener> _listeners = new StructList<IEcsPoolEventListener>(2);
+        private bool _hasAnyListener = false;
+#endif
+        private bool _isLocked;
+
+        private T _fakeComponent = default;
+
+        #region CheckValide
+#if DEBUG
+        private static bool _isInvalidType;
+        static EcsTagPool()
+        {
+#pragma warning disable IL2090 // 'this' argument does not satisfy 'DynamicallyAccessedMembersAttribute' in call to target method. The generic parameter of the source method or type does not have matching annotations.
+            _isInvalidType = typeof(T).GetFields(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic).Length > 0;
+#pragma warning restore IL2090
+        }
+#endif
+        #endregion
+
+        #region Properites
+        /// <summary>
+        /// Number of entities that currently have this tag in the world.
+        /// </summary>
+        public int Count
+        {
+            get { return _count; }
+        }
+
+        /// <summary>
+        /// Internal component type identifier for this tag pool.
+        /// </summary>
+        public int ComponentTypeID
+        {
+            get { return _registrar.ComponentTypeID; }
+        }
+
+        /// <summary>
+        /// Type of the tag component stored in this pool.
+        /// </summary>
+        public Type ComponentType
+        {
+            get { return typeof(T); }
+        }
+
+        /// <summary>
+        /// The world instance that owns this tag pool.
+        /// </summary>
+        public EcsWorld World
+        {
+            get { return _registrar.World; }
+        }
+
+        /// <summary>
+        /// Check or set whether the specified entity has this tag.
+        /// </summary>
+        /// <param name="entityID">Entity identifier.</param>
+        public bool this[int entityID]
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return Has(entityID); }
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            set { Set(entityID, value); }
+        }
+        #endregion
+
+        #region Constructors/Init/Destroy
+        /// <summary>
+        /// Create an empty EcsTagPool.
+        /// </summary>
+        public EcsTagPool()
+        {
+#if DEBUG
+            if (_isInvalidType) { Throw.Exception($"{typeof(T).Name} type must not contain any data."); }
+#endif
+        }
+        void IEcsPoolImplementation.OnInit(EcsWorld.ComponentsRegistrar registrar)
+        {
+            _registrar = registrar;
+            _mapping = new bool[registrar.World.Capacity];
+        }
+        void IEcsPoolImplementation.OnWorldDestroy() { }
+        #endregion
+
+        #region Method
+        /// <summary>
+        /// Add the tag to the specified entity.
+        /// </summary>
+        /// <param name="entityID">Entity identifier to add the tag to.</param>
+        public void Add(int entityID)
+        {
+#if DEBUG
+            if (entityID == EcsConsts.NULL_ENTITY_ID) { EcsPoolThrowHelper.ThrowEntityIsNotAlive(_registrar.World, entityID); }
+            if (_registrar.World.IsUsed(entityID) == false) { EcsPoolThrowHelper.ThrowEntityIsNotAlive(_registrar.World, entityID); }
+            if (Has(entityID)) { EcsPoolThrowHelper.ThrowAlreadyHasComponent<T>(entityID); }
+            if (_isLocked) { EcsPoolThrowHelper.ThrowPoolLocked(); }
+#elif DRAGONECS_STABILITY_MODE
+            if (Has(entityID) | _registrar.World.IsUsed(entityID) == false | _isLocked) { return; }
+#endif
+            _count++;
+            _mapping[entityID] = true;
+            _registrar.RegisterComponent(entityID);
+#if !DRAGONECS_DISABLE_POOLS_EVENTS
+            if (_hasAnyListener) { _listeners.InvokeOnAdd(entityID); }
+#endif
+        }
+
+        /// <summary>
+        /// Try to add the tag to the specified entity if it is not present.
+        /// </summary>
+        /// <param name="entityID">Entity identifier.</param>
+        public void TryAdd(int entityID)
+        {
+            if (Has(entityID) == false)
+            {
+                Add(entityID);
+            }
+        }
+
+        /// <summary>
+        /// Check whether the specified entity has this tag.
+        /// </summary>
+        /// <param name="entityID">Entity identifier.</param>
+        /// <returns>True when the tag is present on the entity.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool Has(int entityID)
+        {
+            return _mapping[entityID];
+        }
+
+        /// <summary>
+        /// Remove the tag from the specified entity.
+        /// </summary>
+        /// <param name="entityID">Entity identifier.</param>
+        public void Del(int entityID)
+        {
+#if DEBUG
+            if (entityID == EcsConsts.NULL_ENTITY_ID) { EcsPoolThrowHelper.ThrowEntityIsNotAlive(_registrar.World, entityID); }
+            if (!Has(entityID)) { EcsPoolThrowHelper.ThrowNotHaveComponent<T>(entityID); }
+            if (_isLocked) { EcsPoolThrowHelper.ThrowPoolLocked(); }
+#elif DRAGONECS_STABILITY_MODE
+            if (!Has(entityID) || _isLocked) { return; }
+#endif
+            _mapping[entityID] = false;
+            _count--;
+            _registrar.UnregisterComponent(entityID);
+#if !DRAGONECS_DISABLE_POOLS_EVENTS
+            if (_hasAnyListener) { _listeners.InvokeOnDel(entityID); }
+#endif
+        }
+        /// <summary>
+        /// Try to remove the tag from the specified entity if present.
+        /// </summary>
+        /// <param name="entityID">Entity identifier.</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void TryDel(int entityID)
+        {
+            if (Has(entityID))
+            {
+                Del(entityID);
+            }
+        }
+        /// <summary>
+        /// Copy component data from one entity to another inside the same world.
+        /// </summary>
+        /// <param name="fromEntityID">Source entity identifier.</param>
+        /// <param name="toEntityID">Destination entity identifier.</param>
+        /// <remarks>Uses custom copy logic if the component implements <see cref=\"IEcsComponentCopy{T}\"/>; otherwise falls back to default copying.</remarks>
+        public void Copy(int fromEntityID, int toEntityID)
+        {
+#if DEBUG
+            if (!Has(fromEntityID)) { EcsPoolThrowHelper.ThrowNotHaveComponent<T>(fromEntityID); }
+#elif DRAGONECS_STABILITY_MODE
+            if (!Has(fromEntityID)) { return; }
+#endif
+            TryAdd(toEntityID);
+        }
+        /// <summary>
+        /// Copy component data from one entity to another inside another world.
+        /// </summary>
+        /// <param name="fromEntityID">Source entity identifier.</param>
+        /// <param name="toEntityID">Destination entity identifier.</param>
+        /// <remarks>Uses custom copy logic if the component implements <see cref=\"IEcsComponentCopy{T}\"/>; otherwise falls back to default copying.</remarks>
+        /// <summary>
+        /// Copy component data from one entity to another inside another world.
+        /// </summary>
+        /// <param name="fromEntityID">Source entity identifier.</param>
+        /// <param name="toEntityID">Destination entity identifier.</param>
+        /// <remarks>Uses custom copy logic if the component implements <see cref=\"IEcsComponentCopy{T}\"/>; otherwise falls back to default copying.</remarks>
+        public void Copy(int fromEntityID, EcsWorld toWorld, int toEntityID)
+        {
+#if DEBUG
+            if (!Has(fromEntityID)) { EcsPoolThrowHelper.ThrowNotHaveComponent<T>(fromEntityID); }
+#elif DRAGONECS_STABILITY_MODE
+            if (!Has(fromEntityID)) { return; }
+#endif
+            toWorld.GetPool<T>().TryAdd(toEntityID);
+        }
+
+        /// <summary>
+        /// Set or clear the tag flag on the specified entity.
+        /// </summary>
+        /// <param name="entityID">Entity identifier.</param>
+        /// <param name="isHas">True to add the tag; false to remove it.</param>
+        public void Set(int entityID, bool isHas)
+        {
+            if (isHas != Has(entityID))
+            {
+                if (isHas)
+                {
+                    Add(entityID);
+                }
+                else
+                {
+                    Del(entityID);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Toggle tag presence for the specified entity: add if missing, remove if present.
+        /// </summary>
+        /// <param name="entityID">Entity identifier.</param>
+        public void Toggle(int entityID)
+        {
+            if (Has(entityID))
+            {
+                Del(entityID);
+            }
+            else
+            {
+                Add(entityID);
+            }
+        }
+
+        /// <summary>
+        /// Remove all components from the pool and unregister them from the world.
+        /// </summary>
+        public void ClearAll()
+        {
+#if DEBUG
+            if (_isLocked) { EcsPoolThrowHelper.ThrowPoolLocked(); }
+#elif DRAGONECS_STABILITY_MODE
+            if (_isLocked) { return; }
+#endif
+            if (_count <= 0) { return; }
+            var span = _registrar.World.Where(out SingleTagAspect<T> _);
+            _count = 0;
+            foreach (var entityID in span)
+            {
+                _mapping[entityID] = false;
+                _registrar.UnregisterComponent(entityID);
+#if !DRAGONECS_DISABLE_POOLS_EVENTS
+                if (_hasAnyListener) { _listeners.InvokeOnDel(entityID); }
+#endif
+            }
+        }
+        #endregion
+
+        #region Callbacks
+
+        void IEcsPoolImplementation.OnWorldResize(int newSize)
+        {
+            Array.Resize(ref _mapping, newSize);
+        }
+
+        void IEcsPoolImplementation.OnReleaseDelEntityBuffer(ReadOnlySpan<int> buffer)
+        {
+            if (_count <= 0)
+            {
+                return;
+            }
+            foreach (var entityID in buffer)
+            {
+                TryDel(entityID);
+            }
+        }
+        void IEcsPoolImplementation.OnLockedChanged_Debug(bool locked) { _isLocked = locked; }
+        #endregion
+
+        #region Other
+        void IEcsPool.AddEmpty(int entityID) { Add(entityID); }
+        void IEcsPool.AddRaw(int entityID, object dataRaw) { Add(entityID); }
+        object IEcsReadonlyPool.GetRaw(int entityID)
+        {
+#if DEBUG
+            if (Has(entityID) == false) { EcsPoolThrowHelper.ThrowNotHaveComponent<T>(entityID); }
+#endif
+            return _fakeComponent;
+        }
+        void IEcsPool.SetRaw(int entityID, object dataRaw)
+        {
+#if DEBUG
+            if (Has(entityID) == false) { EcsPoolThrowHelper.ThrowNotHaveComponent<T>(entityID); }
+#endif
+        }
+        ref T IEcsStructPool<T>.Add(int entityID)
+        {
+            Add(entityID);
+            return ref _fakeComponent;
+        }
+        ref readonly T IEcsStructPool<T>.Read(int entityID)
+        {
+#if DEBUG
+            if (Has(entityID) == false) { EcsPoolThrowHelper.ThrowNotHaveComponent<T>(entityID); }
+#endif
+            return ref _fakeComponent;
+        }
+        ref T IEcsStructPool<T>.Get(int entityID)
+        {
+#if DEBUG
+            if (Has(entityID) == false) { EcsPoolThrowHelper.ThrowNotHaveComponent<T>(entityID); }
+#endif
+            return ref _fakeComponent;
+        }
+        EcsMask IComponentMask.ToMask(EcsWorld world)
+        {
+            return _staticMask.ToMask(world);
+        }
+        #endregion
+
+        #region Listeners
+#if !DRAGONECS_DISABLE_POOLS_EVENTS
+        /// <summary>
+        /// Subscribes a listener to component Add/Del/Get events on this pool.
+        /// </summary>
+        /// <param name="listener">The listener instance to add.</param>
+        public void AddListener(IEcsPoolEventListener listener)
+        {
+            if (listener == null) { EcsPoolThrowHelper.ThrowNullListener(); }
+            _listeners.Add(listener);
+            _hasAnyListener = _listeners.Count > 0;
+        }
+        /// <summary>
+        /// Remove a pool event listener.
+        /// </summary>
+        /// <param name="listener">The listener instance to remove.</param>
+        public void RemoveListener(IEcsPoolEventListener listener)
+        {
+            if (listener == null) { EcsPoolThrowHelper.ThrowNullListener(); }
+            if (_listeners.RemoveWithOrder(listener))
+            {
+                _hasAnyListener = _listeners.Count > 0;
+            }
+        }
+#endif
+        #endregion
+
+        #region IEnumerator - IntelliSense hack
+        IEnumerator<T> IEnumerable<T>.GetEnumerator() { throw new NotImplementedException(); }
+        IEnumerator IEnumerable.GetEnumerator() { throw new NotImplementedException(); }
+        #endregion
+
+        #region Convertors
+        public static implicit operator EcsTagPool<T>(IncludeMarker a) { return a.GetInstance<EcsTagPool<T>>(); }
+        public static implicit operator EcsTagPool<T>(ExcludeMarker a) { return a.GetInstance<EcsTagPool<T>>(); }
+        public static implicit operator EcsTagPool<T>(AnyMarker a) { return a.GetInstance<EcsTagPool<T>>(); }
+        public static implicit operator EcsTagPool<T>(OptionalMarker a) { return a.GetInstance<EcsTagPool<T>>(); }
+        public static implicit operator EcsTagPool<T>(EcsWorld.GetPoolInstanceMarker a) { return a.GetInstance<EcsTagPool<T>>(); }
+        #endregion
+
+        #region Apply
+        public static void Apply(ref T component, int entityID, short worldID)
+        {
+            EcsWorld.GetPoolInstance<EcsTagPool<T>>(worldID).TryAdd(entityID);
+        }
+        public static void Apply(ref T component, int entityID, EcsTagPool<T> pool)
+        {
+            pool.TryAdd(entityID);
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static ref T Apply(short worldID, int entityID)
+        {
+            var pool = EcsWorld.GetPoolInstance<EcsTagPool<T>>(worldID);
+            pool.TryAdd(entityID);
+            return ref pool._fakeComponent;
+        }
+        #endregion
+    }
+
+#if ENABLE_IL2CPP
+    [Il2CppSetOption(Option.NullChecks, false)]
+#endif
+    [MetaTags(MetaTags.HIDDEN)]
+    [MetaColor(MetaColor.DragonRose)]
+    [MetaGroup(EcsConsts.PACK_GROUP, EcsConsts.OTHER_GROUP)]
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public readonly struct ReadonlyEcsTagPool<T> : IEcsReadonlyPool //IEnumerable<T> - IntelliSense hack
+    where T : struct, IEcsTagComponent
+    {
+        private readonly EcsTagPool<T> _pool;
+
+        #region Properties
+        /// <summary>
+        /// Internal component type identifier for this tag pool.
+        /// </summary>
+        public int ComponentTypeID
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return _pool.ComponentTypeID; }
+        }
+        /// <summary>
+        /// Type of the tag component stored in this pool.
+        /// </summary>
+        public Type ComponentType
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return _pool.ComponentType; }
+        }
+        /// <summary>
+        /// The world instance that owns this tag pool.
+        /// </summary>
+        public EcsWorld World
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return _pool.World; }
+        }
+        /// <summary>
+        /// Number of entities that currently have this tag in the world.
+        /// </summary>
+        public int Count
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return _pool.Count; }
+        }
+        /// <summary>
+        /// Check or set whether the specified entity has this tag.
+        /// </summary>
+        /// <param name="entityID">Entity identifier.</param>
+        public bool this[int entityID]
+        {
+            get { return _pool.Has(entityID); }
+        }
+        #endregion
+
+        #region Constructors
+        internal ReadonlyEcsTagPool(EcsTagPool<T> pool)
+        {
+            _pool = pool;
+        }
+        #endregion
+
+        #region Methods
+        /// <summary>
+        /// Check whether the specified entity has this tag.
+        /// </summary>
+        /// <param name="entityID">Entity identifier.</param>
+        /// <returns>True when the tag is present on the entity.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool Has(int entityID) { return _pool.Has(entityID); }
+        /// <summary>
+        /// Get raw component data for the specified entity.
+        /// </summary>
+        /// <param name="entityID">Entity identifier.</param>
+        /// <returns>Raw component data as an object.</returns>
+        object IEcsReadonlyPool.GetRaw(int entityID)
+        {
+#if DEBUG
+            if (Has(entityID) == false) { EcsPoolThrowHelper.ThrowNotHaveComponent<T>(entityID); }
+#endif
+            return default;
+        }
+
+#if !DRAGONECS_DISABLE_POOLS_EVENTS
+        /// <summary>
+        /// Add a pool event listener.
+        /// </summary>
+        /// <param name="listener">The listener instance to add.</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void AddListener(IEcsPoolEventListener listener) { _pool.AddListener(listener); }
+        /// <summary>
+        /// Remove a pool event listener.
+        /// </summary>
+        /// <param name="listener">The listener instance to remove.</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void RemoveListener(IEcsPoolEventListener listener) { _pool.AddListener(listener); }
+#endif
+        #endregion
+
+        #region Convertors
+        public static implicit operator ReadonlyEcsTagPool<T>(EcsTagPool<T> a) { return new ReadonlyEcsTagPool<T>(a); }
+        public static implicit operator ReadonlyEcsTagPool<T>(IncludeMarker a) { return a.GetInstance<EcsTagPool<T>>(); }
+        public static implicit operator ReadonlyEcsTagPool<T>(ExcludeMarker a) { return a.GetInstance<EcsTagPool<T>>(); }
+        public static implicit operator ReadonlyEcsTagPool<T>(AnyMarker a) { return a.GetInstance<EcsTagPool<T>>(); }
+        public static implicit operator ReadonlyEcsTagPool<T>(OptionalMarker a) { return a.GetInstance<EcsTagPool<T>>(); }
+        public static implicit operator ReadonlyEcsTagPool<T>(EcsWorld.GetPoolInstanceMarker a) { return a.GetInstance<EcsTagPool<T>>(); }
+        #endregion
+    }
+    public static class EcsTagPoolExtensions
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static EcsTagPool<TTagComponent> GetPool<TTagComponent>(this EcsWorld self) where TTagComponent : struct, IEcsTagComponent
+        {
+            return self.GetPoolInstance<EcsTagPool<TTagComponent>>();
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static EcsTagPool<TTagComponent> GetPoolUnchecked<TTagComponent>(this EcsWorld self) where TTagComponent : struct, IEcsTagComponent
+        {
+            return self.GetPoolInstanceUnchecked<EcsTagPool<TTagComponent>>();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static EcsTagPool<TTagComponent> Inc<TTagComponent>(this EcsAspect.Builder self) where TTagComponent : struct, IEcsTagComponent
+        {
+            return self.IncludePool<EcsTagPool<TTagComponent>>();
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static EcsTagPool<TTagComponent> Exc<TTagComponent>(this EcsAspect.Builder self) where TTagComponent : struct, IEcsTagComponent
+        {
+            return self.ExcludePool<EcsTagPool<TTagComponent>>();
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static EcsTagPool<TTagComponent> Any<TTagComponent>(this EcsAspect.Builder self) where TTagComponent : struct, IEcsTagComponent
+        {
+            return self.AnyPool<EcsTagPool<TTagComponent>>();
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static EcsTagPool<TTagComponent> Opt<TTagComponent>(this EcsAspect.Builder self) where TTagComponent : struct, IEcsTagComponent
+        {
+            return self.OptionalPool<EcsTagPool<TTagComponent>>();
+        }
+    }
+}

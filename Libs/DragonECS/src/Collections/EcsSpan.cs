@@ -1,0 +1,661 @@
+﻿#if DISABLE_DEBUG
+#undef DEBUG
+#endif
+using DCFApixels.DragonECS.Core;
+using DCFApixels.DragonECS.Core.Internal;
+using DCFApixels.DragonECS.Core.Unchecked;
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
+
+namespace DCFApixels.DragonECS
+{
+#if ENABLE_IL2CPP
+    using Unity.IL2CPP.CompilerServices;
+    [Il2CppSetOption(Option.NullChecks, false)]
+    [Il2CppSetOption(Option.ArrayBoundsChecks, false)]
+#endif
+    /// <summary>
+    /// Lightweight read-only span of entity ids belonging to a specific world.
+    /// Use returned spans from queries and groups to iterate or convert to arrays.
+    /// </summary>
+    /// <remarks>
+    /// The span always contains a set of unique entity identifiers — no duplicates are present.
+    /// </remarks>
+    [DebuggerTypeProxy(typeof(DebuggerProxy))]
+    public readonly ref struct EcsSpan
+    {
+        private readonly ReadOnlySpan<int> _values;
+        private readonly short _worldID;
+
+        #region Properties
+        /// <summary>
+        /// True when the span does not reference a valid world (null world id).
+        /// </summary>
+        public bool IsNull
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return _worldID == 0; }
+        }
+
+        /// <summary>
+        /// Identifier of the world this span belongs to.
+        /// </summary>
+        public short WorldID
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return _worldID; }
+        }
+
+        /// <summary>
+        /// The EcsWorld instance owning the entities in this span.
+        /// </summary>
+        public EcsWorld World
+        {
+            get { return EcsWorld.GetWorld(_worldID); }
+        }
+
+        /// <summary>
+        /// Number of entity ids in the span.
+        /// </summary>
+        public int Count
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return _values.Length; }
+        }
+
+        /// <summary>
+        /// Returns a span of packed entity identifiers (<see cref="entlong"/>) – equivalent to a regular span of entity IDs
+        /// </summary>
+        public EcsLongsSpan Longs
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return new EcsLongsSpan(this); }
+        }
+
+        /// <summary>
+        /// True when the span represents the world's current live entities collection.
+        /// </summary>
+        public bool IsSourceEntities
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return _values == EcsWorld.GetWorld(_worldID).GetCurrentEntities_Internal()._values; }
+        }
+
+        /// <summary>
+        /// Indexer to access the entity id at the given index in the span.
+        /// </summary>
+#if ENABLE_IL2CPP
+        [Il2CppSetOption(Option.ArrayBoundsChecks, true)]
+#endif
+        public int this[int index]
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return _values[index]; }
+        }
+        #endregion
+
+        #region Constructors
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal EcsSpan(short worldID, ReadOnlySpan<int> span)
+        {
+            _worldID = worldID;
+            _values = span;
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal EcsSpan(short worldID, int[] array)
+        {
+            _worldID = worldID;
+            _values = new ReadOnlySpan<int>(array);
+        }
+        internal EcsSpan(short worldID, int[] array, int length)
+        {
+            _worldID = worldID;
+            _values = new ReadOnlySpan<int>(array, 0, length);
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal EcsSpan(short worldID, int[] array, int start, int length)
+        {
+            _worldID = worldID;
+            _values = new ReadOnlySpan<int>(array, start, length);
+        }
+        #endregion
+
+        #region Slice/ToArray
+        /// <summary>
+        /// Return a slice of this span starting at the specified index.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public EcsSpan Slice(int start) { return new EcsSpan(_worldID, _values.Slice(start)); }
+
+        /// <summary>
+        /// Return a slice of this span with specified start and length.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public EcsSpan Slice(int start, int length) { return new EcsSpan(_worldID, _values.Slice(start, length)); }
+
+        /// <summary>
+        /// Convert the span to a managed array of entity ids.
+        /// </summary>
+        public int[] ToArray() { return _values.ToArray(); }
+
+        /// <summary>
+        /// Copy entity ids into a reusable buffer. Returns the number of elements written.
+        /// </summary>
+        public int ToArray(ref int[] dynamicBuffer)
+        {
+            if (dynamicBuffer.Length < _values.Length)
+            {
+                Array.Resize(ref dynamicBuffer, ArrayUtility.CeilPow2(_values.Length));
+            }
+            int i = 0;
+            foreach (var e in this)
+            {
+                dynamicBuffer[i++] = e;
+            }
+            return i;
+        }
+
+        /// <summary>
+        /// Add all entity ids from the span into the provided collection.
+        /// </summary>
+        public void ToCollection(ICollection<int> collection)
+        {
+            foreach (var e in this)
+            {
+                collection.Add(e);
+            }
+        }
+        #endregion
+
+        #region operators
+        public static bool operator ==(EcsSpan left, EcsSpan right) { return left._values == right._values && left._worldID == right._worldID; }
+        public static bool operator !=(EcsSpan left, EcsSpan right) { return left._values != right._values || left._worldID != right._worldID; }
+        #endregion
+
+        #region Enumerator
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ReadOnlySpan<int>.Enumerator GetEnumerator() { return _values.GetEnumerator(); }
+        #endregion
+
+        #region Other
+        public ReadOnlySpan<int> AsSystemSpan() { return _values; }
+
+        /// <summary>
+        /// Return the first entity id in the group.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int First() { return _values[0]; }
+
+        /// <summary>
+        /// Return the last entity id in the group.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int Last() { return _values[_values.Length - 1]; }
+        public override string ToString()
+        {
+            return CollectionUtility.EntitiesToString(_values.ToArray(), "span");
+        }
+#pragma warning disable CS0809 // Устаревший член переопределяет неустаревший член
+        [Obsolete("Equals() on EcsSpan will always throw an exception. Use the equality operator instead.")]
+        [EditorBrowsable(EditorBrowsableState.Never)]
+        public override bool Equals(object obj) { throw new NotSupportedException(); }
+        [Obsolete("GetHashCode() on EcsSpan will always throw an exception.")]
+        [EditorBrowsable(EditorBrowsableState.Never)]
+        public override int GetHashCode() { throw new NotSupportedException(); }
+#pragma warning restore CS0809 // Устаревший член переопределяет неустаревший член
+
+        internal class DebuggerProxy
+        {
+            private int[] _values;
+            private short _worldID;
+            public EcsWorld World { get { return EcsWorld.GetWorld(_worldID); } }
+            public RawEntLong[] Entities
+            {
+                get
+                {
+                    RawEntLong[] result = new RawEntLong[_values.Length];
+                    int i = 0;
+                    foreach (var e in _values)
+                    {
+                        result[i++] = World.GetRawEntLong(e);
+                    }
+                    return result;
+                }
+            }
+            public int Count { get { return _values.Length; } }
+            public DebuggerProxy(EcsSpan span)
+            {
+                _values = new int[span.Count];
+                span._values.CopyTo(_values);
+                _worldID = span._worldID;
+            }
+            public DebuggerProxy(EcsLongsSpan span) : this(span.ToSpan()) { }
+            public DebuggerProxy(EcsUnsafeSpan span) : this(span.ToSpan()) { }
+        }
+        #endregion
+    }
+
+#if ENABLE_IL2CPP
+    [Il2CppSetOption(Option.NullChecks, false)]
+    [Il2CppSetOption(Option.ArrayBoundsChecks, false)]
+#endif
+    [DebuggerTypeProxy(typeof(EcsSpan.DebuggerProxy))]
+    public readonly ref struct EcsLongsSpan
+    {
+        private readonly EcsSpan _source;
+
+        #region Properties
+        /// <summary>
+        /// True when the span does not reference a valid world (null world id).
+        /// </summary>
+        public bool IsNull
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return _source.IsNull; }
+        }
+
+        /// <summary>
+        /// Identifier of the world this span belongs to.
+        /// </summary>
+        public short WorldID
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return _source.WorldID; }
+        }
+
+        /// <summary>
+        /// The EcsWorld instance owning the entities in this span.
+        /// </summary>
+        public EcsWorld World
+        {
+            get { return _source.World; }
+        }
+
+        /// <summary>
+        /// Number of entity ids in the span.
+        /// </summary>
+        public int Count
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return _source.Count; }
+        }
+
+        /// <summary>
+        /// True when the span represents the world's current live entities collection.
+        /// </summary>
+        public bool IsSourceEntities
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return _source.IsSourceEntities; }
+        }
+
+        /// <summary>
+        /// Indexer to access the entity id at the given index in the span.
+        /// </summary>
+#if ENABLE_IL2CPP
+        [Il2CppSetOption(Option.ArrayBoundsChecks, true)]
+#endif
+        public entlong this[int index]
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return World.GetEntityLong(_source[index]); }
+        }
+        #endregion
+
+        #region Constructors
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal EcsLongsSpan(EcsSpan span)
+        {
+            _source = span;
+        }
+        #endregion
+
+        #region Slice/ToSpan/ToArry
+        /// <summary>
+        /// Return a slice of this span starting at the specified index.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public EcsLongsSpan Slice(int start) { return new EcsLongsSpan(_source.Slice(start)); }
+
+        /// <summary>
+        /// Return a slice of this span with specified start and length.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public EcsLongsSpan Slice(int start, int length) { return new EcsLongsSpan(_source.Slice(start, length)); }
+
+        /// <summary>
+        /// Convert to standard entity ID span .
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public EcsSpan ToSpan() { return _source; }
+
+        /// <summary>
+        /// Convert the span to a managed array of entlongs.
+        /// </summary>
+        public entlong[] ToArray()
+        {
+            entlong[] result = new entlong[_source.Count];
+            int i = 0;
+            foreach (var e in this)
+            {
+                result[i++] = e;
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Copy entity ids into a reusable buffer. Returns the number of elements written.
+        /// </summary>
+        public int ToArray(ref entlong[] dynamicBuffer)
+        {
+            if (dynamicBuffer.Length < _source.Count)
+            {
+                Array.Resize(ref dynamicBuffer, ArrayUtility.CeilPow2(_source.Count));
+            }
+            int i = 0;
+            foreach (var e in this)
+            {
+                dynamicBuffer[i++] = e;
+            }
+            return i;
+        }
+
+        /// <summary>
+        /// Add all entlongs from the span into the provided collection.
+        /// </summary>
+        public void ToCollection(ICollection<entlong> collection)
+        {
+            foreach (var e in this)
+            {
+                collection.Add(e);
+            }
+        }
+        #endregion
+
+        #region operators
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool operator ==(EcsLongsSpan left, EcsLongsSpan right) { return left._source == right._source; }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool operator !=(EcsLongsSpan left, EcsLongsSpan right) { return left._source != right._source; }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static implicit operator EcsSpan(EcsLongsSpan a) { return a.ToSpan(); }
+        #endregion
+
+        #region Enumerator
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Enumerator GetEnumerator() { return new Enumerator(_source.World, _source.GetEnumerator()); }
+        public ref struct Enumerator
+        {
+            private readonly EcsWorld _world;
+            private ReadOnlySpan<int>.Enumerator _enumerator;
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public Enumerator(EcsWorld world, ReadOnlySpan<int>.Enumerator enumerator)
+            {
+                _world = world;
+                _enumerator = enumerator;
+            }
+            public entlong Current
+            {
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                get { return _world.GetEntityLong(_enumerator.Current); }
+            }
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public bool MoveNext() { return _enumerator.MoveNext(); }
+        }
+        #endregion
+
+        #region Other
+        /// <summary>
+        /// Return the first entity id in the group.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public entlong First() { return _source.World.GetEntityLong(_source.First()); }
+
+        /// <summary>
+        /// Return the last entity id in the group.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public entlong Last() { return _source.World.GetEntityLong(_source.Last()); }
+        public override string ToString()
+        {
+            return CollectionUtility.EntitiesToString(_source.ToArray(), "longs_span");
+        }
+#pragma warning disable CS0809 // Устаревший член переопределяет неустаревший член
+        [Obsolete("Equals() on EcsLongSpan will always throw an exception. Use the equality operator instead.")]
+        [EditorBrowsable(EditorBrowsableState.Never)]
+        public override bool Equals(object obj) { throw new NotSupportedException(); }
+        [Obsolete("GetHashCode() on EcsLongSpan will always throw an exception.")]
+        [EditorBrowsable(EditorBrowsableState.Never)]
+        public override int GetHashCode() { throw new NotSupportedException(); }
+#pragma warning restore CS0809 // Устаревший член переопределяет неустаревший член
+        #endregion
+    }
+}
+
+namespace DCFApixels.DragonECS.Core
+{
+    /// <remarks>Suitable for use in Unity Jobs or other high‑performance contexts.</remarks>
+#if ENABLE_IL2CPP
+    using Unity.IL2CPP.CompilerServices;
+    [Il2CppSetOption(Option.NullChecks, false)]
+    [Il2CppSetOption(Option.ArrayBoundsChecks, false)]
+#endif
+    [DebuggerTypeProxy(typeof(EcsSpan.DebuggerProxy))]
+    public unsafe readonly struct EcsUnsafeSpan
+    {
+#if UNITY_2020_3_OR_NEWER
+        [Unity.Collections.LowLevel.Unsafe.NativeDisableUnsafePtrRestriction]
+#endif
+        private readonly int* _values;
+        private readonly int _length;
+        private readonly short _worldID;
+
+        #region Properties
+        /// <summary>
+        /// True when the span does not reference a valid world (null world id).
+        /// </summary>
+        public bool IsNull
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return _worldID == 0; }
+        }
+
+        /// <summary>
+        /// Identifier of the world this span belongs to.
+        /// </summary>
+        public short WorldID
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return _worldID; }
+        }
+
+        /// <summary>
+        /// The EcsWorld instance owning the entities in this span.
+        /// </summary>
+        public EcsWorld World
+        {
+            get { return EcsWorld.GetWorld(_worldID); }
+        }
+
+        /// <summary>
+        /// Number of entity ids in the span.
+        /// </summary>
+        public int Count
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return _length; }
+        }
+
+        /// <summary>
+        /// Returns a span of packed entity identifiers (<see cref="entlong"/>) – equivalent to a regular span of entity IDs
+        /// </summary>
+        public EcsLongsSpan Longs
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return ToSpan().Longs; }
+        }
+
+        /// <summary>
+        /// True when the span represents the world's current live entities collection.
+        /// </summary>
+        public bool IsSourceEntities
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return ToSpan().IsSourceEntities; }
+        }
+
+        /// <summary>
+        /// Indexer to access the entity id at the given index in the span.
+        /// </summary>
+#if ENABLE_IL2CPP
+        [Il2CppSetOption(Option.ArrayBoundsChecks, true)]
+#endif
+        public int this[int index]
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get
+            {
+#if DEBUG
+                if ((uint)index >= (uint)_length || (uint)index < 0)
+                {
+                    ThrowHelper.ThrowIndexOutOfRangeException();
+                }
+#elif DRAGONECS_STABILITY_MODE
+                return EcsConsts.NULL_ENTITY_ID;
+#endif
+                return _values[index];
+            }
+        }
+        #endregion
+
+        #region Constructors
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal EcsUnsafeSpan(short worldID, int* array, int length)
+        {
+            _worldID = worldID;
+            _values = array;
+            _length = length;
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal EcsUnsafeSpan(short worldID, int* array, int start, int length)
+        {
+            _worldID = worldID;
+            _values = array + start;
+            _length = length;
+        }
+        #endregion
+
+        #region Slice/ToArray
+        /// <summary>
+        /// Return a slice of this span starting at the specified index.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public EcsUnsafeSpan Slice(int start)
+        {
+            if ((uint)start > (uint)_length)
+            {
+                ThrowHelper.ThrowArgumentOutOfRangeException();
+            }
+            return new EcsUnsafeSpan(_worldID, _values, start, _length - start);
+        }
+
+        /// <summary>
+        /// Return a slice of this span with specified start and length.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public EcsUnsafeSpan Slice(int start, int length)
+        {
+            if ((uint)start > (uint)_length || (uint)length > (uint)(_length - start))
+            {
+                ThrowHelper.ThrowArgumentOutOfRangeException();
+            }
+            return new EcsUnsafeSpan(_worldID, _values, start, length);
+        }
+
+        /// <summary>
+        /// Convert to standard entity ID span .
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public EcsSpan ToSpan() { return new EcsSpan(_worldID, new ReadOnlySpan<int>(_values, _length)); }
+
+        /// <summary>
+        /// Convert the span to a managed array of entity ids.
+        /// </summary>
+        public int[] ToArray() { return new ReadOnlySpan<int>(_values, _length).ToArray(); }
+
+        /// <summary>
+        /// Copy entity ids into a reusable buffer. Returns the number of elements written.
+        /// </summary>
+        public int ToArray(ref int[] dynamicBuffer)
+        {
+            if (dynamicBuffer.Length < _length)
+            {
+                Array.Resize(ref dynamicBuffer, ArrayUtility.CeilPow2(_length));
+            }
+            int i = 0;
+            foreach (var e in this)
+            {
+                dynamicBuffer[i++] = e;
+            }
+            return i;
+        }
+
+        /// <summary>
+        /// Add all entity ids from the span into the provided collection.
+        /// </summary>
+        public void ToCollection(ICollection<int> collection)
+        {
+            foreach (var e in this)
+            {
+                collection.Add(e);
+            }
+        }
+        #endregion
+
+        #region operators
+        public static bool operator ==(EcsUnsafeSpan left, EcsUnsafeSpan right) { return left._values == right._values && left._length == right._length && left._worldID == right._worldID; }
+        public static bool operator !=(EcsUnsafeSpan left, EcsUnsafeSpan right) { return left._values != right._values || left._length != right._length || left._worldID != right._worldID; }
+        public static implicit operator EcsSpan(EcsUnsafeSpan a) { return a.ToSpan(); }
+        #endregion
+
+        #region Enumerator
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ReadOnlySpan<int>.Enumerator GetEnumerator() { return new ReadOnlySpan<int>(_values, _length).GetEnumerator(); }
+        #endregion
+
+        #region Other
+        /// <summary>
+        /// Return the first entity id in the group.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int First() { return _values[0]; }
+
+        /// <summary>
+        /// Return the last entity id in the group.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int Last() { return _values[_length - 1]; }
+        public override string ToString()
+        {
+            return CollectionUtility.EntitiesToString(ToArray(), "span");
+        }
+        public override bool Equals(object obj)
+        {
+            return obj is EcsUnsafeSpan other && other == this;
+        }
+        public override int GetHashCode()
+        {
+            return *_values ^ _length ^ (_worldID << 16);
+        }
+        private static class ThrowHelper
+        {
+            public static void ThrowIndexOutOfRangeException() => throw new IndexOutOfRangeException();
+            public static void ThrowArgumentOutOfRangeException() => throw new ArgumentOutOfRangeException();
+            public static void ThrowInvalidOperationException() => throw new InvalidOperationException();
+        }
+        #endregion
+    }
+}

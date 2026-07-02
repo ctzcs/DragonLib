@@ -1,0 +1,2147 @@
+using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
+using System.Text;
+using static SDL3.SDL;
+
+namespace Foster.Framework;
+
+internal unsafe class GraphicsDeviceSDL(App app, GraphicsDriver preferred) : GraphicsDevice(app)
+{
+	private class Resource(GraphicsDeviceSDL graphicsDevice)
+	{
+		public ResourceHandle Handle = nint.Zero;
+		public readonly GraphicsDeviceSDL GraphicsDevice = graphicsDevice;
+	}
+
+	private class TextureResource(GraphicsDeviceSDL graphicsDevice)
+		: Resource(graphicsDevice)
+	{
+		public nint Texture;
+		public int Width;
+		public int Height;
+		public SDL_GPUTextureFormat Format;
+		public SDL_GPUSampleCount SampleCount;
+
+		/// <summary>
+		/// If we are multisampled, we need a resolve texture
+		/// </summary>
+		public ResourceHandle MultiSampleResolve;
+
+		/// <summary>
+		/// If we are multisampled, we should sample from the resolve texture,
+		/// NOT the texture that is being multisampled.
+		/// </summary>
+		public nint SamplerTexture => GraphicsDevice.FindResource<TextureResource>(MultiSampleResolve)?.Texture ?? Texture;
+	}
+
+	private class TargetResource(GraphicsDeviceSDL graphicsDevice)
+		: Resource(graphicsDevice)
+	{
+		public readonly List<ResourceHandle> Attachments = [];
+	}
+
+	private class BufferResource(GraphicsDeviceSDL graphicsDevice, string? name, SDL_GPUBufferUsageFlags usage, IndexFormat indexFormat)
+		: Resource(graphicsDevice)
+	{
+		public readonly string? Name = name;
+		public readonly IndexFormat IndexFormat = indexFormat;
+		public readonly SDL_GPUBufferUsageFlags Usage = usage;
+		public nint Buffer;
+		public int Capacity;
+		public bool Dirty;
+	}
+
+	private class ShaderResource(GraphicsDeviceSDL graphicsDevice, nint shader)
+		: Resource(graphicsDevice)
+	{
+		public readonly nint Shader = shader;
+		public readonly ConcurrentBag<int> Pipelines = [];
+	}
+
+	private class ComputeResource(GraphicsDeviceSDL graphicsDevice, nint pipeline)
+		: Resource(graphicsDevice)
+	{
+		public readonly nint Pipeline = pipeline;
+	}
+
+	private class WindowState(uint id, nint handle)
+	{
+		public readonly uint ID = id;
+		public readonly nint Handle = handle;
+		public bool ReclaimPending;
+		public bool Claimed;
+		public Target? Backbuffer;
+		public Point2 BackbufferSize;
+		public bool SupportsMailboxPresentMode;
+		public bool SupportsImmediatePresentMode;
+		public SDL_GPUPresentMode? PresentMode;
+	}
+
+	private record struct ClearInfo(StackList8<Color>? Color, float? Depth, int? Stencil);
+
+	private const int MaxFramesInFlight = 3;
+	private const uint TransferBufferSize = 16 * 1024 * 1024; // 16MB
+	private const uint MaxUploadCycleCount = 4;
+	private const int MaxColorAttachments = 8;
+	private const string BackbufferName = "Foster Backbuffer";
+	private (TextureFormat Format, TextureFlags Flags, SampleCount SampleCount)[] backbufferFormat = [(TextureFormat.Color, TextureFlags.None, SampleCount.One)];
+
+	// object pointers
+	private nint device;
+	private nint cmdUpload;
+	private nint cmdRender;
+	private nint renderPass;
+	private nint copyPass;
+
+	// render pass
+	private IDrawableTarget? renderPassTarget;
+	private Point2 renderPassTargetSize;
+	private nint renderPassPipeline;
+	private StackList4<ResourceHandle> renderPassVertexBuffers;
+	private ResourceHandle renderPassIndexBuffer;
+	private RectInt? renderPassScissor;
+	private RectInt? renderPassViewport;
+
+	// state
+	private GraphicsDriver driver;
+	private bool vsyncEnabled;
+	private bool inBackground;
+	private readonly Dictionary<uint, WindowState> windows = [];
+
+	// tracked / allocated resources
+	private readonly Dictionary<TextureSampler, nint> samplers = [];
+	private readonly ConcurrentDictionary<int, nint> pipelines = [];
+	private readonly ConcurrentDictionary<nint, Resource> resources = [];
+	private ResourceHandle emptyDefaultTexture;
+	private ResourceHandle emptyDefaultComputeStorageTexture;
+	private ResourceHandle emptyDefaultBuffer;
+	private long nextResourceId;
+
+	// texture/mesh transfer buffers
+	private nint bufferUploadBuffer;
+	private uint bufferUploadBufferOffset;
+	private uint bufferUploadCycleCount;
+	private nint textureUploadBuffer;
+	private uint textureUploadBufferOffset;
+	private uint textureUploadCycleCount;
+	private nint textureDownloadBuffer;
+	private uint textureDownloadBufferSize;
+	private readonly Lock textureDownloadMutex = new();
+
+	// exceptions
+	private readonly Exception deviceNotCreated = new("GPU Device has not been created");
+	private readonly Exception deviceWasDestroyed = new("This Resource was created with a previous GPU Device which has been destroyed");
+
+	private readonly GraphicsDriver preferred = preferred;
+	private AppFlags flags;
+
+	public override GraphicsDriver Driver => driver;
+
+	public override bool VSync
+	{
+		get => vsyncEnabled;
+		set
+		{
+			if (device == nint.Zero)
+				throw deviceNotCreated;
+
+			vsyncEnabled = value;
+			foreach (var state in windows.Values)
+				UpdateWindowPresentMode(state, value);
+		}
+	}
+
+	public override bool Disposed => device == nint.Zero;
+
+	internal override void CreateDevice(in AppFlags flags)
+	{
+		if (device != nint.Zero)
+			throw new Exception("GPU Device is already created");
+
+		this.flags = flags;
+
+		string? requestedDriverName = preferred switch
+		{
+			GraphicsDriver.None => null,
+			GraphicsDriver.Private => "private",
+			GraphicsDriver.Vulkan => "vulkan",
+			GraphicsDriver.D3D12 => "direct3d12",
+			GraphicsDriver.Metal => "metal",
+			_ => null,
+		};
+
+		device = SDL_CreateGPUDevice(
+			format_flags:
+				SDL_GPUShaderFormat.SDL_GPU_SHADERFORMAT_SPIRV |
+				SDL_GPUShaderFormat.SDL_GPU_SHADERFORMAT_DXIL |
+				SDL_GPUShaderFormat.SDL_GPU_SHADERFORMAT_MSL,
+			debug_mode: flags.Has(AppFlags.GraphicsDebugging),
+			name: requestedDriverName!);
+
+		if (device == IntPtr.Zero)
+			throw App.CreateExceptionFromSDL(nameof(SDL_CreateGPUDevice));
+
+		var driverName = SDL_GetGPUDeviceDriver(device);
+		driver = driverName switch
+		{
+			"private" => GraphicsDriver.Private,
+			"vulkan" => GraphicsDriver.Vulkan,
+			"direct3d12" => GraphicsDriver.D3D12,
+			"metal" => GraphicsDriver.Metal,
+			_ => GraphicsDriver.None
+		};
+
+		if (flags.Has(AppFlags.MultiSampledBackBuffer))
+		{
+			if (IsTextureMultiSampleSupported(TextureFormat.Color, SampleCount.Eight))
+				backbufferFormat = [( TextureFormat.Color, TextureFlags.None, SampleCount.Eight )];
+			else if (IsTextureMultiSampleSupported(TextureFormat.Color, SampleCount.Four))
+				backbufferFormat = [( TextureFormat.Color, TextureFlags.None, SampleCount.Four )];
+			else if (IsTextureMultiSampleSupported(TextureFormat.Color, SampleCount.Two))
+				backbufferFormat = [( TextureFormat.Color, TextureFlags.None, SampleCount.Two )];
+		}
+
+		if (!flags.Has(AppFlags.NoHeaderLog))
+			Log.Info($"Graphics Driver: SDL_GPU [{driverName}]");
+
+		// we always have a command buffer ready
+		ResetCommandBufferState();
+
+		// create texture upload buffer
+		{
+			textureUploadBuffer = SDL_CreateGPUTransferBuffer(device, new()
+			{
+				usage = SDL_GPUTransferBufferUsage.SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
+				size = TransferBufferSize,
+				props = 0
+			});
+			textureUploadBufferOffset = 0;
+		}
+
+		// create buffer upload buffer
+		{
+			bufferUploadBuffer = SDL_CreateGPUTransferBuffer(device, new()
+			{
+				usage = SDL_GPUTransferBufferUsage.SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
+				size = TransferBufferSize,
+				props = 0
+			});
+			bufferUploadBufferOffset = 0;
+		}
+
+		// default texture we fall back to rendering if passed a material with a missing texture
+		{
+			var data = stackalloc Color[1] { 0xe82979 };
+			emptyDefaultTexture = CreateTexture("Fallback", 1, 1, TextureFormat.R8G8B8A8, default, SampleCount.One, null);
+			emptyDefaultComputeStorageTexture = CreateTexture("StorageFallback", 1, 1, TextureFormat.R8G8B8A8, TextureFlags.ComputeRead | TextureFlags.ComputeWrite, SampleCount.One, null);
+			SetTextureData(emptyDefaultTexture, new nint(data), 4, RectInt.Identity);
+			SetTextureData(emptyDefaultComputeStorageTexture, new nint(data), 4, RectInt.Identity);
+		}
+
+		// default buffer we fall back to rendering if shader expects buffers the user didn't supply
+		{
+			var data = stackalloc byte[1] { 0 };
+			emptyDefaultBuffer = CreateBuffer("Fallback", BufferType.Storage, default);
+			UploadBufferData(emptyDefaultBuffer, new nint(data), 1, 0);
+		}
+
+		// default to 3 frames in flight
+		SDL_SetGPUAllowedFramesInFlight(device, 3);
+	}
+
+	internal override void DestroyDevice()
+	{
+		SDL_DestroyGPUDevice(device);
+		device = nint.Zero;
+	}
+
+	internal override void WindowCreated(Window window)
+	{
+		var state = windows[window.ID] = new WindowState(window.ID, window.Handle);
+
+		if (!SDL_ClaimWindowForGPUDevice(device, window.Handle))
+			throw App.CreateExceptionFromSDL(nameof(SDL_ClaimWindowForGPUDevice));
+
+		state.Claimed = true;
+		state.ReclaimPending = false;
+
+		// query supported present modes
+		state.SupportsImmediatePresentMode =
+			SDL_WindowSupportsGPUPresentMode(device, state.Handle, SDL_GPUPresentMode.SDL_GPU_PRESENTMODE_IMMEDIATE);
+		state.SupportsMailboxPresentMode =
+			SDL_WindowSupportsGPUPresentMode(device, state.Handle, SDL_GPUPresentMode.SDL_GPU_PRESENTMODE_MAILBOX);
+
+		// get backbuffer
+		SDL_GetWindowSizeInPixels(state.Handle, out state.BackbufferSize.X, out state.BackbufferSize.Y);
+		state.BackbufferSize = Point2.Max(Point2.One, state.BackbufferSize);
+		state.Backbuffer = new(this, state.BackbufferSize.X, state.BackbufferSize.Y, backbufferFormat, BackbufferName);
+
+		// setup v-sync for this window
+		UpdateWindowPresentMode(state, vsyncEnabled);
+	}
+
+	internal override void WindowDestroyed(Window window)
+	{
+		if (windows.Remove(window.ID, out var state))
+		{
+			if (state.Claimed)
+			{
+				SDL_ReleaseWindowFromGPUDevice(device, window.Handle);
+				state.Claimed = false;
+			}
+		}
+	}
+
+	private void UpdateWindowPresentMode(WindowState state, bool vsyncEnabled)
+	{
+		// get desired mode
+		var desired = vsyncEnabled
+			? SDL_GPUPresentMode.SDL_GPU_PRESENTMODE_VSYNC
+			: SDL_GPUPresentMode.SDL_GPU_PRESENTMODE_IMMEDIATE;
+
+		// desired mode isn't supported ... fallback, eventually to v-sync, as it's the only always supported mode
+		// https://wiki.libsdl.org/SDL3/SDL_GPUPresentMode#remarks
+		if (desired == SDL_GPUPresentMode.SDL_GPU_PRESENTMODE_IMMEDIATE && !state.SupportsImmediatePresentMode)
+			desired = SDL_GPUPresentMode.SDL_GPU_PRESENTMODE_MAILBOX;
+		if (desired == SDL_GPUPresentMode.SDL_GPU_PRESENTMODE_MAILBOX && !state.SupportsMailboxPresentMode)
+			desired = SDL_GPUPresentMode.SDL_GPU_PRESENTMODE_VSYNC;
+
+		// this operation is slow, so only do it if we have a change to perform
+		if (state.PresentMode != desired)
+		{
+			SDL_SetGPUSwapchainParameters(device, state.Handle,
+				swapchain_composition: SDL_GPUSwapchainComposition.SDL_GPU_SWAPCHAINCOMPOSITION_SDR,
+				present_mode: desired
+			);
+			state.PresentMode = desired;
+		}
+	}
+
+	internal override void Shutdown()
+	{
+		// submit remaining commands
+		FlushCommands(stall: false);
+		SDL_SubmitGPUCommandBuffer(cmdUpload);
+		SDL_SubmitGPUCommandBuffer(cmdRender);
+		SDL_WaitForGPUIdle(device);
+
+		// destroy default texture
+		DestroyResource(emptyDefaultTexture);
+		DestroyResource(emptyDefaultComputeStorageTexture);
+		DestroyResource(emptyDefaultBuffer);
+		emptyDefaultTexture = nint.Zero;
+		emptyDefaultComputeStorageTexture = nint.Zero;
+		emptyDefaultBuffer = nint.Zero;
+
+		// destroy resources
+		while (!resources.IsEmpty)
+		{
+			nint[] destroying = [.. resources.Keys];
+			foreach (var it in destroying)
+				DestroyResource(it);
+		}
+
+		// destroy transfer buffers
+		{
+			if (textureDownloadBuffer != nint.Zero)
+				SDL_ReleaseGPUTransferBuffer(device, textureDownloadBuffer);
+			textureDownloadBuffer = nint.Zero;
+			SDL_ReleaseGPUTransferBuffer(device, textureUploadBuffer);
+			textureUploadBuffer = nint.Zero;
+			SDL_ReleaseGPUTransferBuffer(device, bufferUploadBuffer);
+			bufferUploadBuffer = nint.Zero;
+		}
+
+		// release pipelines
+		while (!pipelines.IsEmpty)
+		{
+			var destroying = pipelines.Values.ToArray();
+			pipelines.Clear();
+			foreach (var pipeline in destroying)
+				SDL_ReleaseGPUGraphicsPipeline(device, pipeline);
+		}
+
+		// release samplers
+		lock (samplers)
+		{
+			foreach (var sampler in samplers.Values)
+				SDL_ReleaseGPUSampler(device, sampler);
+			samplers.Clear();
+		}
+
+		// all windows should be destroyed by this point
+		if (windows.Count > 0)
+			throw new Exception("Windows were not gracefully destroyed");
+
+		// clear state
+		cmdUpload = nint.Zero;
+		cmdRender = nint.Zero;
+		renderPass = nint.Zero;
+		copyPass = nint.Zero;
+		renderPassTarget = null;
+		driver = GraphicsDriver.None;
+	}
+
+	internal override void Present()
+	{
+		EndCopyPass();
+		EndRenderPass();
+
+		// don't present to the screen if we're not visible
+		if (inBackground)
+		{
+			FlushCommands(stall: false);
+			return;
+		}
+
+		// present each window
+		foreach (var state in windows.Values)
+			PresentWindow(state);
+
+		// submit and present to screen
+		FlushCommands(stall: false);
+
+		// reclaim any pending windows
+		foreach (var state in windows.Values)
+		{
+			if (state.ReclaimPending)
+				ReclaimWindow(state);
+		}
+	}
+
+	internal override void OnEvent(SDL_EventType type)
+	{
+		if (type == SDL_EventType.SDL_EVENT_WILL_ENTER_BACKGROUND)
+		{
+			// free window's backbuffers while they are hidden
+			foreach (var state in windows.Values)
+			{
+				state.Backbuffer?.Dispose();
+				state.Backbuffer = null;
+				state.ReclaimPending = true;
+			}
+			inBackground = true;
+		}
+
+		if (type == SDL_EventType.SDL_EVENT_DID_ENTER_FOREGROUND)
+		{
+			inBackground = false;
+		}
+	}
+
+	private void PresentWindow(WindowState state)
+	{
+		// on some platforms, like Android, it's possible to lose the underlying surface when
+		// we move the app to the background. Account for that, and reclaim the window when we resume.
+		if (state.ReclaimPending)
+			return;
+
+		// if the window is hidden, we do not draw to it
+		if ((SDL_GetWindowFlags(state.Handle) & SDL_WindowFlags.SDL_WINDOW_HIDDEN) != 0)
+			return;
+
+		// get the swapchain for this window
+		if (!SDL_WaitAndAcquireGPUSwapchainTexture(cmdRender, state.Handle, out var scTex, out var scW, out var scH))
+		{
+			Log.Warning(App.CreateErrorMessageFromSDL(nameof(SDL_WaitAndAcquireGPUSwapchainTexture)));
+			return;
+		}
+
+		// blit backbuffer to swapchain
+		if (scTex != nint.Zero && scW > 0 && scH > 0 && state.BackbufferSize.X > 0 && state.BackbufferSize.Y > 0 && state.Backbuffer != null)
+		{
+			SDL_GPUBlitInfo blit = new()
+			{
+				source = new()
+				{
+					texture = RequireResource<TextureResource>(state.Backbuffer.Attachments[0].Resource).SamplerTexture,
+					mip_level = 0,
+					layer_or_depth_plane = 0,
+					x = 0,
+					y = 0,
+					w = Math.Min(scW, (uint)state.Backbuffer.Width),
+					h = Math.Min(scH, (uint)state.Backbuffer.Height)
+				},
+				destination = new()
+				{
+					texture = scTex,
+					mip_level = 0,
+					layer_or_depth_plane = 0,
+					x = 0,
+					y = 0,
+					w = Math.Min(scW, (uint)state.Backbuffer.Width),
+					h = Math.Min(scH, (uint)state.Backbuffer.Height)
+				},
+				load_op = SDL_GPULoadOp.SDL_GPU_LOADOP_DONT_CARE,
+				flip_mode = SDL_FlipMode.SDL_FLIP_NONE,
+				filter = SDL_GPUFilter.SDL_GPU_FILTER_NEAREST,
+				cycle = false
+			};
+
+			SDL_BlitGPUTexture(cmdRender, blit);
+		}
+
+		// update buffer size (if non-zero swapchain size)
+		if (scW > 0 && scH > 0)
+		{
+			state.BackbufferSize = new Point2((int)scW, (int)scH);
+
+			// intentionally resizing the buffer a bit larger so we're not
+			// constantly recreating buffers as the window is dragged/scaled
+			if (state.Backbuffer == null || state.Backbuffer.Width < state.BackbufferSize.X || state.Backbuffer.Height < state.BackbufferSize.Y)
+			{
+				state.Backbuffer?.Dispose();
+				state.Backbuffer = new(this, state.BackbufferSize.X + 64, state.BackbufferSize.Y + 64, backbufferFormat, BackbufferName);
+			}
+			// resize buffer if it's too large
+			else if (state.Backbuffer.Width > state.BackbufferSize.X + 128 || state.Backbuffer.Height > state.BackbufferSize.Y + 128)
+			{
+				state.Backbuffer?.Dispose();
+				state.Backbuffer = new(this, state.BackbufferSize.X, state.BackbufferSize.Y, backbufferFormat, BackbufferName);
+			}
+		}
+	}
+
+	/// <summary>
+	/// TODO: Remove when SDL updates
+	/// This is required due to a bug in the Android SDL backend.
+	/// It has been fixed, but waiting for an SDL release:
+	/// https://github.com/libsdl-org/SDL/issues/15322
+	/// </summary>
+	private void ReclaimWindow(WindowState state)
+	{
+		SDL_WaitForGPUIdle(device);
+
+		if (state.Claimed)
+		{
+			state.Claimed = false;
+			SDL_ReleaseWindowFromGPUDevice(device, state.Handle);
+		}
+
+		if (SDL_ClaimWindowForGPUDevice(device, state.Handle))
+		{
+			state.Claimed = true;
+			state.ReclaimPending = false;
+		}
+		else
+			Log.Warning(App.CreateErrorMessageFromSDL(nameof(SDL_ClaimWindowForGPUDevice)));
+	}
+
+	public override bool IsTextureFormatSupported(TextureFormat format)
+	{
+		var usage = SDL_GPUTextureUsageFlags.SDL_GPU_TEXTUREUSAGE_SAMPLER;
+		if (format.IsDepthStencilFormat())
+			usage |= SDL_GPUTextureUsageFlags.SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
+		else
+			usage |= SDL_GPUTextureUsageFlags.SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
+
+		var type = SDL_GPUTextureType.SDL_GPU_TEXTURETYPE_2D;
+
+		return SDL_GPUTextureSupportsFormat(device, GetTextureFormat(format), type, usage);
+	}
+
+	public override bool IsTextureMultiSampleSupported(TextureFormat format, SampleCount sampleCount)
+	{
+		return SDL_GPUTextureSupportsSampleCount(device, GetTextureFormat(format), GetSampleCount(sampleCount));
+	}
+
+	internal override ResourceHandle CreateTexture(string? name, int width, int height, TextureFormat format, TextureFlags flags, SampleCount sampleCount, nint? targetBinding)
+	{
+		if (device == nint.Zero)
+			throw deviceNotCreated;
+
+		uint props = 0;
+		if (!string.IsNullOrEmpty(name))
+		{
+			props = SDL_CreateProperties();
+			SDL_SetStringProperty(props, SDL_PROP_GPU_TEXTURE_CREATE_NAME_STRING, name);
+		}
+
+		SDL_GPUTextureCreateInfo info = new()
+		{
+			type = SDL_GPUTextureType.SDL_GPU_TEXTURETYPE_2D,
+			format = GetTextureFormat(format),
+			usage = 0,
+			width = (uint)width,
+			height = (uint)height,
+			layer_count_or_depth = 1,
+			num_levels = 1,
+			sample_count = GetSampleCount(sampleCount),
+			props = props
+		};
+
+		// only a sampler if not multisampled
+		// (otherwise there's a resolve texture used for that, created later)
+		if (sampleCount == SampleCount.One)
+			info.usage |= SDL_GPUTextureUsageFlags.SDL_GPU_TEXTUREUSAGE_SAMPLER;
+
+		// we're a render target attachment
+		if (targetBinding != null)
+		{
+			if (format.IsDepthStencilFormat())
+				info.usage |= SDL_GPUTextureUsageFlags.SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
+			else
+				info.usage |= SDL_GPUTextureUsageFlags.SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
+		}
+
+		// compute flags
+		if (flags.Has(TextureFlags.ComputeRead))
+			info.usage |= SDL_GPUTextureUsageFlags.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_READ;
+		if (flags.Has(TextureFlags.ComputeWrite))
+			info.usage |= SDL_GPUTextureUsageFlags.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE;
+
+		// try to create texture on GPU
+		nint texture = SDL_CreateGPUTexture(device, info);
+		if (props != 0)
+			SDL_DestroyProperties(props);
+		if (texture == nint.Zero)
+			throw App.CreateExceptionFromSDL(nameof(SDL_CreateGPUTexture));
+
+		// create a resolve texture if we're multisampled
+		ResourceHandle resolveTexture = default;
+		if (sampleCount != SampleCount.One)
+		{
+			var resolveName = name != null ? $"Resolve-{name}" : null;
+			resolveTexture = CreateTexture(resolveName, width, height, format, flags, SampleCount.One, targetBinding);
+		}
+
+		// create resulting texture resource
+		TextureResource res = new(this)
+		{
+			Texture = texture,
+			Width = width,
+			Height = height,
+			Format = info.format,
+			SampleCount = GetSampleCount(sampleCount),
+			MultiSampleResolve = resolveTexture
+		};
+
+		var handle = RegisterResource(res);
+
+		// attach to target
+		if (targetBinding.HasValue && resources.TryGetValue(targetBinding.Value, out var tar) && tar is TargetResource att)
+			att.Attachments.Add(handle);
+
+		return handle;
+	}
+
+	internal override void SetTextureData(ResourceHandle handle, nint data, int length, RectInt destRegion)
+	{
+		static uint RoundToAlignment(uint value, uint alignment)
+			=> alignment * ((value + alignment - 1) / alignment);
+
+		if (device == nint.Zero)
+			throw deviceNotCreated;
+
+		var res = RequireResource<TextureResource>(handle);
+
+		// search up for resolve texture if we're multisampled
+		if (res.MultiSampleResolve)
+		{
+			SetTextureData(res.MultiSampleResolve, data, length, destRegion);
+			return;
+		}
+
+		bool usingTemporaryTransferBuffer = false;
+		nint transferBuffer = textureUploadBuffer;
+		uint transferOffset;
+		bool transferCycle;
+
+		textureUploadBufferOffset = RoundToAlignment(textureUploadBufferOffset, SDL_GPUTextureFormatTexelBlockSize(res.Format));
+
+		// uploading more data than our transfer buffer, so create a temporary one
+		if (length >= TransferBufferSize)
+		{
+			transferBuffer = SDL_CreateGPUTransferBuffer(device, new()
+			{
+				usage = SDL_GPUTransferBufferUsage.SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
+				size = (uint)length,
+				props = 0
+			});
+			usingTemporaryTransferBuffer = true;
+			transferCycle = false;
+			transferOffset = 0;
+		}
+		// cycle transfer buffer because we're going to run out of space in the current one
+		else if (textureUploadBufferOffset + length >= TransferBufferSize)
+		{
+			// only allow MaxUploadCycleCount cycles before flushing
+			if (textureUploadCycleCount < MaxUploadCycleCount)
+			{
+				transferCycle = true;
+				textureUploadCycleCount += 1;
+				textureUploadBufferOffset = 0;
+				transferOffset = 0;
+			}
+			// otherwise flush
+			else
+			{
+				FlushCommands(stall: true);
+				transferCycle = true;
+				transferOffset = 0;
+			}
+		}
+		// normal transfer using existing buffer, only cycle if we're at the start
+		else
+		{
+			transferCycle = textureUploadBufferOffset == 0;
+			transferOffset = textureUploadBufferOffset;
+		}
+
+		// copy data
+		{
+			byte* dst = (byte*)SDL_MapGPUTransferBuffer(device, transferBuffer, transferCycle) + transferOffset;
+			Buffer.MemoryCopy((void*)data, dst, length, length);
+			SDL_UnmapGPUTransferBuffer(device, transferBuffer);
+		}
+
+		// upload to the GPU
+		{
+			BeginCopyPass();
+
+			SDL_UploadToGPUTexture(
+				copyPass,
+				source: new()
+				{
+					transfer_buffer = transferBuffer,
+					offset = transferOffset,
+					// if 0 is passed here, width & height of destination region are used as default values
+					// see: https://wiki.libsdl.org/SDL3/SDL_GPUTextureTransferInfo
+					pixels_per_row = 0,
+					rows_per_layer = 0,
+				},
+				destination: new()
+				{
+					texture = res.Texture,
+					layer = 0,
+					mip_level = 0,
+					x = (uint)destRegion.X,
+					y = (uint)destRegion.Y,
+					z = 0,
+					w = (uint)destRegion.Width,
+					h = (uint)destRegion.Height,
+					d = 1
+				},
+				cycle: false
+			);
+		}
+
+		// transfer buffer management
+		if (usingTemporaryTransferBuffer)
+			SDL_ReleaseGPUTransferBuffer(device, transferBuffer);
+		else
+			textureUploadBufferOffset += (uint)length;
+	}
+
+	internal override void GetTextureData(ResourceHandle handle, nint data, int length, RectInt sourceRegion)
+	{
+		if (device == nint.Zero)
+			throw deviceNotCreated;
+
+		// get texture
+		var res = RequireResource<TextureResource>(handle);
+
+		// search up for the resolve texture
+		if (res.MultiSampleResolve)
+		{
+			GetTextureData(res.MultiSampleResolve, data, length, sourceRegion);
+			return;
+		}
+
+		// we only allow one download at a time
+		lock (textureDownloadMutex)
+		{
+			// TODO:
+			// If you create a texture and immediately call GetData it doesn't seem to work the first frame,
+			// unless this additional stall is here. But why?
+			FlushCommands(stall: true);
+
+			// verify download buffer is big enough
+			if (textureDownloadBuffer == nint.Zero || textureDownloadBufferSize < length)
+			{
+				if (textureDownloadBuffer != nint.Zero)
+					SDL_ReleaseGPUTransferBuffer(device, textureDownloadBuffer);
+
+				textureDownloadBuffer = SDL_CreateGPUTransferBuffer(device, new()
+				{
+					usage = SDL_GPUTransferBufferUsage.SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD,
+					size = (uint)length,
+					props = 0
+				});
+				textureDownloadBufferSize = (uint)length;
+			}
+
+			// download from the gpu
+			{
+				BeginCopyPass();
+
+				SDL_DownloadFromGPUTexture(
+					copyPass,
+					source: new()
+					{
+						texture = res.Texture,
+						layer = 0,
+						mip_level = 0,
+						x = (uint)sourceRegion.X,
+						y = (uint)sourceRegion.Y,
+						z = 0,
+						w = (uint)sourceRegion.Width,
+						h = (uint)sourceRegion.Height,
+						d = 1
+					},
+					destination: new()
+					{
+						transfer_buffer = textureDownloadBuffer,
+						offset = 0,
+						// if 0 is passed here, width & height of source region are used as default values
+						// see: https://wiki.libsdl.org/SDL3/SDL_GPUTextureTransferInfo
+						pixels_per_row = 0,
+						rows_per_layer = 0,
+					}
+				);
+			}
+
+			// flush and stall so the data is up to date
+			FlushCommands(stall: true);
+
+			// copy data
+			{
+				byte* src = (byte*)SDL_MapGPUTransferBuffer(device, textureDownloadBuffer, false);
+				Buffer.MemoryCopy(src, (void*)data, length, length);
+				SDL_UnmapGPUTransferBuffer(device, textureDownloadBuffer);
+			}
+		}
+	}
+
+	internal override void BlitTexture(ResourceHandle sourceTexture, RectInt sourceRegion, ResourceHandle destTexture, RectInt destRegion, TextureFilter filter)
+	{
+		// TODO:
+		// Without this, the texture won't necessarily fully upload?
+		FlushCommands(stall: false);
+
+		var src = RequireResource<TextureResource>(sourceTexture);
+		var dst = RequireResource<TextureResource>(destTexture);
+
+		// validate texture regions; don't let them go out of bounds since we cast to uint
+		sourceRegion = sourceRegion.GetIntersection(new RectInt(0, 0, src.Width, src.Height));
+		destRegion = destRegion.GetIntersection(new RectInt(0, 0, dst.Width, dst.Height));
+
+		SDL_BlitGPUTexture(cmdRender, new()
+		{
+			source = new()
+			{
+				texture = src.SamplerTexture,
+				mip_level = 0,
+				layer_or_depth_plane = 0,
+				x = (uint)sourceRegion.X,
+				y = (uint)sourceRegion.Y,
+				w = (uint)sourceRegion.Width,
+				h = (uint)sourceRegion.Height
+			},
+			destination = new()
+			{
+				texture = dst.Texture,
+				mip_level = 0,
+				layer_or_depth_plane = 0,
+				x = (uint)destRegion.X,
+				y = (uint)destRegion.Y,
+				w = (uint)destRegion.Width,
+				h = (uint)destRegion.Height
+			},
+			load_op = SDL_GPULoadOp.SDL_GPU_LOADOP_DONT_CARE,
+			flip_mode = SDL_FlipMode.SDL_FLIP_NONE,
+			filter = GetFilter(filter),
+			cycle = true
+		});
+	}
+
+	internal override ResourceHandle CreateTarget(int width, int height)
+	{
+		return RegisterResource(new TargetResource(this));
+	}
+
+	internal override ResourceHandle CreateBuffer(string? name, BufferType type, IndexFormat format)
+	{
+		var res = new BufferResource(this, name, type switch
+		{
+			BufferType.Vertex => SDL_GPUBufferUsageFlags.SDL_GPU_BUFFERUSAGE_VERTEX,
+			BufferType.Index => SDL_GPUBufferUsageFlags.SDL_GPU_BUFFERUSAGE_INDEX,
+			BufferType.Storage => SDL_GPUBufferUsageFlags.SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ,
+			BufferType.Compute =>
+				SDL_GPUBufferUsageFlags.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ |
+				SDL_GPUBufferUsageFlags.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE |
+				SDL_GPUBufferUsageFlags.SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ,
+			_ => throw new NotImplementedException()
+		}, format);
+
+		return RegisterResource(res);
+	}
+
+	internal override void UploadBufferData(ResourceHandle buffer, nint data, int dataSize, int dataDestOffset)
+	{
+		var res = RequireResource<BufferResource>(buffer);
+		res.Dirty = true;
+
+		// (re)create buffer if needed
+		var required = dataSize + dataDestOffset;
+		if (required > res.Capacity || res.Buffer == nint.Zero)
+		{
+			// TODO: A resize wipes all contents but the Buffer API doesn't expect this
+			if (res.Buffer != nint.Zero)
+			{
+				SDL_ReleaseGPUBuffer(device, res.Buffer);
+				res.Buffer = nint.Zero;
+			}
+
+			// TODO: Upon first creation we should probably just create a perfectly sized buffer, and afterward next Po2
+			int size;
+			if (res.Capacity == 0)
+			{
+				// never create a buffer that has 0 length
+				size = Math.Max(8, required);
+			}
+			else
+			{
+				size = 8;
+				while (size < required)
+					size *= 2;
+			}
+
+			uint props = 0;
+			if (!string.IsNullOrEmpty(res.Name))
+			{
+				props = SDL_CreateProperties();
+				SDL_SetStringProperty(props, SDL_PROP_GPU_BUFFER_CREATE_NAME_STRING, res.Name);
+			}
+
+			res.Buffer = SDL_CreateGPUBuffer(device, new()
+			{
+				usage = res.Usage,
+				size = (uint)size,
+				props = props
+			});
+
+			if (props != 0)
+				SDL_DestroyProperties(props);
+
+			if (res.Buffer == nint.Zero)
+				throw App.CreateExceptionFromSDL(nameof(SDL_CreateGPUBuffer), "Mesh Creation Failed");
+			res.Capacity = size;
+		}
+
+		// exit out of there's no data to upload
+		if (data == nint.Zero)
+			return;
+
+		bool usingTemporaryTransferBuffer = false;
+		nint transferBuffer = bufferUploadBuffer;
+		uint transferOffset;
+		bool transferCycle;
+
+		// uploading more data than our transfer buffer, so create a temporary one
+		if (dataSize >= TransferBufferSize)
+		{
+			transferBuffer = SDL_CreateGPUTransferBuffer(device, new()
+			{
+				usage = SDL_GPUTransferBufferUsage.SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
+				size = (uint)dataSize,
+				props = 0
+			});
+			usingTemporaryTransferBuffer = true;
+			transferCycle = false;
+			transferOffset = 0;
+		}
+		// cycle transfer buffer because we're going to run out of space in the current one
+		else if (bufferUploadBufferOffset + dataSize >= TransferBufferSize)
+		{
+			// only allow MaxUploadCycleCount cycles before flushing
+			if (bufferUploadCycleCount < MaxUploadCycleCount)
+			{
+				transferCycle = true;
+				transferOffset = 0;
+				bufferUploadCycleCount += 1;
+				bufferUploadBufferOffset = 0;
+			}
+			// otherwise flush
+			else
+			{
+				FlushCommands(stall: true);
+				transferCycle = true;
+				transferOffset = 0;
+			}
+		}
+		// normal transfer using existing buffer, only cycle if we're at the start
+		else
+		{
+			transferCycle = bufferUploadBufferOffset == 0;
+			transferOffset = bufferUploadBufferOffset;
+		}
+
+		// copy data
+		{
+			byte* dst = (byte*)SDL_MapGPUTransferBuffer(device, transferBuffer, transferCycle) + transferOffset;
+			Buffer.MemoryCopy(data.ToPointer(), dst, dataSize, dataSize);
+			SDL_UnmapGPUTransferBuffer(device, transferBuffer);
+		}
+
+		// submit to the GPU
+		{
+			BeginCopyPass();
+			SDL_UploadToGPUBuffer(copyPass,
+				source: new()
+				{
+					offset = transferOffset,
+					transfer_buffer = transferBuffer
+				},
+				destination: new()
+				{
+					buffer = res.Buffer,
+					offset = (uint)dataDestOffset,
+					size = (uint)dataSize
+				},
+				cycle: true
+			);
+		}
+
+		// transfer buffer management
+		if (usingTemporaryTransferBuffer)
+		{
+			SDL_ReleaseGPUTransferBuffer(device, transferBuffer);
+		}
+		else
+		{
+			bufferUploadBufferOffset += (uint)dataSize;
+		}
+	}
+
+	internal override ResourceHandle CreateShader(Shader shader, byte[] shaderCode, string entryPoint)
+	{
+		if (device == nint.Zero)
+			throw deviceNotCreated;
+
+		var format = driver switch
+		{
+			GraphicsDriver.Vulkan => SDL_GPUShaderFormat.SDL_GPU_SHADERFORMAT_SPIRV,
+			GraphicsDriver.D3D12 => SDL_GPUShaderFormat.SDL_GPU_SHADERFORMAT_DXIL,
+			GraphicsDriver.Metal => SDL_GPUShaderFormat.SDL_GPU_SHADERFORMAT_MSL,
+			_ => SDL_GPUShaderFormat.SDL_GPU_SHADERFORMAT_SPIRV,
+		};
+
+		var entryPointUtf8 = Encoding.UTF8.GetBytes(entryPoint);
+
+		if (shader.Stage == ShaderStage.Compute)
+		{
+			nint pipeline;
+
+			fixed (byte* entryPointPtr = entryPointUtf8)
+			fixed (byte* code = shaderCode)
+			{
+				uint props = 0;
+				if (!string.IsNullOrEmpty(shader.Name))
+				{
+					props = SDL_CreateProperties();
+					SDL_SetStringProperty(props, SDL_PROP_GPU_COMPUTEPIPELINE_CREATE_NAME_STRING, shader.Name);
+				}
+
+				SDL_GPUComputePipelineCreateInfo info = new()
+				{
+					code_size = (nuint)shaderCode.Length,
+					code = code,
+					entrypoint = entryPointPtr,
+					format = format,
+					num_samplers = (uint)shader.SamplerCount,
+					num_readonly_storage_textures = (uint)shader.ReadOnlyStorageTextureCount,
+					num_readonly_storage_buffers = (uint)shader.ReadOnlyStorageBufferCount,
+					num_readwrite_storage_textures = (uint)shader.ReadWriteStorageTextureCount,
+					num_readwrite_storage_buffers = (uint)shader.ReadWriteStorageBufferCount,
+					num_uniform_buffers = (uint)shader.UniformBufferCount,
+					threadcount_x = (uint)shader.ThreadCountX,
+					threadcount_y = (uint)shader.ThreadCountY,
+					threadcount_z = (uint)shader.ThreadCountZ,
+					props = props
+				};
+
+				pipeline = SDL_CreateGPUComputePipeline(device, info);
+
+				if (props != 0)
+					SDL_DestroyProperties(props);
+
+				if (pipeline == nint.Zero)
+					throw App.CreateExceptionFromSDL(nameof(SDL_CreateGPUComputePipeline), "Failed to create Compute Shader");
+			}
+
+			return RegisterResource(new ComputeResource(this, pipeline));
+		}
+		else
+		{
+			nint program;
+
+			fixed (byte* entryPointPtr = entryPointUtf8)
+			fixed (byte* code = shaderCode)
+			{
+				uint props = 0;
+				if (!string.IsNullOrEmpty(shader.Name))
+				{
+					props = SDL_CreateProperties();
+					SDL_SetStringProperty(props, SDL_PROP_GPU_SHADER_CREATE_NAME_STRING, shader.Name);
+				}
+
+				SDL_GPUShaderCreateInfo info = new()
+				{
+					code_size = (nuint)shaderCode.Length,
+					code = code,
+					entrypoint = entryPointPtr,
+					format = format,
+					stage = shader.Stage switch
+					{
+						ShaderStage.Vertex => SDL_GPUShaderStage.SDL_GPU_SHADERSTAGE_VERTEX,
+						ShaderStage.Fragment => SDL_GPUShaderStage.SDL_GPU_SHADERSTAGE_FRAGMENT,
+						_ => throw new NotImplementedException()
+					},
+					num_samplers = (uint)shader.SamplerCount,
+					num_storage_textures = 0,
+					num_storage_buffers = (uint)shader.StorageBufferCount,
+					num_uniform_buffers = (uint)shader.UniformBufferCount,
+					props = props
+				};
+
+				program = SDL_CreateGPUShader(device, info);
+
+				if (props != 0)
+					SDL_DestroyProperties(props);
+
+				if (program == nint.Zero)
+					throw App.CreateExceptionFromSDL(nameof(SDL_CreateGPUShader), $"Failed to create {shader.Stage} Shader");
+			}
+
+			return RegisterResource(new ShaderResource(this, program));
+		}
+	}
+
+	private ResourceHandle RegisterResource(Resource it)
+	{
+		var id = Interlocked.Add(ref nextResourceId, 1);
+		it.Handle = new nint(id);
+		resources.TryAdd(it.Handle, it);
+		return it.Handle;
+	}
+
+	internal override void DestroyResource(ResourceHandle resource)
+	{
+		if (resources.TryRemove(resource.Id, out var it))
+		{
+			if (it is TextureResource tex)
+			{
+				if (tex.MultiSampleResolve)
+					DestroyResource(tex.MultiSampleResolve);
+				SDL_ReleaseGPUTexture(device, tex.Texture);
+			}
+			else if (it is TargetResource tar)
+			{
+				foreach (var att in tar.Attachments)
+					DestroyResource(att);
+			}
+			else if (it is BufferResource buf)
+			{
+				SDL_ReleaseGPUBuffer(device, buf.Buffer);
+			}
+			else if (it is ShaderResource sha)
+			{
+				ReleaseGraphicsPipelinesAssociatedWith(sha);
+				SDL_ReleaseGPUShader(device, sha.Shader);
+			}
+			else if (it is ComputeResource comp)
+			{
+				SDL_ReleaseGPUComputePipeline(device, comp.Pipeline);
+			}
+		}
+	}
+
+	private T RequireResource<T>(ResourceHandle handle) where T : Resource
+	{
+		if (resources.TryGetValue(handle, out var res) && res is T resource)
+			return resource;
+		throw new Exception("Attempting to use a Disposed Resource");
+	}
+
+	private T? FindResource<T>(ResourceHandle? handle) where T : Resource
+	{
+		if (handle == null || handle.Value.Id == 0)
+			return null;
+		if (resources.TryGetValue(handle.Value, out var res) && res is T resource)
+			return resource;
+		return null;
+	}
+
+	internal override void PerformDraw(DrawCommand command)
+	{
+		if (device == nint.Zero)
+			throw deviceNotCreated;
+
+		// try to start a render pass
+		var target = command.Target;
+		if (!BeginRenderPass(target, default))
+			return;
+
+		var vertexShader = command.VertexShader!;
+		var fragmentShader = command.FragmentShader!;
+
+		// set viewport
+		var nextViewport = command.Viewport ?? new RectInt(0, 0, renderPassTargetSize.X, renderPassTargetSize.Y);
+		if (renderPassViewport != nextViewport)
+		{
+			renderPassViewport = nextViewport;
+			SDL_SetGPUViewport(renderPass, new()
+			{
+				x = nextViewport.X, y = nextViewport.Y,
+				w = nextViewport.Width, h = nextViewport.Height,
+				min_depth = 0, max_depth = 1
+			});
+		}
+
+		// set scissor
+		var nextScissor = command.Scissor ?? nextViewport;
+		if (renderPassScissor != nextScissor)
+		{
+			renderPassScissor = nextScissor;
+			SDL_SetGPUScissor(renderPass, new()
+			{
+				x = nextScissor.X, y = nextScissor.Y,
+				w = nextScissor.Width, h = nextScissor.Height,
+			});
+		}
+
+		// figure out graphics pipeline, potentially create a new one
+		var pipeline = GetGraphicsPipeline(command);
+		if (renderPassPipeline != pipeline)
+		{
+			renderPassPipeline = pipeline;
+			SDL_BindGPUGraphicsPipeline(renderPass, pipeline);
+		}
+
+		// bind index buffer
+		var indexBuffer = FindResource<BufferResource>(command.IndexBuffer?.Resource);
+		if (renderPassIndexBuffer != command.IndexBuffer?.Resource || (indexBuffer?.Dirty ?? false))
+		{
+			renderPassIndexBuffer = indexBuffer?.Handle ?? default;
+			if (indexBuffer != null)
+			{
+				indexBuffer.Dirty = false;
+
+				SDL_GPUBufferBinding indexBinding = new()
+				{
+					buffer = indexBuffer.Buffer,
+					offset = 0
+				};
+				SDL_BindGPUIndexBuffer(renderPass, indexBinding, indexBuffer.IndexFormat switch
+				{
+					IndexFormat.Sixteen => SDL_GPUIndexElementSize.SDL_GPU_INDEXELEMENTSIZE_16BIT,
+					IndexFormat.ThirtyTwo => SDL_GPUIndexElementSize.SDL_GPU_INDEXELEMENTSIZE_32BIT,
+					_ => throw new NotImplementedException()
+				});
+			}
+		}
+
+		// check if we need to rebind vertex buffers
+		bool rebindVertexBuffers = renderPassVertexBuffers.Count != command.VertexBuffers.Count;
+		if (!rebindVertexBuffers)
+		{
+			for (int i = 0; i < command.VertexBuffers.Count; i ++)
+			{
+				var vertexBuffer = RequireResource<BufferResource>(command.VertexBuffers[i].Buffer.Resource);
+				if (renderPassVertexBuffers[i] != vertexBuffer.Handle || vertexBuffer.Dirty)
+				{
+					rebindVertexBuffers = true;
+					break;
+				}
+			}
+		}
+
+		// bind vertex buffers
+		if (rebindVertexBuffers)
+		{
+			renderPassVertexBuffers.Clear();
+
+			if (command.VertexBuffers.Count <= 0)
+			{
+				SDL_BindGPUVertexBuffers(renderPass, 0, [], 0);
+			}
+			else
+			{
+				Span<SDL_GPUBufferBinding> vertexBinding = stackalloc SDL_GPUBufferBinding[command.VertexBuffers.Count];
+
+				for (int i = 0; i < command.VertexBuffers.Count; i ++)
+				{
+					var res = RequireResource<BufferResource>(command.VertexBuffers[i].Buffer.Resource);
+					res.Dirty = false;
+
+					vertexBinding[i] = new()
+					{
+						buffer = res.Buffer,
+						offset = 0
+					};
+
+					renderPassVertexBuffers.Add(res.Handle);
+				}
+
+				SDL_BindGPUVertexBuffers(renderPass, 0, vertexBinding, (uint)command.VertexBuffers.Count);
+			}
+		}
+
+		// bind vertex samplers
+		// TODO: only do this if Samplers change?
+		if (vertexShader.SamplerCount > 0)
+		{
+			Span<SDL_GPUTextureSamplerBinding> samplers = stackalloc SDL_GPUTextureSamplerBinding[vertexShader.SamplerCount];
+
+			for (int i = 0; i < vertexShader.SamplerCount; i++)
+			{
+				var value = i < command.VertexSamplers.Count ? command.VertexSamplers[i] : default;
+				samplers[i].texture =
+					FindResource<TextureResource>(value.Texture?.Resource)?.SamplerTexture ??
+					RequireResource<TextureResource>(emptyDefaultTexture).SamplerTexture;
+				samplers[i].sampler = GetSampler(value.Sampler);
+			}
+
+			SDL_BindGPUVertexSamplers(renderPass, 0, samplers, (uint)vertexShader.SamplerCount);
+		}
+
+		// bind fragment samplers
+		// TODO: only do this if Samplers change?
+		if (fragmentShader.SamplerCount > 0)
+		{
+			Span<SDL_GPUTextureSamplerBinding> samplers = stackalloc SDL_GPUTextureSamplerBinding[fragmentShader.SamplerCount];
+
+			for (int i = 0; i < fragmentShader.SamplerCount; i++)
+			{
+				var value = i < command.FragmentSamplers.Count ? command.FragmentSamplers[i] : default;
+				samplers[i].texture =
+					FindResource<TextureResource>(value.Texture?.Resource)?.SamplerTexture ??
+					RequireResource<TextureResource>(emptyDefaultTexture).SamplerTexture;
+				samplers[i].sampler = GetSampler(value.Sampler);
+			}
+
+			SDL_BindGPUFragmentSamplers(renderPass, 0, samplers, (uint)fragmentShader.SamplerCount);
+		}
+
+		// TODO: only do this if Uniforms change?
+		// Upload Vertex Uniforms
+		for (int i = 0; i < vertexShader.UniformBufferCount; i ++)
+		{
+			if (i >= command.VertexUniformBuffers.Count || command.VertexUniformBuffers[i] is not {} unibuf)
+				continue;
+
+			var buf = unibuf.Get();
+			fixed (byte* ptr = buf)
+				SDL_PushGPUVertexUniformData(cmdRender, (uint)i, new nint(ptr), (uint)buf.Length);
+		}
+
+		// TODO: only do this if Uniforms change?
+		// Upload Fragment Uniforms
+		for (int i = 0; i < fragmentShader.UniformBufferCount; i ++)
+		{
+			if (i >= command.FragmentUniformBuffers.Count || command.FragmentUniformBuffers[i] is not {} unibuf)
+				continue;
+
+			var buf = unibuf.Get();
+			fixed (byte* ptr = buf)
+				SDL_PushGPUFragmentUniformData(cmdRender, (uint)i, new nint(ptr), (uint)buf.Length);
+		}
+
+		// TODO: if the user doesn't supply enough storage buffers, should we throw?
+		// bind vertex storage buffers
+		if (vertexShader.StorageBufferCount > 0)
+		{
+			Span<nint> buffers = stackalloc nint[vertexShader.StorageBufferCount];
+			for (int i = 0; i < vertexShader.StorageBufferCount; i ++)
+			{
+				if (i < command.VertexStorageBuffers.Count && command.VertexStorageBuffers[i] is {} buf)
+					buffers[i] = RequireResource<BufferResource>(buf.Resource).Buffer;
+				else
+					buffers[i] = RequireResource<BufferResource>(emptyDefaultBuffer).Buffer;
+			}
+			SDL_BindGPUVertexStorageBuffers(renderPass, 0, buffers, (uint)buffers.Length);
+		}
+
+		// TODO: if the user doesn't supply enough storage buffers, should we throw?
+		// bind fragment storage buffers
+		if (fragmentShader.StorageBufferCount > 0)
+		{
+			Span<nint> buffers = stackalloc nint[fragmentShader.StorageBufferCount];
+			for (int i = 0; i < fragmentShader.StorageBufferCount; i ++)
+			{
+				if (i < command.FragmentStorageBuffers.Count && command.FragmentStorageBuffers[i] is {} buf)
+					buffers[i] = RequireResource<BufferResource>(buf.Resource).Buffer;
+				else
+					buffers[i] = RequireResource<BufferResource>(emptyDefaultBuffer).Buffer;
+			}
+			SDL_BindGPUFragmentStorageBuffers(renderPass, 0, buffers, (uint)buffers.Length);
+		}
+
+		// update stencil reference value
+		if (command.StencilTestEnabled)
+			SDL_SetGPUStencilReference(renderPass, command.StencilReferenceValue);
+
+		// perform draw
+		if (command.IndexBuffer != null)
+		{
+			SDL_DrawGPUIndexedPrimitives(
+				render_pass: renderPass,
+				num_indices: (uint)command.IndexCount,
+				num_instances: (uint)Math.Max(1, command.InstanceCount),
+				first_index: (uint)command.IndexOffset,
+				vertex_offset: command.VertexOffset,
+				first_instance: 0
+			);
+		}
+		else
+		{
+			SDL_DrawGPUPrimitives(
+				render_pass: renderPass,
+				num_vertices: (uint)command.VertexCount,
+				num_instances: (uint)Math.Max(1, command.InstanceCount),
+				first_vertex: (uint)command.VertexOffset,
+				first_instance: 0
+			);
+		}
+	}
+
+	internal override void PerformDispatch(ComputeCommand command)
+	{
+		if (device == nint.Zero)
+			throw deviceNotCreated;
+
+		// end any existing renderpass
+		EndRenderPass();
+
+		var shader = command.Shader!;
+		var computePipeline = RequireResource<ComputeResource>(shader.Resource);
+		var computePass = nint.Zero;
+
+		// TODO: can this be cached? so as to not have to restart it every compute dispatch?
+		// begin compute pass with read-write storage buffer bindings
+		{
+			Span<SDL_GPUStorageTextureReadWriteBinding> rwTextureBindings = stackalloc SDL_GPUStorageTextureReadWriteBinding[shader.ReadWriteStorageTextureCount];
+			Span<SDL_GPUStorageBufferReadWriteBinding> rwBufferBindings = stackalloc SDL_GPUStorageBufferReadWriteBinding[shader.ReadWriteStorageBufferCount];
+
+			for (int i = 0; i < shader.ReadWriteStorageTextureCount; i++)
+			{
+				if (i >= command.ReadWriteStorageTextures.Count || command.ReadWriteStorageTextures[i] is not {} buf)
+				{
+					rwTextureBindings[i] = new() { texture = nint.Zero };
+					continue;
+				}
+
+				rwTextureBindings[i] = new()
+				{
+					texture = RequireResource<TextureResource>(buf.Resource).SamplerTexture,
+					cycle = true
+				};
+			}
+
+			for (int i = 0; i < shader.ReadWriteStorageBufferCount; i++)
+			{
+				if (i >= command.ReadWriteStorageBuffers.Count || command.ReadWriteStorageBuffers[i] is not {} buf)
+				{
+					rwBufferBindings[i] = new() { buffer = nint.Zero };
+					continue;
+				}
+
+				rwBufferBindings[i] = new()
+				{
+					buffer = RequireResource<BufferResource>(buf.Resource).Buffer,
+					cycle = true
+				};
+			}
+
+			computePass = SDL_BeginGPUComputePass(
+				cmdRender,
+				rwTextureBindings,
+				(uint)shader.ReadWriteStorageTextureCount,
+				rwBufferBindings,
+				(uint)shader.ReadWriteStorageBufferCount
+			);
+
+			if (computePass == nint.Zero)
+			{
+				Log.Warning("Failed to begin GPU compute pass");
+				return;
+			}
+		}
+
+		// bind compute pipeline
+		SDL_BindGPUComputePipeline(computePass, computePipeline.Pipeline);
+
+		// bind samplers
+		if (shader.SamplerCount > 0)
+		{
+			Span<SDL_GPUTextureSamplerBinding> samplers = stackalloc SDL_GPUTextureSamplerBinding[shader.SamplerCount];
+
+			for (int i = 0; i < shader.SamplerCount; i++)
+			{
+				var value = i < command.Samplers.Count ? command.Samplers[i] : default;
+				samplers[i].texture =
+					FindResource<TextureResource>(value.Texture?.Resource)?.SamplerTexture ??
+					RequireResource<TextureResource>(emptyDefaultTexture).SamplerTexture;
+				samplers[i].sampler = GetSampler(value.Sampler);
+			}
+
+			SDL_BindGPUComputeSamplers(computePass, 0, samplers, (uint)shader.SamplerCount);
+		}
+
+		// push uniform data
+		for (int i = 0; i < shader.UniformBufferCount; i ++)
+		{
+			if (i >= command.UniformBuffers.Count || command.UniformBuffers[i] is not {} unibuf)
+				continue;
+
+			var buf = unibuf.Get();
+			fixed (byte* ptr = buf)
+				SDL_PushGPUComputeUniformData(cmdRender, (uint)i, new nint(ptr), (uint)buf.Length);
+		}
+
+		// bind storage textures
+		if (shader.ReadOnlyStorageTextureCount > 0)
+		{
+			Span<nint> textures = stackalloc nint[shader.ReadOnlyStorageTextureCount];
+			for (int i = 0; i < shader.ReadOnlyStorageTextureCount; i ++)
+			{
+				if (i < command.ReadOnlyStorageTextures.Count && command.ReadOnlyStorageTextures[i] is {} tex)
+					textures[i] = RequireResource<TextureResource>(tex.Resource).SamplerTexture;
+				else
+					textures[i] = RequireResource<TextureResource>(emptyDefaultComputeStorageTexture).SamplerTexture;
+			}
+			SDL_BindGPUComputeStorageBuffers(computePass, 0, textures, (uint)textures.Length);
+		}
+
+		// TODO: if the user doesn't supply enough storage buffers, should we throw?
+		// bind storage buffers
+		if (shader.ReadOnlyStorageBufferCount > 0)
+		{
+			Span<nint> buffers = stackalloc nint[shader.ReadOnlyStorageBufferCount];
+			for (int i = 0; i < shader.ReadOnlyStorageBufferCount; i ++)
+			{
+				if (i < command.ReadOnlyStorageBuffers.Count && command.ReadOnlyStorageBuffers[i] is {} buf)
+					buffers[i] = RequireResource<BufferResource>(buf.Resource).Buffer;
+				else
+					buffers[i] = RequireResource<BufferResource>(emptyDefaultBuffer).Buffer;
+			}
+			SDL_BindGPUComputeStorageBuffers(computePass, 0, buffers, (uint)buffers.Length);
+		}
+
+		// dispatch
+		SDL_DispatchGPUCompute(
+			computePass,
+			(uint)command.GroupCountX,
+			(uint)command.GroupCountY,
+			(uint)command.GroupCountZ
+		);
+
+		SDL_EndGPUComputePass(computePass);
+	}
+
+	internal override void Clear(IDrawableTarget target, ReadOnlySpan<Color> color, float depth, int stencil, ClearMask mask)
+	{
+		if (device == nint.Zero)
+			throw deviceNotCreated;
+
+		if (mask != ClearMask.None)
+		{
+			StackList8<Color>? colors = null;
+			if (mask.Has(ClearMask.Color))
+				colors = [..color[..Math.Min(MaxColorAttachments, color.Length)]];
+
+			BeginRenderPass(target, new()
+			{
+				Color = colors,
+				Depth = mask.Has(ClearMask.Depth) ? depth : null,
+				Stencil = mask.Has(ClearMask.Stencil) ? stencil : null
+			});
+		}
+	}
+
+	private void FlushCommands(bool stall)
+	{
+		EndCopyPass();
+		EndRenderPass();
+
+		StackList4<nint> fences = new();
+
+		// submit buffers
+		if (stall)
+		{
+			var uploadFence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmdUpload);
+			if (uploadFence != nint.Zero)
+				fences.Add(uploadFence);
+			else
+				Log.Warning($"Failed to acquire upload fence: {SDL_GetError()}");
+
+			var renderFence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmdRender);
+			if (renderFence != nint.Zero)
+				fences.Add(renderFence);
+			else
+				Log.Warning($"Failed to acquire render fence: {SDL_GetError()}");
+		}
+		else
+		{
+			SDL_SubmitGPUCommandBuffer(cmdUpload);
+			SDL_SubmitGPUCommandBuffer(cmdRender);
+		}
+
+		// reset state
+		cmdUpload = nint.Zero;
+		cmdRender = nint.Zero;
+		ResetCommandBufferState();
+
+		// wait for gpu fences
+		if (fences.Count > 0)
+			SDL_WaitForGPUFences(device, true, fences.Span, (uint)fences.Count);
+
+		// release gpu fences
+		for (int i = 0; i < fences.Count; i ++)
+			SDL_ReleaseGPUFence(device, fences[i]);
+	}
+
+	private void ResetCommandBufferState()
+	{
+		if (cmdRender != nint.Zero || cmdUpload != nint.Zero)
+			throw new Exception("Must submit previous command buffers!");
+
+		cmdRender = SDL_AcquireGPUCommandBuffer(device);
+		cmdUpload = SDL_AcquireGPUCommandBuffer(device);
+
+		textureUploadBufferOffset = 0;
+		textureUploadCycleCount = 0;
+		bufferUploadBufferOffset = 0;
+		bufferUploadCycleCount = 0;
+	}
+
+	private void BeginCopyPass()
+	{
+		if (copyPass != nint.Zero)
+			return;
+		copyPass = SDL_BeginGPUCopyPass(cmdUpload);
+	}
+
+	private void EndCopyPass()
+	{
+		if (copyPass != nint.Zero)
+			SDL_EndGPUCopyPass(copyPass);
+		copyPass = nint.Zero;
+	}
+
+	private bool BeginRenderPass(IDrawableTarget drawableTarget, ClearInfo clear)
+	{
+		// only begin if we're not already in a render pass that is matching
+		if (renderPass != nint.Zero &&
+			renderPassTarget == drawableTarget &&
+			!clear.Color.HasValue &&
+			!clear.Depth.HasValue &&
+			!clear.Stencil.HasValue)
+			return true;
+
+		EndRenderPass();
+
+		// make sure we have something to draw to
+		var target = GetDrawTarget(drawableTarget, out renderPassTargetSize);
+		if (target == null)
+			return false;
+
+		// configure lists of textures used
+		renderPassTarget = drawableTarget;
+
+		var colorTargets = new StackList8<(nint Attachment, nint Resolve)>();
+		var depthStencilTarget = nint.Zero;
+
+		foreach (var it in target.Attachments)
+		{
+			var tex = RequireResource<TextureResource>(it.Resource);
+			if (it.Format.IsDepthStencilFormat())
+				depthStencilTarget = tex.Texture;
+			else
+			{
+				var resolve = FindResource<TextureResource>(tex.MultiSampleResolve)?.Texture ?? nint.Zero;
+				colorTargets.Add((tex.Texture, resolve));
+			}
+		}
+
+		Span<SDL_GPUColorTargetInfo> colorInfo = stackalloc SDL_GPUColorTargetInfo[colorTargets.Count];
+
+		// get color infos
+		for (int i = 0; i < colorTargets.Count; i++)
+		{
+			var col = clear.Color.HasValue && clear.Color.Value.Count > i ? clear.Color.Value[i] : Color.Transparent;
+			colorInfo[i] = new()
+			{
+				texture = colorTargets[i].Attachment,
+				mip_level = 0,
+				layer_or_depth_plane = 0,
+				clear_color = GetColor(col),
+				load_op = clear.Color.HasValue ?
+					SDL_GPULoadOp.SDL_GPU_LOADOP_CLEAR :
+					SDL_GPULoadOp.SDL_GPU_LOADOP_LOAD,
+				store_op = colorTargets[i].Resolve == nint.Zero ?
+					SDL_GPUStoreOp.SDL_GPU_STOREOP_STORE :
+					SDL_GPUStoreOp.SDL_GPU_STOREOP_RESOLVE,
+				cycle = clear.Color.HasValue,
+				resolve_texture = colorTargets[i].Resolve
+			};
+		}
+
+		// get depth info
+		// the assignment here is a bit weird as SDL_BeginGPURenderPass takes an "in"
+		// parameter for the depth target, which we sometimes want to be NULL
+		var depthValue = new SDL_GPUDepthStencilTargetInfo();
+		scoped ref var depthTarget = ref Unsafe.NullRef<SDL_GPUDepthStencilTargetInfo>();
+		if (depthStencilTarget != nint.Zero)
+		{
+			depthValue = new()
+			{
+				texture = depthStencilTarget,
+				clear_depth = clear.Depth ?? 0,
+				load_op = clear.Depth.HasValue ?
+					SDL_GPULoadOp.SDL_GPU_LOADOP_CLEAR :
+					SDL_GPULoadOp.SDL_GPU_LOADOP_LOAD,
+				store_op = SDL_GPUStoreOp.SDL_GPU_STOREOP_STORE,
+				stencil_load_op = clear.Stencil.HasValue ?
+					SDL_GPULoadOp.SDL_GPU_LOADOP_CLEAR :
+					SDL_GPULoadOp.SDL_GPU_LOADOP_LOAD,
+				stencil_store_op = SDL_GPUStoreOp.SDL_GPU_STOREOP_STORE,
+				cycle = clear.Depth.HasValue && clear.Stencil.HasValue,
+				clear_stencil = (byte)(clear.Stencil ?? 0),
+			};
+			depthTarget = ref depthValue;
+		}
+
+		// begin pass
+		renderPass = SDL_BeginGPURenderPass(
+			cmdRender,
+			colorInfo,
+			(uint)colorTargets.Count,
+			depthTarget
+		);
+
+		return renderPass != nint.Zero;
+	}
+
+	private void EndRenderPass()
+	{
+		if (renderPass != nint.Zero)
+			SDL_EndGPURenderPass(renderPass);
+		renderPass = nint.Zero;
+		renderPassTarget = null;
+		renderPassPipeline = nint.Zero;
+		renderPassViewport = null;
+		renderPassScissor = null;
+		renderPassIndexBuffer = nint.Zero;
+		renderPassVertexBuffers.Clear();
+	}
+
+	private nint GetGraphicsPipeline(in DrawCommand command)
+	{
+		// build a big hashcode of everything in use
+		var hash = HashCode.Combine(
+			command.VertexShader!.Resource,
+			command.FragmentShader!.Resource,
+			command.CullMode,
+			command.DepthCompare,
+			command.DepthTestEnabled,
+			command.DepthWriteEnabled,
+			command.StencilTestEnabled,
+			command.BlendMode
+		);
+
+		if (command.StencilTestEnabled)
+			hash = HashCode.Combine(
+				hash,
+				command.StencilCompareMask,
+				command.StencilWriteMask,
+				command.BackStencilState,
+				command.FrontStencilState
+			);
+
+		if (command.IndexBuffer != null)
+			hash = HashCode.Combine(hash, command.IndexBuffer.Format);
+
+		foreach (var vb in command.VertexBuffers)
+			hash = HashCode.Combine(hash, vb.Buffer.Format, vb.InstanceInputRate);
+
+		// combine with target attachment formats
+		foreach (var format in GetDrawTargetFormatsAndSampleCount(command.Target))
+			hash = HashCode.Combine(hash, format);
+
+		// try to find an existing pipeline
+		var pipeline = pipelines.GetOrAdd<(GraphicsDeviceSDL, DrawCommand)>(hash, static (hash, args) =>
+		{
+			var self = args.Item1;
+			var command = args.Item2;
+			var vertRes = self.RequireResource<ShaderResource>(command.VertexShader!.Resource);
+			var fragRes = self.RequireResource<ShaderResource>(command.FragmentShader!.Resource);
+			var vertexAttributeCount = 0;
+			foreach (var vb in command.VertexBuffers)
+				vertexAttributeCount += vb.Buffer.Format.Elements.Count;
+
+			var colorBlendState = GetBlendState(command.BlendMode);
+			var colorAttachments = stackalloc SDL_GPUColorTargetDescription[MaxColorAttachments];
+			var colorAttachmentCount = 0;
+			var depthStencilAttachment = SDL_GPUTextureFormat.SDL_GPU_TEXTUREFORMAT_INVALID;
+			var vertexBindings = stackalloc SDL_GPUVertexBufferDescription[command.VertexBuffers.Count];
+			var vertexAttributes = stackalloc SDL_GPUVertexAttribute[vertexAttributeCount];
+
+			// get highest sampler count ...
+			var sampleCount = SDL_GPUSampleCount.SDL_GPU_SAMPLECOUNT_1;
+
+			foreach (var it in self.GetDrawTargetFormatsAndSampleCount(command.Target))
+			{
+				if (IsDepthTextureFormat(it.Format))
+				{
+					depthStencilAttachment = it.Format;
+				}
+				else
+				{
+					colorAttachments[colorAttachmentCount] = new()
+					{
+						format = it.Format,
+						blend_state = colorBlendState
+					};
+
+					colorAttachmentCount++;
+				}
+
+				if ((int)it.SampleCount > (int)sampleCount)
+					sampleCount = it.SampleCount;
+			}
+
+			var attrbIndex = 0;
+			for (int slot = 0; slot < command.VertexBuffers.Count; slot ++)
+			{
+				var it = command.VertexBuffers[slot].Buffer;
+				var instanceRate = command.VertexBuffers[slot].InstanceInputRate;
+				var vertexOffset = 0;
+
+				vertexBindings[slot] = new()
+				{
+					slot = (uint)slot,
+					pitch = (uint)it.Format.Stride,
+					input_rate = instanceRate
+						? SDL_GPUVertexInputRate.SDL_GPU_VERTEXINPUTRATE_INSTANCE
+						: SDL_GPUVertexInputRate.SDL_GPU_VERTEXINPUTRATE_VERTEX,
+					instance_step_rate = 0
+				};
+
+				foreach (var el in it.Format.Elements)
+				{
+					vertexAttributes[attrbIndex] = new()
+					{
+						location = (uint)el.Index,
+						buffer_slot = (uint)slot,
+						format = GetVertexFormat(el.Type, el.Normalized),
+						offset = (uint)vertexOffset
+					};
+					vertexOffset += el.Type.SizeInBytes();
+					attrbIndex++;
+				}
+			}
+
+			SDL_GPUGraphicsPipelineCreateInfo info = new()
+			{
+				vertex_shader = vertRes.Shader,
+				fragment_shader = fragRes.Shader,
+				vertex_input_state = new()
+				{
+					vertex_buffer_descriptions = vertexBindings,
+					num_vertex_buffers = (uint)command.VertexBuffers.Count,
+					vertex_attributes = vertexAttributes,
+					num_vertex_attributes = (uint)vertexAttributeCount
+				},
+				primitive_type = SDL_GPUPrimitiveType.SDL_GPU_PRIMITIVETYPE_TRIANGLELIST,
+				rasterizer_state = new()
+				{
+					fill_mode = SDL_GPUFillMode.SDL_GPU_FILLMODE_FILL,
+					cull_mode = command.CullMode switch
+					{
+						CullMode.None => SDL_GPUCullMode.SDL_GPU_CULLMODE_NONE,
+						CullMode.Front => SDL_GPUCullMode.SDL_GPU_CULLMODE_FRONT,
+						CullMode.Back => SDL_GPUCullMode.SDL_GPU_CULLMODE_BACK,
+						_ => throw new NotImplementedException()
+					},
+					front_face = SDL_GPUFrontFace.SDL_GPU_FRONTFACE_CLOCKWISE,
+					enable_depth_bias = false
+				},
+				multisample_state = new()
+				{
+					sample_count = sampleCount,
+					sample_mask = 0,        // not actually used per SDL docs
+					enable_mask = false,    // not actually used per SDL docs
+					enable_alpha_to_coverage = false,
+				},
+				depth_stencil_state = new()
+				{
+					compare_op = GetCompareOp(command.DepthCompare),
+					back_stencil_state = new() {
+						fail_op = GetStencilOp(command.BackStencilState.FailOp),
+						pass_op = GetStencilOp(command.BackStencilState.PassOp),
+						depth_fail_op = GetStencilOp(command.BackStencilState.DepthFailOp),
+						compare_op = GetCompareOp(command.BackStencilState.CompareOp),
+					},
+					front_stencil_state = new() {
+						fail_op = GetStencilOp(command.FrontStencilState.FailOp),
+						pass_op = GetStencilOp(command.FrontStencilState.PassOp),
+						depth_fail_op = GetStencilOp(command.FrontStencilState.DepthFailOp),
+						compare_op = GetCompareOp(command.FrontStencilState.CompareOp),
+					},
+					compare_mask = command.StencilCompareMask,
+					write_mask = command.StencilWriteMask,
+					enable_depth_test = command.DepthTestEnabled,
+					enable_depth_write = command.DepthWriteEnabled,
+					enable_stencil_test = command.StencilTestEnabled,
+				},
+				target_info = new()
+				{
+					color_target_descriptions = colorAttachments,
+					num_color_targets = (uint)colorAttachmentCount,
+					has_depth_stencil_target = depthStencilAttachment != SDL_GPUTextureFormat.SDL_GPU_TEXTUREFORMAT_INVALID,
+					depth_stencil_format = depthStencilAttachment
+				}
+			};
+
+			var pipeline = SDL_CreateGPUGraphicsPipeline(self.device, info);
+			if (pipeline == nint.Zero)
+				throw App.CreateExceptionFromSDL(nameof(SDL_CreateGPUGraphicsPipeline));
+
+			// add pipelines to shaders to be tracked by them
+			vertRes.Pipelines.Add(hash);
+			fragRes.Pipelines.Add(hash);
+
+			return pipeline;
+
+		}, (this, command));
+
+		return pipeline;
+	}
+
+	private Target? GetDrawTarget(IDrawableTarget drawableTarget, out Point2 size)
+	{
+		// get specific target
+		if (drawableTarget.Surface is Target target)
+		{
+			size = target.SizeInPixels();
+			return target;
+		}
+
+		// get backbuffer target
+		if (drawableTarget.Surface is Window window &&
+			!window.IsDestroyed &&
+			windows.TryGetValue(window.ID, out var state) &&
+			state.Backbuffer is {} backbuffer)
+		{
+			size = state.BackbufferSize;
+			return backbuffer;
+		}
+
+		size = Point2.Zero;
+		return null;
+	}
+
+	private StackList32<(SDL_GPUTextureFormat Format, SDL_GPUSampleCount SampleCount)> GetDrawTargetFormatsAndSampleCount(IDrawableTarget drawableTarget)
+	{
+		var formats = new StackList32<(SDL_GPUTextureFormat Format, SDL_GPUSampleCount SampleCount)>();
+		var target = GetDrawTarget(drawableTarget, out _);
+		if (target != null)
+			foreach (var it in target.Attachments)
+				formats.Add((GetTextureFormat(it.Format), GetSampleCount(it.SampleCount)));
+		return formats;
+	}
+
+	private void ReleaseGraphicsPipelinesAssociatedWith(ShaderResource shader)
+	{
+		while (shader.Pipelines.TryTake(out var it))
+		{
+			if (pipelines.Remove(it, out var pipeline))
+				SDL_ReleaseGPUGraphicsPipeline(device, pipeline);
+		}
+	}
+
+	private static SDL_GPUColorTargetBlendState GetBlendState(BlendMode blend)
+	{
+		SDL_GPUBlendFactor GetFactor(BlendFactor factor) => factor switch
+		{
+			BlendFactor.Zero => SDL_GPUBlendFactor.SDL_GPU_BLENDFACTOR_ZERO,
+			BlendFactor.One => SDL_GPUBlendFactor.SDL_GPU_BLENDFACTOR_ONE,
+			BlendFactor.SrcColor => SDL_GPUBlendFactor.SDL_GPU_BLENDFACTOR_SRC_COLOR,
+			BlendFactor.OneMinusSrcColor => SDL_GPUBlendFactor.SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_COLOR,
+			BlendFactor.DstColor => SDL_GPUBlendFactor.SDL_GPU_BLENDFACTOR_DST_COLOR,
+			BlendFactor.OneMinusDstColor => SDL_GPUBlendFactor.SDL_GPU_BLENDFACTOR_ONE_MINUS_DST_COLOR,
+			BlendFactor.SrcAlpha => SDL_GPUBlendFactor.SDL_GPU_BLENDFACTOR_SRC_ALPHA,
+			BlendFactor.OneMinusSrcAlpha => SDL_GPUBlendFactor.SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA,
+			BlendFactor.DstAlpha => SDL_GPUBlendFactor.SDL_GPU_BLENDFACTOR_DST_ALPHA,
+			BlendFactor.OneMinusDstAlpha => SDL_GPUBlendFactor.SDL_GPU_BLENDFACTOR_ONE_MINUS_DST_ALPHA,
+			BlendFactor.ConstantColor => SDL_GPUBlendFactor.SDL_GPU_BLENDFACTOR_CONSTANT_COLOR,
+			BlendFactor.OneMinusConstantColor => SDL_GPUBlendFactor.SDL_GPU_BLENDFACTOR_ONE_MINUS_CONSTANT_COLOR,
+			BlendFactor.SrcAlphaSaturate => SDL_GPUBlendFactor.SDL_GPU_BLENDFACTOR_SRC_ALPHA_SATURATE,
+			_ => throw new NotImplementedException()
+		};
+
+		SDL_GPUBlendOp GetOp(BlendOp op) => op switch
+		{
+			BlendOp.Add => SDL_GPUBlendOp.SDL_GPU_BLENDOP_ADD,
+			BlendOp.Subtract => SDL_GPUBlendOp.SDL_GPU_BLENDOP_SUBTRACT,
+			BlendOp.ReverseSubtract => SDL_GPUBlendOp.SDL_GPU_BLENDOP_REVERSE_SUBTRACT,
+			BlendOp.Min => SDL_GPUBlendOp.SDL_GPU_BLENDOP_MIN,
+			BlendOp.Max => SDL_GPUBlendOp.SDL_GPU_BLENDOP_MAX,
+			_ => throw new NotImplementedException()
+		};
+
+		SDL_GPUColorComponentFlags GetFlags(BlendMask mask)
+		{
+			SDL_GPUColorComponentFlags flags = default;
+			if (mask.Has(BlendMask.Red)) flags |= SDL_GPUColorComponentFlags.SDL_GPU_COLORCOMPONENT_R;
+			if (mask.Has(BlendMask.Green)) flags |= SDL_GPUColorComponentFlags.SDL_GPU_COLORCOMPONENT_G;
+			if (mask.Has(BlendMask.Blue)) flags |= SDL_GPUColorComponentFlags.SDL_GPU_COLORCOMPONENT_B;
+			if (mask.Has(BlendMask.Alpha)) flags |= SDL_GPUColorComponentFlags.SDL_GPU_COLORCOMPONENT_A;
+			return flags;
+		}
+
+		SDL_GPUColorTargetBlendState state = new()
+		{
+			enable_blend = true,
+			src_color_blendfactor = GetFactor(blend.ColorSource),
+			dst_color_blendfactor = GetFactor(blend.ColorDestination),
+			color_blend_op = GetOp(blend.ColorOperation),
+			src_alpha_blendfactor = GetFactor(blend.AlphaSource),
+			dst_alpha_blendfactor = GetFactor(blend.AlphaDestination),
+			alpha_blend_op = GetOp(blend.AlphaOperation),
+			color_write_mask = GetFlags(blend.Mask)
+		};
+		return state;
+	}
+
+	private nint GetSampler(in TextureSampler sampler)
+	{
+		static SDL_GPUSamplerAddressMode GetWrapMode(TextureWrap wrap) => wrap switch
+		{
+			TextureWrap.Repeat => SDL_GPUSamplerAddressMode.SDL_GPU_SAMPLERADDRESSMODE_REPEAT,
+			TextureWrap.MirroredRepeat => SDL_GPUSamplerAddressMode.SDL_GPU_SAMPLERADDRESSMODE_MIRRORED_REPEAT,
+			TextureWrap.Clamp => SDL_GPUSamplerAddressMode.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+			_ => throw new ArgumentException("Invalid Texture Wrap", nameof(wrap)),
+		};
+
+		if (!samplers.TryGetValue(sampler, out var result))
+		{
+			SDL_GPUSamplerCreateInfo info = new()
+			{
+				min_filter = GetFilter(sampler.Filter),
+				mag_filter = GetFilter(sampler.Filter),
+				address_mode_u = GetWrapMode(sampler.WrapX),
+				address_mode_v = GetWrapMode(sampler.WrapY),
+				address_mode_w = SDL_GPUSamplerAddressMode.SDL_GPU_SAMPLERADDRESSMODE_REPEAT,
+				compare_op = SDL_GPUCompareOp.SDL_GPU_COMPAREOP_ALWAYS,
+				enable_compare = false,
+			};
+			result = SDL_CreateGPUSampler(device, info);
+			if (result == nint.Zero)
+				throw App.CreateExceptionFromSDL(nameof(SDL_CreateGPUSampler));
+			samplers[sampler] = result;
+		}
+
+		return result;
+	}
+
+	private static SDL_GPUFilter GetFilter(TextureFilter filter) => filter switch
+	{
+		TextureFilter.Nearest => SDL_GPUFilter.SDL_GPU_FILTER_NEAREST,
+		TextureFilter.Linear => SDL_GPUFilter.SDL_GPU_FILTER_LINEAR,
+		_ => throw new ArgumentException("Invalid Texture Filter", nameof(filter)),
+	};
+
+	private static SDL_GPUVertexElementFormat GetVertexFormat(VertexType type, bool normalized)
+	{
+		return (type, normalized) switch
+		{
+			(VertexType.Float, _)       => SDL_GPUVertexElementFormat.SDL_GPU_VERTEXELEMENTFORMAT_FLOAT,
+			(VertexType.Float2, _)      => SDL_GPUVertexElementFormat.SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2,
+			(VertexType.Float3, _)      => SDL_GPUVertexElementFormat.SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3,
+			(VertexType.Float4, _)      => SDL_GPUVertexElementFormat.SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4,
+			(VertexType.Byte4, false)   => SDL_GPUVertexElementFormat.SDL_GPU_VERTEXELEMENTFORMAT_BYTE4,
+			(VertexType.Byte4, true)    => SDL_GPUVertexElementFormat.SDL_GPU_VERTEXELEMENTFORMAT_BYTE4_NORM,
+			(VertexType.UByte4, false)  => SDL_GPUVertexElementFormat.SDL_GPU_VERTEXELEMENTFORMAT_UBYTE4,
+			(VertexType.UByte4, true)   => SDL_GPUVertexElementFormat.SDL_GPU_VERTEXELEMENTFORMAT_UBYTE4_NORM,
+			(VertexType.Short2, false)  => SDL_GPUVertexElementFormat.SDL_GPU_VERTEXELEMENTFORMAT_SHORT2,
+			(VertexType.Short2, true)   => SDL_GPUVertexElementFormat.SDL_GPU_VERTEXELEMENTFORMAT_SHORT2_NORM,
+			(VertexType.UShort2, false) => SDL_GPUVertexElementFormat.SDL_GPU_VERTEXELEMENTFORMAT_USHORT2,
+			(VertexType.UShort2, true)  => SDL_GPUVertexElementFormat.SDL_GPU_VERTEXELEMENTFORMAT_USHORT2_NORM,
+			(VertexType.Short4, false)  => SDL_GPUVertexElementFormat.SDL_GPU_VERTEXELEMENTFORMAT_SHORT4,
+			(VertexType.Short4, true)   => SDL_GPUVertexElementFormat.SDL_GPU_VERTEXELEMENTFORMAT_SHORT4_NORM,
+			(VertexType.UShort4, false) => SDL_GPUVertexElementFormat.SDL_GPU_VERTEXELEMENTFORMAT_USHORT4,
+			(VertexType.UShort4, true)  => SDL_GPUVertexElementFormat.SDL_GPU_VERTEXELEMENTFORMAT_USHORT4_NORM,
+
+			_ => throw new ArgumentException("Invalid Vertex Format", nameof(type)),
+		};
+	}
+
+	private static SDL_GPUTextureFormat GetTextureFormat(TextureFormat format) => format switch
+	{
+		TextureFormat.R8G8B8A8 => SDL_GPUTextureFormat.SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
+		TextureFormat.R8 => SDL_GPUTextureFormat.SDL_GPU_TEXTUREFORMAT_R8_UNORM,
+		TextureFormat.R8G8 => SDL_GPUTextureFormat.SDL_GPU_TEXTUREFORMAT_R8G8_UNORM,
+		TextureFormat.Depth24Stencil8 => SDL_GPUTextureFormat.SDL_GPU_TEXTUREFORMAT_D24_UNORM_S8_UINT,
+		TextureFormat.Depth32Stencil8 => SDL_GPUTextureFormat.SDL_GPU_TEXTUREFORMAT_D32_FLOAT_S8_UINT,
+		TextureFormat.Depth16 => SDL_GPUTextureFormat.SDL_GPU_TEXTUREFORMAT_D16_UNORM,
+		TextureFormat.Depth24 => SDL_GPUTextureFormat.SDL_GPU_TEXTUREFORMAT_D24_UNORM,
+		TextureFormat.Depth32 => SDL_GPUTextureFormat.SDL_GPU_TEXTUREFORMAT_D32_FLOAT,
+		_ => throw new ArgumentException("Invalid Texture Format", nameof(format)),
+	};
+
+	private static SDL_GPUSampleCount GetSampleCount(SampleCount sampleCount) => sampleCount switch
+	{
+		SampleCount.One => SDL_GPUSampleCount.SDL_GPU_SAMPLECOUNT_1,
+		SampleCount.Two => SDL_GPUSampleCount.SDL_GPU_SAMPLECOUNT_2,
+		SampleCount.Four => SDL_GPUSampleCount.SDL_GPU_SAMPLECOUNT_4,
+		SampleCount.Eight => SDL_GPUSampleCount.SDL_GPU_SAMPLECOUNT_8,
+		_ => throw new ArgumentException("Invalid Sample Count", nameof(sampleCount)),
+	};
+
+	private static bool IsDepthTextureFormat(SDL_GPUTextureFormat format) => format switch
+	{
+		SDL_GPUTextureFormat.SDL_GPU_TEXTUREFORMAT_D16_UNORM => true,
+		SDL_GPUTextureFormat.SDL_GPU_TEXTUREFORMAT_D24_UNORM => true,
+		SDL_GPUTextureFormat.SDL_GPU_TEXTUREFORMAT_D32_FLOAT => true,
+		SDL_GPUTextureFormat.SDL_GPU_TEXTUREFORMAT_D24_UNORM_S8_UINT => true,
+		SDL_GPUTextureFormat.SDL_GPU_TEXTUREFORMAT_D32_FLOAT_S8_UINT => true,
+		_ => false
+	};
+
+	private static SDL_GPUStencilOp GetStencilOp(StencilOp op) => op switch
+	{
+		StencilOp.Invalid => SDL_GPUStencilOp.SDL_GPU_STENCILOP_INVALID,
+		StencilOp.Keep => SDL_GPUStencilOp.SDL_GPU_STENCILOP_KEEP,
+		StencilOp.Zero => SDL_GPUStencilOp.SDL_GPU_STENCILOP_ZERO,
+		StencilOp.Replace => SDL_GPUStencilOp.SDL_GPU_STENCILOP_REPLACE,
+		StencilOp.IncrementAndClamp => SDL_GPUStencilOp.SDL_GPU_STENCILOP_INCREMENT_AND_CLAMP,
+		StencilOp.DecrementAndClamp => SDL_GPUStencilOp.SDL_GPU_STENCILOP_DECREMENT_AND_CLAMP,
+		StencilOp.Invert => SDL_GPUStencilOp.SDL_GPU_STENCILOP_INVERT,
+		StencilOp.IncrementAndWrap => SDL_GPUStencilOp.SDL_GPU_STENCILOP_INCREMENT_AND_WRAP,
+		StencilOp.DecrementAndWrap => SDL_GPUStencilOp.SDL_GPU_STENCILOP_DECREMENT_AND_WRAP,
+		_ => throw new ArgumentException("Invalid Stencil Operation", nameof(op)),
+
+	};
+
+	private static SDL_GPUCompareOp GetCompareOp(DepthCompare op) => op switch
+	{
+		DepthCompare.Always => SDL_GPUCompareOp.SDL_GPU_COMPAREOP_ALWAYS,
+		DepthCompare.Never => SDL_GPUCompareOp.SDL_GPU_COMPAREOP_NEVER,
+		DepthCompare.Less => SDL_GPUCompareOp.SDL_GPU_COMPAREOP_LESS,
+		DepthCompare.Equal => SDL_GPUCompareOp.SDL_GPU_COMPAREOP_EQUAL,
+		DepthCompare.LessOrEqual => SDL_GPUCompareOp.SDL_GPU_COMPAREOP_LESS_OR_EQUAL,
+		DepthCompare.Greater => SDL_GPUCompareOp.SDL_GPU_COMPAREOP_GREATER,
+		DepthCompare.NotEqual => SDL_GPUCompareOp.SDL_GPU_COMPAREOP_NOT_EQUAL,
+		DepthCompare.GreaterOrEqual => SDL_GPUCompareOp.SDL_GPU_COMPAREOP_GREATER_OR_EQUAL,
+		_ => SDL_GPUCompareOp.SDL_GPU_COMPAREOP_NEVER
+	};
+
+	private static SDL_FColor GetColor(Color color)
+	{
+		var vec4 = color.ToVector4();
+		return new() { r = vec4.X, g = vec4.Y, b = vec4.Z, a = vec4.W, };
+	}
+}

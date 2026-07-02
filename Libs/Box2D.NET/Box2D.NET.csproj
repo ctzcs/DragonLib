@@ -1,0 +1,29 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <PackageId>Box2D.NET</PackageId>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Authors>ikpil</Authors>
+    <Description>Box2D.NET - Box2D.NET - a port of Box2D, is a 2D physics engine for games, .NET C#, Unity3D, servers</Description>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>https://github.com/ikpil/Box2D.NET</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/ikpil/Box2D.NET</RepositoryUrl>
+    <PackageTags>game csharp physics game-development collision physics-engine collision-detection box2d physics-simulation physics-2d 2d-game 2d box2d-physics-engine rigid-body-dynamics</PackageTags>
+    <PackageReleaseNotes>https://github.com/ikpil/Box2D.NET/blob/main/CHANGELOG.md</PackageReleaseNotes>
+    <WarningsAsErrors>$(WarningsAsErrors);CS9191</WarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="\"/>
+  </ItemGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <DefineConstants>$(DefineConstants);ENABLED</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <DefineConstants>$(DefineConstants);B2_SNOOP_TOI_COUNTERS;ENABLED;B2_SNOOP_TABLE_COUNTERS;B2_SNOOP_PAIR_COUNTERS</DefineConstants>
+  </PropertyGroup>
+
+</Project>

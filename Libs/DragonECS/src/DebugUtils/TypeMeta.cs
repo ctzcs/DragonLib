@@ -1,0 +1,749 @@
+﻿#if DISABLE_DEBUG
+#undef DEBUG
+#endif
+#if DEBUG || !REFLECTION_DISABLED
+#define REFLECTION_ENABLED
+#endif
+
+using DCFApixels.DragonECS.Core;
+using DCFApixels.DragonECS.Core.Internal;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
+#if REFLECTION_ENABLED
+using System.Reflection;
+using System.Runtime.CompilerServices;
+#endif
+
+namespace DCFApixels.DragonECS
+{
+    public interface ITypeMeta
+    {
+        Type Type { get; }
+        string Name { get; }
+        MetaColor Color { get; }
+        MetaDescription Description { get; }
+        MetaGroup Group { get; }
+        IReadOnlyList<string> Tags { get; }
+        ITypeMeta BaseMeta { get; }
+    }
+    public static class ITypeMetaExstensions
+    {
+        public static TypeMeta FindRootTypeMeta(this ITypeMeta meta)
+        {
+            ITypeMeta result = meta;
+            while (result.BaseMeta != null) { result = meta.BaseMeta; }
+            return (TypeMeta)result;
+        }
+    }
+    /// <summary> Expanding meta information over Type. </summary>
+    [MetaColor(MetaColor.DragonRose)]
+    [MetaGroup(EcsConsts.PACK_GROUP, EcsConsts.DEBUG_GROUP)]
+    [MetaDescription(EcsConsts.AUTHOR, "Intended for extending meta information of types, for customization of type display in the editor. You can get it by using the object.GetMeta() or Type.ToMeta() extension method. Meta information is collected from meta attributes.")]
+    [MetaID("DragonECS_248D587C9201EAEA881F27871B4D18A6")]
+    [DebuggerTypeProxy(typeof(DebuggerProxy))]
+    public sealed class TypeMeta : ITypeMeta
+    {
+        private const string NULL_NAME = "NULL";
+        public static readonly TypeMeta NullTypeMeta;
+
+        private static readonly object _lock = new object();
+        private static readonly AppendOnlyTable<RuntimeTypeHandleKey, TypeMeta>.Provider _metaCache = new AppendOnlyTable<RuntimeTypeHandleKey, TypeMeta>.Provider(256);
+        private readonly struct RuntimeTypeHandleKey : IEquatable<RuntimeTypeHandleKey>
+        {
+            public readonly RuntimeTypeHandle Handle;
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public RuntimeTypeHandleKey(RuntimeTypeHandle handle) { Handle = handle; }
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public bool Equals(RuntimeTypeHandleKey other) { return other.Handle.Value == Handle.Value; }
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public override int GetHashCode() { return Handle.GetHashCode(); }
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public static implicit operator RuntimeTypeHandleKey(RuntimeTypeHandle handle) { return new RuntimeTypeHandleKey(handle); }
+        }
+        private static int _increment = 1;
+
+        private readonly int _uniqueID;
+        internal readonly Type _type;
+        private readonly MetaProxyBase _proxy;
+        private readonly bool _isSelfProxy;
+
+        private bool _isCustomName;
+        private bool _isCustomColor;
+        private bool _isHidden;
+        private bool _isObsolete;
+
+        private string _name;
+        private string _typeName;
+
+        private MetaColor _color;
+        private MetaDescription _description;
+        private MetaGroup _group;
+        private IReadOnlyList<string> _tags;
+        private string _metaID;
+        private EcsTypeCode _typeCode;
+
+        private bool _isProcess;
+        private bool _isComponent;
+        private bool _isPool;
+
+        private InitFlag _initFlags = InitFlag.None;
+
+        #region Constructors
+        static TypeMeta()
+        {
+            NullTypeMeta = new TypeMeta(typeof(void))
+            {
+                _isCustomName = false,
+                _isCustomColor = true,
+                _isHidden = true,
+
+                _name = NULL_NAME,
+                _typeName = NULL_NAME,
+                _color = MetaColor.Black,
+                _description = new MetaDescription("", NULL_NAME),
+                _group = MetaGroup.Empty,
+                _tags = Array.Empty<string>(),
+                _metaID = string.Empty,
+                _typeCode = EcsTypeCodeManager.Get(typeof(void)),
+
+                _initFlags = InitFlag.All,
+            };
+
+            _metaCache.Add(typeof(void).TypeHandle, NullTypeMeta);
+        }
+        public static TypeMeta Get(Type type) { return Get(type.TypeHandle); }
+        public static TypeMeta Get(RuntimeTypeHandle typeHandle)
+        {
+            lock (_lock)
+            {
+                if (_metaCache.TryGet(typeHandle, out TypeMeta result) == false)
+                {
+                    result = new TypeMeta(Type.GetTypeFromHandle(typeHandle));
+                    _metaCache.Add(typeHandle, result);
+                }
+                return result;
+            }
+        }
+        private static Type FindDeclaringType(Type targetPureType, Type currentType)
+        {
+            if (currentType == typeof(object)) { return null; }
+            var pure = currentType.GetPureType();
+            if (pure == targetPureType)
+            {
+                return currentType;
+            }
+            return FindDeclaringType(targetPureType, currentType.BaseType);
+        }
+        private TypeMeta(Type type)
+        {
+            _uniqueID = _increment++;
+            _type = type;
+            _proxy = MetaProxyBase.EmptyProxy;
+
+            if (type.TryGetAttributeInherited<MetaProxyAttribute>(out var proxyAtr, out var declaringAtrType))
+            {
+#if REFLECTION_ENABLED
+#pragma warning disable IL3050 // Calling members annotated with 'RequiresDynamicCodeAttribute' may break functionality when AOT compiling.
+#pragma warning disable IL2055 // Either the type on which the MakeGenericType is called can't be statically determined, or the type parameters to be used for generic arguments can't be statically determined.
+#pragma warning disable IL2077 // Target parameter argument does not satisfy 'DynamicallyAccessedMembersAttribute' in call to target method. The source field does not have matching annotations.
+                Type proxyType = proxyAtr.Type;
+                if (proxyType.ContainsGenericParameters && proxyType.IsNested)
+                {
+                    if (declaringAtrType != null && declaringAtrType.ContainsGenericParameters == false)
+                    {
+                        var args = declaringAtrType.GetGenericArguments();
+                        proxyType = proxyType.MakeGenericType(args);
+                    }
+                }
+
+                if (proxyType.ContainsGenericParameters == false)
+                {
+                    var proxy = Activator.CreateInstance(proxyType, type, declaringAtrType) as MetaProxyBase;
+                    if (proxy != null)
+                    {
+                        _proxy = proxy;
+                        _isSelfProxy = declaringAtrType == type;
+                    }
+                }
+#pragma warning restore IL2055 
+#pragma warning restore IL3050
+#pragma warning restore IL2077
+#endif
+            }
+        }
+        #endregion
+
+        #region Type
+        public Type Type
+        {
+            get { return _type; }
+        }
+        #endregion
+
+        #region Name
+        private void InitName()
+        {
+            if (_initFlags.HasFlag(InitFlag.Name) == false)
+            {
+                (_name, _isCustomName) = MetaGenerator.GetMetaName(this);
+                _typeName = _isCustomName ? MetaGenerator.GetTypeName(_type) : _name;
+                _initFlags |= InitFlag.Name;
+            }
+        }
+        public bool IsCustomName
+        {
+            get
+            {
+                InitName();
+                return _isCustomName;
+            }
+        }
+        public string Name
+        {
+            get
+            {
+                InitName();
+                return _name;
+            }
+        }
+        public string TypeName
+        {
+            get
+            {
+                InitName();
+                return _typeName;
+            }
+        }
+        #endregion
+
+        #region Color
+        private void InitColor()
+        {
+            if (_initFlags.HasFlag(InitFlag.Color) == false)
+            {
+                (_color, _isCustomColor) = MetaGenerator.GetColor(this);
+                _initFlags |= InitFlag.Color;
+            }
+        }
+        public bool IsCustomColor
+        {
+            get
+            {
+                InitColor();
+                return _isCustomColor;
+            }
+        }
+        public MetaColor Color
+        {
+            get
+            {
+                InitColor();
+                return _color;
+            }
+        }
+        #endregion
+
+        #region Description
+        public MetaDescription Description
+        {
+            get
+            {
+                if (_initFlags.HasFlag(InitFlag.Description) == false)
+                {
+                    _description = MetaGenerator.GetDescription(this);
+                    _initFlags |= InitFlag.Description;
+                }
+                return _description;
+            }
+        }
+        #endregion
+
+        #region Group
+        public MetaGroup Group
+        {
+            get
+            {
+                if (_initFlags.HasFlag(InitFlag.Group) == false)
+                {
+                    _group = MetaGenerator.GetGroup(this);
+                    _initFlags |= InitFlag.Group;
+                }
+                return _group;
+            }
+        }
+        #endregion
+
+        #region Tags
+        private void InitTags()
+        {
+            if (_initFlags.HasFlag(InitFlag.Tags) == false)
+            {
+                _tags = MetaGenerator.GetTags(this);
+                _initFlags |= InitFlag.Tags;
+                _isHidden = _tags.Contains(MetaTags.HIDDEN);
+                _isObsolete = _tags.Contains(MetaTags.OBSOLETE);
+            }
+        }
+        public IReadOnlyList<string> Tags
+        {
+            get
+            {
+                InitTags();
+                return _tags;
+            }
+        }
+        public bool IsHidden
+        {
+            get
+            {
+                InitTags();
+                return _isHidden;
+            }
+        }
+        public bool IsObsolete
+        {
+            get
+            {
+                InitTags();
+                return _isObsolete;
+            }
+        }
+        public bool IsHiddenOrObsolete
+        {
+            get
+            {
+                return IsHidden || IsObsolete;
+            }
+        }
+
+        #endregion
+
+        #region MetaID
+        private void InitMetaID()
+        {
+            if (_initFlags.HasFlag(InitFlag.MetaID) == false)
+            {
+                _metaID = MetaGenerator.GetMetaID(_type);
+                _initFlags |= InitFlag.MetaID;
+            }
+        }
+        public string MetaID
+        {
+            get
+            {
+                InitMetaID();
+                return _metaID;
+            }
+        }
+        public bool IsHasMetaID() { return string.IsNullOrEmpty(MetaID) == false; }
+        #endregion
+
+        #region TypeCode
+        public EcsTypeCode TypeCode
+        {
+            get
+            {
+                if (_initFlags.HasFlag(InitFlag.TypeCode) == false)
+                {
+                    _typeCode = EcsTypeCodeManager.Get(_type);
+                    _initFlags |= InitFlag.TypeCode;
+                }
+                return _typeCode;
+            }
+        }
+        #endregion
+
+        #region ReflectionInfo
+        public bool IsComponent
+        {
+            get
+            {
+                if (_initFlags.HasFlag(InitFlag.ReflectionInfo) == false)
+                {
+                    MetaGenerator.GetReflectionInfo(this);
+                    _initFlags |= InitFlag.ReflectionInfo;
+                }
+                return _isComponent;
+            }
+        }
+        public bool IsProcess
+        {
+            get
+            {
+                if (_initFlags.HasFlag(InitFlag.ReflectionInfo) == false)
+                {
+                    MetaGenerator.GetReflectionInfo(this);
+                    _initFlags |= InitFlag.ReflectionInfo;
+                }
+                return _isProcess;
+            }
+        }
+        public bool IsPool
+        {
+            get
+            {
+                if (_initFlags.HasFlag(InitFlag.ReflectionInfo) == false)
+                {
+                    MetaGenerator.GetReflectionInfo(this);
+                    _initFlags |= InitFlag.ReflectionInfo;
+                }
+                return _isPool;
+            }
+        }
+        #endregion
+
+        #region InitializeAll
+        public TypeMeta InitializeAll()
+        {
+            if (_initFlags != InitFlag.All)
+            {
+                _ = Name;
+                _ = Group;
+                _ = Color;
+                _ = Description;
+                _ = Tags;
+                _ = MetaID;
+                _ = TypeCode;
+            }
+            return this;
+        }
+        #endregion
+
+        #region InitFlag
+        [Flags]
+        private enum InitFlag : byte
+        {
+            None = 0,
+            Name = 1 << 0,
+            Group = 1 << 1,
+            Color = 1 << 2,
+            Description = 1 << 3,
+            Tags = 1 << 4,
+            MetaID = 1 << 5,
+            TypeCode = 1 << 6,
+            ReflectionInfo = 1 << 7,
+            //MemberType = 1 << 8,
+
+            All = Name | Group | Color | Description | Tags | TypeCode | MetaID | ReflectionInfo //| MemberType
+        }
+        #endregion
+
+        #region Other
+        public static void ClearCache()
+        {
+            lock (_lock)
+            {
+                _metaCache.Clear();
+                _metaCache.Add(typeof(void).TypeHandle, NullTypeMeta);
+            }
+        }
+        ITypeMeta ITypeMeta.BaseMeta
+        {
+            get { return null; }
+        }
+        private static bool CheckEcsMemener(Type checkedType)
+        {
+#if REFLECTION_ENABLED
+            return checkedType.IsInterface == false && checkedType.IsAbstract == false && typeof(IEcsMember).IsAssignableFrom(checkedType);
+#else
+            EcsDebug.PrintWarning($"Reflection is not available, the {nameof(TypeMeta)}.{nameof(CheckEcsMemener)} method does not work.");
+            return false;
+#endif
+        }
+        public static bool TryGetCustomMeta(Type type, out TypeMeta meta)
+        {
+            if (IsHasCustomMeta(type))
+            {
+                meta = type.GetMeta();
+                return true;
+            }
+            meta = null;
+            return false;
+        }
+        public static bool IsHasCustomMeta(Type type)
+        {
+#if REFLECTION_ENABLED
+            if (CheckEcsMemener(type))
+            {
+                return true;
+            }
+            var atrs = Attribute.GetCustomAttributes(type, typeof(DragonMetaAttribute), true);
+            if (atrs.Length > 0)
+            {
+                if (atrs.Length == 1 && atrs[0] is MetaProxyAttribute &&
+                    type.TryGetAttributeInherited(out MetaProxyAttribute mpa, out Type declaringAtrType))
+                {
+                    return ((MetaProxyBase)Activator.CreateInstance(mpa.Type, type, declaringAtrType)).IsInherit == false;
+                }
+                return true;
+            }
+            return false;
+#else
+            EcsDebug.PrintWarning($"Reflection is not available, the {nameof(TypeMeta)}.{nameof(IsHasCustomMeta)} method does not work.");
+            return false;
+#endif
+        }
+        public static bool IsHasMetaID(Type type)
+        {
+#if REFLECTION_ENABLED
+            return TryGetCustomMeta(type, out TypeMeta meta) && meta.IsHasMetaID();
+#else
+            EcsDebug.PrintWarning($"Reflection is not available, the {nameof(TypeMeta)}.{nameof(IsHasMetaID)} method does not work.");
+            return false;
+#endif
+        }
+        public override string ToString() { return Name; }
+        /// <returns> Unique ID </returns>
+        public override int GetHashCode() { return _uniqueID; }
+        private class DebuggerProxy : ITypeMeta
+        {
+            private readonly TypeMeta _meta;
+
+            public int UniqueID
+            {
+                get { return _meta._uniqueID; }
+            }
+            ITypeMeta ITypeMeta.BaseMeta
+            {
+                get { return null; }
+            }
+            public Type Type
+            {
+                get { return _meta.Type; }
+            }
+            public string Name
+            {
+                get { return _meta.Name; }
+            }
+            public MetaColor Color
+            {
+                get { return _meta.Color; }
+            }
+            public MetaDescription Description
+            {
+                get { return _meta.Description; }
+            }
+            public MetaGroup Group
+            {
+                get { return _meta.Group; }
+            }
+            public IReadOnlyList<string> Tags
+            {
+                get { return _meta.Tags; }
+            }
+            public string MetaID
+            {
+                get { return _meta.MetaID; }
+            }
+            public DebuggerProxy(TypeMeta meta)
+            {
+                _meta = meta;
+            }
+        }
+        #endregion
+
+        #region MetaGenerator
+        private static class MetaGenerator
+        {
+            private const int GENERIC_NAME_DEPTH = 3;
+
+            #region GetMetaName/GetTypeName
+            public static string GetTypeName(Type type)
+            {
+                return EcsDebugUtility.GetGenericTypeName(type, GENERIC_NAME_DEPTH);
+            }
+            public static (string, bool) GetMetaName(TypeMeta meta)
+            {
+#if REFLECTION_ENABLED //в дебажных утилитах REFLECTION_DISABLED только в релизном билде работает
+                if (meta._isSelfProxy && meta._proxy.Name != null)
+                {
+                    return (meta._proxy.Name, true);
+                }
+                var type = meta.Type;
+                bool isCustom = type.TryGetAttribute(out MetaNameAttribute atr) && string.IsNullOrEmpty(atr.name) == false;
+                if (isCustom)
+                {
+                    if ((type.IsGenericType && atr.isHideGeneric == false) == false)
+                    {
+                        return (atr.name, true);
+                    }
+                    string genericParams = "";
+                    Type[] typeParameters = type.GetGenericArguments();
+                    for (int i = 0; i < typeParameters.Length; ++i)
+                    {
+                        string paramTypeName = EcsDebugUtility.GetGenericTypeName(typeParameters[i], GENERIC_NAME_DEPTH);
+                        genericParams += (i == 0 ? paramTypeName : $", {paramTypeName}");
+                    }
+                    return ($"{atr.name}<{genericParams}>", true);
+                }
+                if (meta._proxy.Name != null)
+                {
+                    return (meta._proxy.Name, true);
+                }
+                return (EcsDebugUtility.GetGenericTypeName(type, GENERIC_NAME_DEPTH), false);
+#else
+                EcsDebug.PrintWarning($"Reflection is not available, the {nameof(MetaGenerator)}.{nameof(GetMetaName)} method does not work.");
+                return (meta.Type.Name, false);
+#endif
+            }
+            #endregion
+
+            #region GetColor
+            private static MetaColor AutoColor(TypeMeta meta)
+            {
+                int hash;
+                if (meta.Group.IsEmpty)
+                {
+                    hash = meta.Type.Name.GetHashCode();
+                }
+                else
+                {
+                    hash = meta.Group.Name.GetHashCode();
+                }
+                return MetaColor.FromHashCode(hash).UpContrast();
+            }
+            public static (MetaColor, bool) GetColor(TypeMeta meta)
+            {
+#if REFLECTION_ENABLED //в дебажных утилитах REFLECTION_DISABLED только в релизном билде работает
+                if (meta._isSelfProxy && meta._proxy.Color != null)
+                {
+                    return (meta._proxy.Color.Value, true);
+                }
+                bool isCustom = meta.Type.TryGetAttribute(out MetaColorAttribute atr);
+                if (isCustom)
+                {
+                    return (atr.color, true);
+                }
+                if (meta._proxy.Color != null)
+                {
+                    return (meta._proxy.Color.Value, true);
+                }
+                return (AutoColor(meta), false);
+#else
+                EcsDebug.PrintWarning($"Reflection is not available, the {nameof(MetaGenerator)}.{nameof(GetColor)} method does not work.");
+                return (MetaColor.White, false);
+#endif
+            }
+            #endregion
+
+            #region GetGroup
+            public static MetaGroup GetGroup(TypeMeta meta)
+            {
+#if REFLECTION_ENABLED //в дебажных утилитах REFLECTION_DISABLED только в релизном билде работает
+                if (meta._isSelfProxy && meta._proxy.Group != null)
+                {
+                    return meta._proxy.Group;
+                }
+                if (meta.Type.TryGetAttribute(out MetaGroupAttribute atr))
+                {
+                    return MetaGroup.FromName(atr.Name);
+                }
+                if (meta._proxy.Group != null)
+                {
+                    return meta._proxy.Group;
+                }
+                return MetaGroup.FromNameSpace(meta.Type);
+#else
+                EcsDebug.PrintWarning($"Reflection is not available, the {nameof(MetaGenerator)}.{nameof(GetGroup)} method does not work.");
+                return MetaGroup.Empty;
+#endif
+            }
+            #endregion
+
+            #region GetDescription
+            public static MetaDescription GetDescription(TypeMeta meta)
+            {
+#if REFLECTION_ENABLED //в дебажных утилитах REFLECTION_DISABLED только в релизном билде работает
+                if (meta._isSelfProxy && meta._proxy.Description != null)
+                {
+                    return meta._proxy.Description;
+                }
+                if (meta.Type.TryGetAttribute(out MetaDescriptionAttribute atr))
+                {
+                    return atr.Data;
+                }
+                if (meta._proxy.Description != null)
+                {
+                    return meta._proxy.Description;
+                }
+                return MetaDescription.Empty;
+#else
+                EcsDebug.PrintWarning($"Reflection is not available, the {nameof(MetaGenerator)}.{nameof(GetDescription)} method does not work.");
+                return MetaDescription.Empty;
+#endif
+            }
+            #endregion
+
+            #region GetTags
+            public static IReadOnlyList<string> GetTags(TypeMeta meta)
+            {
+#if REFLECTION_ENABLED //в дебажных утилитах REFLECTION_DISABLED только в релизном билде работает
+                if (meta._isSelfProxy && meta._proxy.Tags != null)
+                {
+                    return meta._proxy.Tags.ToArray();
+                }
+                if (meta.Type.TryGetAttribute(out MetaTagsAttribute atr))
+                {
+                    return atr.Tags;
+                }
+                if (meta._proxy.Tags != null)
+                {
+                    return meta._proxy.Tags.ToArray();
+                }
+                return Array.Empty<string>();
+#else
+                EcsDebug.PrintWarning($"Reflection is not available, the {nameof(MetaGenerator)}.{nameof(GetTags)} method does not work.");
+                return Array.Empty<string>();
+#endif
+            }
+            #endregion
+
+            #region GetMetaID
+            public static string GetMetaID(Type type)
+            {
+#if REFLECTION_ENABLED //в дебажных утилитах REFLECTION_DISABLED только в релизном билде работает
+                var atr = type.GetCustomAttribute<MetaIDAttribute>();
+
+                if (atr == null)
+                {
+                    return string.Empty;
+                }
+                else
+                {
+                    string id = atr.ID;
+                    if (type.IsGenericType && type.IsGenericTypeDefinition == false)
+                    {
+                        var metaIDs = type.GetGenericArguments().Select(o => GetMetaID(o));
+                        if (metaIDs.Any(o => string.IsNullOrEmpty(o)))
+                        {
+                            id = string.Empty;
+                        }
+                        else
+                        {
+                            id = $"{id}<{string.Join(", ", metaIDs)}>";
+                        }
+                    }
+                    id = string.Intern(id);
+                    return id;
+                }
+#else
+                EcsDebug.PrintWarning($"Reflection is not available, the {nameof(MetaGenerator)}.{nameof(GetMetaID)} method does not work.");
+                return string.Empty;
+#endif
+            }
+            #endregion
+
+            #region GetReflectionInfo
+            public static void GetReflectionInfo(TypeMeta meta)
+            {
+                meta._isComponent = typeof(IEcsComponentMember).IsAssignableFrom(meta.Type);
+                meta._isProcess = typeof(IEcsProcess).IsAssignableFrom(meta.Type);
+                meta._isPool = typeof(IEcsPoolImplementation).IsAssignableFrom(meta.Type);
+            }
+            #endregion
+        }
+        #endregion
+    }
+}

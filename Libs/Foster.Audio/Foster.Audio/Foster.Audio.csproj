@@ -1,0 +1,83 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Title>Foster.Audio</Title>
+    <Product>Foster.Audio</Product>
+    <Version>0.1.0-alpha</Version>
+    <Authors>Christian Alonso-Daubney</Authors>
+    <Description>A small game audio library</Description>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/MrBrixican/Foster.Audio</RepositoryUrl>
+    <PackageId>FosterAudio</PackageId>
+    <PackageProjectUrl>https://github.com/MrBrixican/Foster.Audio</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
+    <PackageOutputPath>$(SolutionDir)artifacts/</PackageOutputPath>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <NativeLibsDir>$(ProjectDir)..\Platform\libs\</NativeLibsDir>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) == 'X64'">
+    <IsX64>true</IsX64>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) == 'Arm64'">
+    <IsArm64>true</IsArm64>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) == 'Arm32'">
+    <IsArm32>true</IsArm32>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="$(NativeLibsDir)win-x64\FosterAudioPlatform.dll">
+      <CopyToOutputDirectory Condition="$([MSBuild]::IsOSPlatform('Windows')) AND $(IsArm64) != 'true'">PreserveNewest</CopyToOutputDirectory>
+      <PackagePath>runtimes\win-x64\native</PackagePath>
+      <Pack>True</Pack>
+      <Link>FosterAudioPlatform.dll</Link>
+    </Content>
+    <Content Include="$(NativeLibsDir)win-arm64\FosterAudioPlatform.dll">
+      <CopyToOutputDirectory Condition="$([MSBuild]::IsOSPlatform('Windows')) AND $(IsArm64) == 'true'">PreserveNewest</CopyToOutputDirectory>
+      <PackagePath>runtimes\win-arm64\native</PackagePath>
+      <Pack>True</Pack>
+      <Link>FosterAudioPlatform.dll</Link>
+    </Content>
+    <Content Include="$(NativeLibsDir)linux-x64\libFosterAudioPlatform.so">
+      <CopyToOutputDirectory Condition="$([MSBuild]::IsOSPlatform('Linux')) AND $(IsX64) == 'true'">PreserveNewest</CopyToOutputDirectory>
+      <PackagePath>runtimes\linux-x64\native</PackagePath>
+      <Pack>True</Pack>
+      <Link>libFosterAudioPlatform.so</Link>
+    </Content>
+    <Content Include="$(NativeLibsDir)linux-arm64\libFosterAudioPlatform.so">
+      <CopyToOutputDirectory Condition="$([MSBuild]::IsOSPlatform('Linux')) AND $(IsArm64) == 'true'">PreserveNewest</CopyToOutputDirectory>
+      <PackagePath>runtimes\linux-arm64\native</PackagePath>
+      <Pack>True</Pack>
+      <Link>libFosterAudioPlatform.so</Link>
+    </Content>
+    <Content Include="$(NativeLibsDir)linux-arm32\libFosterAudioPlatform.so">
+      <CopyToOutputDirectory Condition="$([MSBuild]::IsOSPlatform('Linux')) AND $(IsArm32) == 'true'">PreserveNewest</CopyToOutputDirectory>
+      <PackagePath>runtimes\linux-arm\native</PackagePath>
+      <Pack>True</Pack>
+      <Link>libFosterAudioPlatform.so</Link>
+    </Content>
+    <Content Include="$(NativeLibsDir)osx\libFosterAudioPlatform.dylib">
+      <CopyToOutputDirectory Condition="$([MSBuild]::IsOSPlatform('OSX'))">PreserveNewest</CopyToOutputDirectory>
+      <PackagePath>runtimes\osx\native</PackagePath>
+      <Pack>True</Pack>
+      <Link>libFosterAudioPlatform.dylib</Link>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="$(ProjectDir)..\LICENSE" Pack="true" PackagePath="/"/>
+    <None Include="$(ProjectDir)..\README.md" Pack="true" PackagePath="/"/>
+  </ItemGroup>
+
+</Project>

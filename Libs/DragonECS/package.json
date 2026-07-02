@@ -1,0 +1,25 @@
+{
+    "name": "com.dcfa_pixels.dragonecs",
+    "author": 
+    {
+        "name": "DCFApixels",
+        "url": "https://github.com/DCFApixels"
+    },
+    "displayName": "DragonECS",
+    "description": "C# Entity Component System Framework",
+    "unity": "2021.2",
+    "version": "1.1.4",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/DCFApixels/DragonECS.git"
+    },
+    "dependencies": { },
+    "keywords":
+    [
+        "ecs",
+        "performance",
+        "dragonecs",
+        "dragon-ecs",
+        "framework"
+    ]
+}

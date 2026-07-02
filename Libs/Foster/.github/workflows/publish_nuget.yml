@@ -1,0 +1,24 @@
+name: Publish NuGet Package
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish_nuget:
+    runs-on: windows-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup .NET 8 SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        global-json-file: ./global.json
+
+    - name: Pack
+      run: |
+          dotnet build -c Release
+          dotnet pack -c Release
+
+    - name: Push
+      run: dotnet nuget push artifacts/**/*.nupkg -k ${{secrets.NUGET_TOKEN}} --skip-duplicate --source https://api.nuget.org/v3/index.json

@@ -1,0 +1,192 @@
+﻿#if DISABLE_DEBUG
+#undef DEBUG
+#endif
+using System;
+using System.Runtime.CompilerServices;
+#if ENABLE_IL2CPP
+using Unity.IL2CPP.CompilerServices;
+#endif
+
+namespace DCFApixels.DragonECS.Core.Internal
+{
+#if ENABLE_IL2CPP
+    [Il2CppSetOption(Option.NullChecks, false)]
+    [Il2CppSetOption(Option.ArrayBoundsChecks, false)]
+#endif
+    internal sealed class EcsWhereToGroupExecutor : MaskQueryExecutor
+    {
+        private EcsMaskIterator _iterator;
+
+        private EcsGroup _filteredAllGroup;
+        private EcsGroup _filteredGroup;
+
+        private long _version;
+        private WorldStateVersionsChecker _versionsChecker;
+
+        public bool _isDestroyed = false;
+
+        #region Properties
+        /// <summary>
+        /// Version number representing the internal cached result state for this executor.
+        /// </summary>
+        public sealed override long Version
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return _version; }
+        }
+        /// <summary>
+        /// Indicates whether the executor's cached results are still valid for the world state.
+        /// </summary>
+        public sealed override bool IsCached
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return _versionsChecker.Check(); }
+        }
+        /// <summary>
+        /// Number of entities in the last cached result group.
+        /// </summary>
+        public sealed override int LastCachedCount
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return _filteredAllGroup.Count; }
+        }
+        #endregion
+
+        #region OnInitialize/OnDestroy
+        protected sealed override void OnInitialize()
+        {
+            _versionsChecker = new WorldStateVersionsChecker(Mask);
+            _filteredAllGroup = EcsGroup.New(World);
+            _iterator = Mask.GetIterator();
+        }
+        protected sealed override void OnDestroy()
+        {
+            if (_isDestroyed) { return; }
+            _isDestroyed = true;
+            _filteredAllGroup.Dispose();
+            if(_filteredGroup != null && _filteredGroup.IsReleased == false)
+            {
+                _filteredGroup.Dispose();
+            }
+
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+        ~EcsWhereToGroupExecutor()
+        {
+#if DEBUG
+            lock (this)
+#endif
+            {
+                Dispose(false);
+            }
+        }
+        private bool _disposed = false;
+        private void Dispose(bool disposing)
+        {
+            if (_disposed) { return; }
+            if (disposing)
+            {
+                // Free managed resources here
+            }
+            // Free unmanaged resources here
+            _versionsChecker.Dispose();
+
+            _disposed = true;
+        }
+        #endregion
+
+        #region Methods
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void Execute_Iternal()
+        {
+            World.ReleaseDelEntityBufferAllAuto();
+            if (_versionsChecker.CheckAndNext() == false)
+            {
+                _version++;
+                _iterator.CacheTo(World.Entities, _filteredAllGroup);
+#if DEBUG && DRAGONECS_DEEP_DEBUG
+                if (_filteredGroup == null)
+                {
+                    _filteredGroup = EcsGroup.New(World);
+                }
+                _filteredGroup.Clear();
+                foreach (var e in World.Entities)
+                {
+                    if (World.IsMatchesMask(Mask, e))
+                    {
+                        _filteredGroup.Add(e);
+                    }
+                }
+                if (_filteredAllGroup.SetEquals(_filteredGroup) == false)
+                {
+                    throw new System.InvalidOperationException();
+                }
+#endif
+            }
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void ExecuteFor_Iternal(EcsSpan span)
+        {
+#if DEBUG
+            if (span.IsNull) { Throw.ArgumentNull(nameof(span)); }
+            if (span.WorldID != World.ID) { Throw.Quiery_ArgumentDifferentWorldsException(); }
+#elif DRAGONECS_STABILITY_MODE
+            if (span.IsNull) { _filteredGroup.Clear(); }
+            if (span.WorldID != World.ID) { _filteredGroup.Clear(); }
+#endif
+
+            if (_filteredGroup == null)
+            {
+                _filteredGroup = EcsGroup.New(World);
+            }
+            _iterator.CacheTo(span, _filteredGroup);
+        }
+
+        /// <summary>
+        /// Executes the mask query against all entities currently alive in the world
+        /// and returns a read‑only group containing the matching entity IDs.
+        /// The result is cached internally and reused if the world state hasn't changed.
+        /// </summary>
+        /// <returns>
+        /// An <see cref="EcsReadonlyGroup"/> that contains the entity IDs satisfying the mask conditions.
+        /// </returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public EcsReadonlyGroup Execute()
+        {
+            Execute_Iternal();
+            return _filteredAllGroup;
+        }
+
+        /// <summary>
+        /// Executes the mask query only on the subset of entities provided in the given span,
+        /// and returns a read‑only group of those that match the mask.
+        /// </summary>
+        /// <param name="span">
+        /// The span of entity IDs to filter against the mask. Must belong to the same world.
+        /// </param>
+        /// <returns>
+        /// An <see cref="EcsReadonlyGroup"/> containing the matching entity IDs from the supplied span.
+        /// </returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public EcsReadonlyGroup ExecuteFor(EcsSpan span)
+        {
+            if (span.IsSourceEntities)
+            {
+                return Execute();
+            }
+            ExecuteFor_Iternal(span);
+            return _filteredGroup;
+        }
+
+        /// <summary>
+        /// Returns a managed snapshot of the current query result as an <see cref="EcsSpan"/>.
+        /// This method internally calls <see cref="Execute()"/> and converts the resulting group to a span.
+        /// </summary>
+        /// <returns>
+        /// An <see cref="EcsSpan"/> containing the entity IDs that match the mask.
+        /// </returns>
+        public override EcsSpan Snapshot() { return Execute(); }
+        #endregion
+    }
+}

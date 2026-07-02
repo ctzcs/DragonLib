@@ -1,0 +1,294 @@
+using System.Numerics;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+
+namespace Foster.Framework;
+
+/// <summary>
+/// Lightweight random number generator
+/// </summary>
+public struct Rng
+{
+	public ulong Seed;
+
+	public Rng() { Seed = 0; }
+	public Rng(int seed) { Seed = (ulong)seed; }
+	public Rng(ulong seed) { Seed = seed; }
+
+	/// <summary>
+	/// Get an <see cref="Rng"/> instance seeded by the current <see cref="DateTime"/>
+	/// </summary>
+	public static Rng Randomized()
+		=> new((ulong)DateTime.Now.Ticks);
+
+	/// <summary>
+	/// Get a random <see cref="ulong"/> from all possible values
+	/// </summary>
+	public ulong U64()
+	{
+		Seed += 0x9e3779b97f4a7c15ul;
+		ulong n = Seed;
+		n = (n ^ (n >> 30)) * 0xbf58476d1ce4e5bul;
+		n = (n ^ (n >> 27)) * 0x94d049bb133111ebul;
+		return n ^ (n >> 31);
+	}
+
+	/// <summary>
+	/// Get a random <see cref="ulong"/> between 0 (inclusive) and <paramref name="max"/> (exclusive)
+	/// </summary>
+	public ulong U64(ulong max) => max != 0 ? U64() % max : 0;
+
+	/// <summary>
+	/// Get a random <see cref="ulong"/> between <paramref name="min"/> (inclusive) and <paramref name="max"/> (exclusive)
+	/// </summary>
+	public ulong U64(ulong min, ulong max) => min + U64(max - min);
+
+	/// <summary>
+	/// Get a random <see cref="uint"/> from all possible values
+	/// </summary>
+	public uint U32() => (uint)U64();
+
+	/// <summary>
+	/// Get a random <see cref="uint"/> between 0 (inclusive) and <paramref name="max"/> (exclusive)
+	/// </summary>
+	public uint U32(uint max) => max != 0 ? U32() % max : 0;
+
+	/// <summary>
+	/// Get a random <see cref="uint"/> between <paramref name="min"/> (inclusive) and <paramref name="max"/> (exclusive)
+	/// </summary>
+	public uint U32(uint min, uint max) => min + U32(max - min);
+
+	/// <summary>
+	/// Get a random <see cref="ushort"/> from all possible values
+	/// </summary>
+	public ushort U16() => (ushort)U64();
+
+	/// <summary>
+	/// Get a random <see cref="ushort"/> between 0 (inclusive) and <paramref name="max"/> (exclusive)
+	/// </summary>
+	public ushort U16(ushort max) => (ushort)(max != 0 ? U16() % max : 0);
+
+	/// <summary>
+	/// Get a random <see cref="ushort"/> between <paramref name="min"/> (inclusive) and <paramref name="max"/> (exclusive)
+	/// </summary>
+	public ushort U16(ushort min, ushort max) => (ushort)(min + U16((ushort)(max - min)));
+
+	/// <summary>
+	/// Get a random <see cref="byte"/> from all possible values
+	/// </summary>
+	public byte U8() => (byte)U64();
+
+	/// <summary>
+	/// Get a random <see cref="byte"/> between 0 (inclusive) and <paramref name="max"/> (exclusive)
+	/// </summary>
+	public byte U8(byte max) => (byte)(max != 0 ? U8() % max : 0);
+
+	/// <summary>
+	/// Get a random <see cref="byte"/> between <paramref name="min"/> (inclusive) and <paramref name="max"/> (exclusive)
+	/// </summary>
+	public byte U8(byte min, byte max) => (byte)(min + U8((byte)(max - min)));
+
+	/// <summary>
+	/// Get a random <see cref="long"/> from all possible values
+	/// </summary>
+	public long Long() => (long)U64();
+
+	/// <summary>
+	/// Get a random <see cref="long"/> between 0 (inclusive) and <paramref name="max"/> (exclusive)
+	/// </summary>
+	public long Long(long max) => max != 0 ? Math.Abs(Long()) % max : 0;
+
+	/// <summary>
+	/// Get a random <see cref="long"/> between <paramref name="min"/> (inclusive) and <paramref name="max"/> (exclusive)
+	/// </summary>
+	public long Long(long min, long max) => min + Long(max - min);
+
+	/// <summary>
+	/// Get a random <see cref="int"/> from all possible values
+	/// </summary>
+	public int Int() => (int)U64();
+
+	/// <summary>
+	/// Get a random <see cref="int"/> between 0 (inclusive) and <paramref name="max"/> (exclusive)
+	/// </summary>
+	public int Int(int max) => max != 0 ? Math.Abs(Int()) % max : 0;
+
+	/// <summary>
+	/// Get a random <see cref="int"/> between <paramref name="min"/> (inclusive) and <paramref name="max"/> (exclusive)
+	/// </summary>
+	public int Int(int min, int max) => min + Int(max - min);
+
+	/// <summary>
+	/// Get a random <see cref="short"/> from all possible values
+	/// </summary>
+	public short Short() => (short)U64();
+
+	/// <summary>
+	/// Get a random <see cref="short"/> between 0 (inclusive) and <paramref name="max"/> (exclusive)
+	/// </summary>
+	public short Short(short max) => (short)(max != 0 ? Math.Abs(Short()) % max : 0);
+
+	/// <summary>
+	/// Get a random <see cref="short"/> between <paramref name="min"/> (inclusive) and <paramref name="max"/> (exclusive)
+	/// </summary>
+	public short Short(short min, short max) => (short)(min + Short((short)(max - min)));
+
+	/// <summary>
+	/// Get a random <see cref="sbyte"/> from all possible values
+	/// </summary>
+	public sbyte SByte() => (sbyte)U64();
+
+	/// <summary>
+	/// Get a random <see cref="sbyte"/> between 0 (inclusive) and <paramref name="max"/> (exclusive)
+	/// </summary>
+	public sbyte SByte(sbyte max) => (sbyte)(max != 0 ? Math.Abs(SByte()) % max : 0);
+
+	/// <summary>
+	/// Get a random <see cref="sbyte"/> between <paramref name="min"/> (inclusive) and <paramref name="max"/> (exclusive)
+	/// </summary>
+	public sbyte SByte(sbyte min, sbyte max) => (sbyte)(min + SByte((sbyte)(max - min)));
+
+	/// <summary>
+	/// Get a random <see cref="double"/> from all possible values
+	/// </summary>
+	public double Double()
+	{
+		ulong bits = 0x3ff0000000000000ul | (U64() >> 11);
+		double val;
+		unsafe { Unsafe.WriteUnaligned(&val, bits); }
+		return val - (1.0 - double.Epsilon / 2.0);
+	}
+
+	/// <summary>
+	/// Get a random <see cref="double"/> between 0 (inclusive) and <paramref name="max"/> (exclusive)
+	/// </summary>
+	public double Double(double max) => Double() * max;
+
+	/// <summary>
+	/// Get a random <see cref="double"/> between <paramref name="min"/> (inclusive) and <paramref name="max"/> (exclusive)
+	/// </summary>
+	public double Double(double min, double max) => min + Double(max - min);
+
+	/// <summary>
+	/// Get a random <see cref="float"/> from all possible values
+	/// </summary>
+	public float Float()
+	{
+		uint bits = (uint)(0x3f800000ul | (U64() >> 40));
+		float val;
+		unsafe { Unsafe.WriteUnaligned(&val, bits); }
+		return val - (1.0f - float.Epsilon / 2.0f);
+	}
+
+	/// <summary>
+	/// Get a random <see cref="float"/> between 0 (inclusive) and <paramref name="max"/> (exclusive)
+	/// </summary>
+	public float Float(float max) => Float() * max;
+
+	/// <summary>
+	/// Get a random <see cref="float"/> between <paramref name="min"/> (inclusive) and <paramref name="max"/> (exclusive)
+	/// </summary>
+	public float Float(float min, float max) => min + Float(max - min);
+
+	/// <summary>
+	/// Randomly return either true or false
+	/// </summary>
+	public bool Boolean() => (U64() & 1) == 1;
+
+	/// <summary>
+	/// Return either a positive or a negative sign
+	/// </summary>
+	public Signs Sign()
+		=> Boolean() ? Signs.Positive : Signs.Negative;
+
+	/// <summary>
+	/// Returns true a certain percentage of the time, where 0 = 0% and 1 = 100%
+	/// </summary>
+	public bool Chance(float percent) => Float() < percent;
+
+	/// <summary>
+	/// Returns true a certain percentage of the time, where 0 = 0% and 1 = 100%
+	/// </summary>
+	public bool Chance(double percent) => Double() < percent;
+
+	/// <summary>
+	/// Get a random shake value where both X and Y are randomly -1, 0, or 1. Useful for shaking visual elements
+	/// </summary>
+	public Point2 Shake()
+		=> new(Choose(-1, 0, 1), Choose(-1, 0, 1));
+
+	/// <summary>
+	/// Get a random angle from 0 (inclusive) to Tau (aka 2*pi, exclusive)
+	/// </summary>
+	public float Angle() => Float(Calc.TAU);
+
+	/// <summary>
+	/// Get a random <see cref="float"/> between -<paramref name="spread"/>/2 (inclusive) and <paramref name="spread"/>/2 (exclusive)
+	/// </summary>
+	public float Spread(float spread) => Float() * spread - spread / 2;
+
+	/// <summary>
+	/// Get a random normalized Vector2
+	/// </summary>
+	public Vector2 Vec2() => Calc.AngleToVector(Angle());
+
+	/// <summary>
+	/// Get a random point inside a rectangle. The top and left rect bounds are inclusive, and the bottom and right rect bounds are exclusive
+	/// </summary>
+	public System.Numerics.Vector2 PointInside(in Rect rect)
+		=> rect.On(Float(1), Float(1));
+
+	/// <summary>
+	/// Randomly choose and return an element of the span
+	/// </summary>
+	public T Choose<T>(params ReadOnlySpan<T> choices)
+		=> choices[Int(choices.Length)];
+
+	/// <summary>
+	/// Randomly choose and return an element of the array
+	/// </summary>
+	public T Choose<T>(T[] choices)
+		=> choices[Int(choices.Length)];
+
+	/// <summary>
+	/// Randomly choose and return an element of the list
+	/// </summary>
+	public T Choose<T>(List<T> choices)
+		=> choices[Int(choices.Count)];
+
+	/// <summary>
+	/// Randomly choose an element of the list, remove it from the list, and return it
+	/// </summary>
+	public T ChooseAndRemove<T>(List<T> choices)
+	{
+		int index = Int(choices.Count);
+		var value = choices[index];
+		choices.RemoveAt(index);
+		return value;
+	}
+
+	/// <summary>
+	/// Randomly shuffle a span in-place
+	/// </summary>
+	public void Shuffle<T>(Span<T> span)
+	{
+		int n = span.Length;
+		while (n > 1) {
+			n--;
+			int k = Int(n + 1);
+			(span[k], span[n]) = (span[n], span[k]);
+		}
+	}
+
+	/// <summary>
+	/// Randomly shuffle an array in-place
+	/// </summary>
+	public void Shuffle<T>(T[] array)
+		=> Shuffle(array.AsSpan());
+
+	/// <summary>
+	/// Randomly shuffle a List in-place
+	/// </summary>
+	public void Shuffle<T>(List<T> list)
+		=> Shuffle(CollectionsMarshal.AsSpan(list));
+}
