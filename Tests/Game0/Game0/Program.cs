@@ -1,4 +1,5 @@
-﻿using Engine;
+﻿using DCFApixels.DragonECS;
+using Engine;
 using Foster.Framework;
 
 internal static class Program
@@ -19,6 +20,8 @@ internal static class Program
 
 public class MyGame : GameApp
 {
+    private EcsWorld _world;
+    private EcsPipeline _systemPipeline;
     public MyGame(in AppConfig config) : base(in config)
     {
     }

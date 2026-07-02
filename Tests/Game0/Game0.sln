@@ -10,9 +10,9 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Box2D.NET", "..\..\Libs\Box
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foster.Audio", "..\..\Libs\Foster.Audio\Foster.Audio\Foster.Audio.csproj", "{7B6BA99F-AE2D-4823-A148-F8BF8C49B212}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Game0", "Game0\Game0.csproj", "{EF27A290-B501-4D17-8E29-581E64F64ACD}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Engine", "..\..\Libs\Engine\Engine.csproj", "{14483FB7-AAB8-4BBA-89D1-8C0B62F2E4A5}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Game0", "Game0\Game0.csproj", "{878C55AE-64F7-4723-9D76-1746439B744A}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -36,14 +36,14 @@ Global
 		{7B6BA99F-AE2D-4823-A148-F8BF8C49B212}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{7B6BA99F-AE2D-4823-A148-F8BF8C49B212}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{7B6BA99F-AE2D-4823-A148-F8BF8C49B212}.Release|Any CPU.Build.0 = Release|Any CPU
-		{EF27A290-B501-4D17-8E29-581E64F64ACD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{EF27A290-B501-4D17-8E29-581E64F64ACD}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{EF27A290-B501-4D17-8E29-581E64F64ACD}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{EF27A290-B501-4D17-8E29-581E64F64ACD}.Release|Any CPU.Build.0 = Release|Any CPU
 		{14483FB7-AAB8-4BBA-89D1-8C0B62F2E4A5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{14483FB7-AAB8-4BBA-89D1-8C0B62F2E4A5}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{14483FB7-AAB8-4BBA-89D1-8C0B62F2E4A5}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{14483FB7-AAB8-4BBA-89D1-8C0B62F2E4A5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{878C55AE-64F7-4723-9D76-1746439B744A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{878C55AE-64F7-4723-9D76-1746439B744A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{878C55AE-64F7-4723-9D76-1746439B744A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{878C55AE-64F7-4723-9D76-1746439B744A}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{4E588C41-4BC5-4349-92F8-11AE08DC79C1} = {A458DF4F-25DC-4A28-8DC7-E76F9BA3C22E}
