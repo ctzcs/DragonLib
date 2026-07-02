@@ -1,0 +1,10 @@
+{
+  "lsp": {
+    "omnisharp": {
+      "binary": {
+        "path": "/path/to/OmniSharp",
+        "arguments": ["optional", "additional", "args", "-lsp"],
+      },
+    },
+  },
+}

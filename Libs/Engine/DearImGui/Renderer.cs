@@ -1,5 +1,4 @@
 ﻿namespace Engine.DearImGui;
-
 using System.Diagnostics;
 using System.Numerics;
 using Foster.Framework;
