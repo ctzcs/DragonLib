@@ -60,4 +60,34 @@ public static class EcsPoolUtil
         _byName = null;
         ComponentTypeCatalog.Invalidate();
     }
+
+    /// <summary>所有已发现的组件类型（供编辑器"添加组件"下拉枚举）。ComponentTypeCatalog 是内部类型，这里对外暴露。</summary>
+    public static IReadOnlyList<Type> AllComponentTypes => ComponentTypeCatalog.All;
+
+    /// <summary>
+    /// 给实体添加一个指定类型的空组件（按 Tag / Value / 普通选对 pool）。已存在则不动。
+    /// 失败只告警不抛，供编辑器 UI 安全调用。
+    /// </summary>
+    public static void AddEmptyComponent(EcsWorld world, int entity, Type componentType)
+    {
+        try
+        {
+            var pool = GetOrCreatePoolFor(world, componentType);
+            if (pool == null)
+            {
+                EcsDebug.PrintWarning($"Add component {componentType.Name} failed: cannot resolve pool.");
+                return;
+            }
+            if (!pool.Has(entity))
+                pool.AddEmpty(entity);
+        }
+        catch (TargetInvocationException tie) when (tie.InnerException != null)
+        {
+            EcsDebug.PrintWarning($"Add component {componentType.Name} failed: {tie.InnerException.Message}");
+        }
+        catch (Exception ex)
+        {
+            EcsDebug.PrintWarning($"Add component {componentType.Name} failed: {ex.Message}");
+        }
+    }
 }

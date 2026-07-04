@@ -1,0 +1,19 @@
+{
+  "Id": 3995048216312346751,
+  "Name": "Prefabs/aa",
+  "Components": {
+    "PositionComp": {
+      "Value": {
+        "X": 0,
+        "Y": 0
+      }
+    },
+    "TagAComp": {},
+    "VelocityComp": {
+      "Value": {
+        "X": 0,
+        "Y": 0
+      }
+    }
+  }
+}

@@ -17,6 +17,8 @@
     <ItemGroup>
       <Folder Include="Content\Luban\GenCode\" />
       <Folder Include="Resources\" />
+      <Folder Include="Resources\Levels\" />
+      <Folder Include="Resources\Prefabs\" />
     </ItemGroup>
 
 </Project>

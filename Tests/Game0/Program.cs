@@ -2,6 +2,7 @@
 using System.Numerics;
 using DCFApixels.DragonECS;
 using Engine;
+using Engine.Assets;
 using Engine.DearImGui;
 using Engine.ECS;
 using Engine.World;
@@ -32,76 +33,130 @@ public class AppState
 
 public class MyGame : GameApp
 {
+    // 共享：模式标志 + ImGui 层。两条 pipeline 都注入 _appState，系统内也能读当前模式。
     private AppState _appState;
-    
+    private Renderer _imGui;
+
+    // ---- Editor 态：编辑器世界，独立的 pipeline / camera / batcher ----
     private EcsEditorWorld _editorWorld;
-    private EcsPipeline _editorPipleline;
+    private EcsPipeline _editorPipeline;
     private Camera2D _editorCamera;
     private Batcher _editorBatcher;
-    
-    private EcsWorld _world;
+    private AssetDatabase _assets;
+
+    // ---- Game 态：运行时世界 ----
+    private EcsDefaultWorld _world;
     private EcsEventWorld _eventWorld;
     private EcsPipeline _pipeline;
     private Batcher _batcher;
     private Camera2D _camera;
-    
-    private Renderer _imGui;
-    
+
     public MyGame(in AppConfig config) : base(in config)
     {
+        _appState = new AppState();
+        _imGui = new Renderer(this);
+
         _batcher = new Batcher(this.GraphicsDevice);
         _camera = new Camera2D();
-        _imGui = new Renderer(this);
-        _appState = new AppState();
+
+        _editorBatcher = new Batcher(this.GraphicsDevice);
+        _editorCamera = new Camera2D();
+        _assets = new AssetDatabase();
     }
 
     protected override void Startup()
     {
+        // 启动时扫内容目录，把磁盘上的预制体载回资产库，否则关卡加载会因查不到预制体而跳过实体。
+        // 类型由这里指定（Prefab），name = 相对 "Resources" 的路径（如 Prefabs/enemy），
+        // 与创作端算出的 AssetId 一致。以后加别的资产就再扫对应目录：ScanInto<LevelData>(...) 等。
+        int loaded = ContentScanner.ScanInto<Prefab>(
+            _assets, StorageUtils.GetDevGameRoot,
+            scanDir: "Resources/Prefabs", nameRoot: "Resources", options: PrefabSerializer.Options);
+        Log.Info($"Loaded {loaded} prefab(s) from Resources/Prefabs.");
+
+        // Game 世界 + pipeline
         _world = new EcsDefaultWorld();
         _eventWorld = new EcsEventWorld();
 
         _pipeline = EcsPipeline.New()
             .Inject(_appState)
-            .Inject(_editorWorld)
             .Inject(_world)
             .Inject(_eventWorld)
             .Inject(_batcher)
             .Inject(_camera)
             .Inject(_imGui)
-            .AddModule(new EditorModule())
             .AddModule(new SimpleModule())
             .AddModule(new TestModule())
             .AddModule(new DebugInspectorModule())
             .Add(new EcsInspectorSystem(() => { Log.Info("Register Custom Drawer");}))
             .AutoInject()
             .BuildAndInit();
-        
+
+        // Editor 世界 + pipeline（各自独立的 batcher / camera）
+        _editorWorld = new EcsEditorWorld();
+
+        _editorPipeline = EcsPipeline.New()
+            .Inject(_appState)
+            .Inject(_editorWorld)
+            .Inject(_editorBatcher)
+            .Inject(_editorCamera)
+            .Inject(_imGui)
+            .Inject(_assets)
+            .AddModule(new EditorModule())
+            .AutoInject()
+            .BuildAndInit();
     }
 
     protected override void Shutdown()
     {
-
+        _pipeline?.Destroy();
+        _world?.Destroy();
+        _eventWorld?.Destroy();
+        _editorPipeline?.Destroy();
+        _editorWorld?.Destroy();
     }
+
+    private void HandleModeToggle()
+    {
+        // F2 切换 Game / Editor。Pressed = 本帧按下的边沿，不会连续触发。
+        if (Input.Keyboard.Pressed(Keys.F2))
+        {
+            _appState.IsEditorMode = !_appState.IsEditorMode;
+            Log.Info(_appState.IsEditorMode ? "Switched to Editor mode" : "Switched to Game mode");
+        }
+    }
+
+    // 当前激活的那一套。
+    private EcsPipeline ActivePipeline => _appState.IsEditorMode ? _editorPipeline : _pipeline;
+    private Batcher ActiveBatcher => _appState.IsEditorMode ? _editorBatcher : _batcher;
+    private Camera2D ActiveCamera => _appState.IsEditorMode ? _editorCamera : _camera;
 
     protected override void Update()
     {
+        HandleModeToggle();
+
         _imGui.BeginLayout();
         if (_imGui.WantsTextInput)
             Window.StartTextInput();
         else
             Window.StopTextInput();
-        _pipeline.Update();
+
+        // 只更新激活的那条 pipeline，另一套完全冻结。
+        ActivePipeline.Update();
+
         _imGui.EndLayout();
-        
     }
 
     protected override void Render()
     {
-        Window.Clear(Color.AliceBlue);
-        _batcher.PushMatrix(_camera.GetMatrix(Window));
-        _pipeline.Render();
-        _batcher.Render(Window);
-        _batcher.Clear();
+        Window.Clear(_appState.IsEditorMode ? new Color(0x22, 0x26, 0x2b, 0xff) : Color.AliceBlue);
+
+        var batcher = ActiveBatcher;
+        batcher.PushMatrix(ActiveCamera.GetMatrix(Window));
+        ActivePipeline.Render();
+        batcher.Render(Window);
+        batcher.Clear();
+
         _imGui.Render();
     }
 }

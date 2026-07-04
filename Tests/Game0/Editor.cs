@@ -27,7 +27,7 @@ public class EditorModule : IEcsModule
 /// </summary>
 public sealed class LevelEditorSystem : IUpdateSystem
 {
-    [DI] private EcsDefaultWorld _world;
+    [DI] private EcsEditorWorld _world;
     [DI] private AssetDatabase _assets;
 
     public bool IsOpen = true;
@@ -37,9 +37,18 @@ public sealed class LevelEditorSystem : IUpdateSystem
     private string _newPrefabName = "new_prefab";
     private int _selectedEntity = -1;
     private string _status = "";
+    private string _addComponentFilter = "";
     
-    private static string LevelPath(string name) => "Levels/" + name + ".json";
-    private static string PrefabPath(string name) => "Prefabs/" + name + ".json";
+    // 内容根：所有资产 name 都相对它（如 "Prefabs/enemy"），与启动扫描器的 nameRoot 一致，
+    // 保证 Save 与 Scan 算出同一个 AssetId。
+    private const string ContentRoot = "Resources";
+
+    // 资产内容名（用于 AssetId / Register）：相对内容根、带子目录，不含扩展名。
+    private static string PrefabName(string shortName) => "Prefabs/" + shortName;
+
+    // 磁盘路径（相对 game root）= 内容根 / 内容名 .json。
+    private static string LevelPath(string shortName) => ContentRoot + "/Levels/" + shortName + ".json";
+    private static string PrefabPath(string shortName) => ContentRoot + "/" + PrefabName(shortName) + ".json";
 
     public void Update()
     {
@@ -75,7 +84,18 @@ public sealed class LevelEditorSystem : IUpdateSystem
         if (ImGui.Button("Save")) SaveLevel();
         ImGui.SameLine();
         if (ImGui.Button("Load")) LoadLevel();
+        ImGui.SameLine();
+        if (ImGui.Button("+ Empty")) CreateEmptyEntity();
         if (!string.IsNullOrEmpty(_status)) ImGui.TextDisabled(_status);
+    }
+
+    /// <summary>创建一个空白实体，只打身份组件（SpawnId），选中它。之后可在右侧 Inspector 加组件、Save as Prefab。</summary>
+    private void CreateEmptyEntity()
+    {
+        int e = _world.NewEntity();
+        _world.GetPool<SpawnIdComp>().Add(e).Id = SpawnId.New();
+        _selectedEntity = e;
+        _status = $"Created empty entity #{e}.";
     }
 
     private void DrawPrefabPalette()
@@ -111,10 +131,11 @@ public sealed class LevelEditorSystem : IUpdateSystem
 
         foreach (int e in _world.Entities)
         {
-            if (!spawnPool.Has(e) || !prefabPool.Has(e)) continue;
+            if (!spawnPool.Has(e)) continue;   // 有实例身份即列出（空实体也算），prefab 只是可选标注
             var id = spawnPool.Get(e).Id;
+            string tag = prefabPool.Has(e) ? "" : " (empty)";
             bool selected = _selectedEntity == e;
-            if (ImGui.Selectable($"#{e}  {id.ToHex()}", selected))
+            if (ImGui.Selectable($"#{e}  {id.ToHex()}{tag}", selected))
                 _selectedEntity = e;
         }
     }
@@ -160,7 +181,58 @@ public sealed class LevelEditorSystem : IUpdateSystem
         }
 
         ImGui.Separator();
+        DrawAddComponent(e);
+        ImGui.Separator();
         DrawSaveAsPrefab(e);
+    }
+
+    /// <summary>"Add Component" 下拉：列出所有组件类型（跳过已挂的），点选即加一个空组件。</summary>
+    private void DrawAddComponent(int e)
+    {
+        if (ImGui.Button("Add Component", new Vector2(-1, 0)))
+        {
+            _addComponentFilter = "";
+            ImGui.OpenPopup("##add_component_popup");
+        }
+
+        if (!ImGui.BeginPopup("##add_component_popup")) return;
+
+        ImGui.SetNextItemWidth(240);
+        ImGui.InputTextWithHint("##addfilter", "Filter types...", ref _addComponentFilter, 64);
+        ImGui.Separator();
+
+        ImGui.BeginChild("##add_list", new Vector2(280, 320));
+        var all = EcsPoolUtil.AllComponentTypes;
+        var pools = _world.AllPools;
+        for (int i = 0; i < all.Count; i++)
+        {
+            var t = all[i];
+            if (t == typeof(SpawnIdComp) || t == typeof(PrefabRefComp)) continue;
+            if (HasComponent(pools, e, t)) continue;                        // 已挂的跳过
+            if (!string.IsNullOrEmpty(_addComponentFilter) &&
+                !t.Name.Contains(_addComponentFilter, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (ImGui.Selectable(t.Name))
+            {
+                EcsPoolUtil.AddEmptyComponent(_world, e, t);
+                _status = $"Added {t.Name}.";
+                ImGui.CloseCurrentPopup();
+                break;
+            }
+            if (ImGui.IsItemHovered() && !string.IsNullOrEmpty(t.Namespace))
+                ImGui.SetTooltip(t.Namespace + "." + t.Name);
+        }
+        ImGui.EndChild();
+        ImGui.EndPopup();
+    }
+
+    /// <summary>实体 e 是否已挂类型 type 的组件。遍历实体现有组件类型比对，不创建新 pool。</summary>
+    private bool HasComponent(ReadOnlySpan<IEcsPool> pools, int e, Type type)
+    {
+        foreach (int cid in _world.GetComponentTypeIDsFor(e))
+            if (pools[cid].ComponentType == type) return true;
+        return false;
     }
 
     private void DrawSaveAsPrefab(int e)
@@ -170,11 +242,13 @@ public sealed class LevelEditorSystem : IUpdateSystem
         ImGui.SameLine();
         if (ImGui.Button("Save as Prefab"))
         {
-            var id = AssetId.FromName(_newPrefabName);
-            var prefab = PrefabSerializer.Capture(_world, e, id, _newPrefabName);
-            _assets.Register(_newPrefabName, prefab);                       // 进库，调色板立刻可见
+            // 内容名带子目录前缀（Prefabs/xxx），与启动扫描器算的 AssetId 一致。
+            var contentName = PrefabName(_newPrefabName);
+            var id = AssetId.FromName(contentName);
+            var prefab = PrefabSerializer.Capture(_world, e, id, contentName);
+            _assets.Register(contentName, prefab);                          // 进库，调色板立刻可见
             StorageUtils.GetDevGameRoot.SaveJson(PrefabPath(_newPrefabName), prefab, PrefabSerializer.Options);
-            _status = $"Saved prefab '{_newPrefabName}'.";
+            _status = $"Saved prefab '{contentName}'.";
         }
     }
 

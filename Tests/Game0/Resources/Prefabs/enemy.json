@@ -1,0 +1,13 @@
+{
+  "Id": 6238356710365261299,
+  "Name": "Prefabs/enemy",
+  "Components": {
+    "PositionComp": {
+      "Value": {
+        "X": 0,
+        "Y": 0
+      }
+    },
+    "TagAComp": {}
+  }
+}

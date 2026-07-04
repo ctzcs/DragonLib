@@ -1,0 +1,56 @@
+{
+  "Name": "level_0",
+  "Entities": [
+    {
+      "Def": 3995048216312346751,
+      "Id": 199065345569325056,
+      "Fields": {
+        "PositionComp": {
+          "Value": {
+            "X": 0,
+            "Y": 0
+          }
+        },
+        "TagAComp": {},
+        "VelocityComp": {
+          "Value": {
+            "X": 0,
+            "Y": 0
+          }
+        }
+      }
+    },
+    {
+      "Def": 3995048216312346751,
+      "Id": 199065350845759488,
+      "Fields": {
+        "PositionComp": {
+          "Value": {
+            "X": 0,
+            "Y": 0
+          }
+        },
+        "TagAComp": {},
+        "VelocityComp": {
+          "Value": {
+            "X": 0,
+            "Y": 0
+          }
+        }
+      }
+    },
+    {
+      "Def": 6238356710365261299,
+      "Id": 199065356432572416,
+      "Fields": {
+        "PositionComp": {
+          "Value": {
+            "X": 1,
+            "Y": 0
+          }
+        },
+        "TagAComp": {}
+      }
+    }
+  ]
+}
