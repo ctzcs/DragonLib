@@ -1,0 +1,18 @@
+主要关注的地方：
+1. 如何新建配置表
+2. 配置完成后如何使用
+
+# 如何新建配置表
+1. 进入Configs/Datas文件夹，所有的配置表都在里面。
+2. sample_item.xlsx是示例配置表:
+    1. 新建配置表:sample_item.xlsx
+    2. 在__tables__.xlsx中注册sample_item.xlsx配置表
+3. 点击Configs/gen.bat，会根据表的配置生成代码和json文件，分别位于Unity/Gen/code和Unity/StreamingAssets/json中
+
+
+#如何使用配置表
+1. 直接调用API.Tables能获取所有的配置表，通过具体的配置表，能获取每一条数据，也能通过Get(key)获取某一条数据
+
+
+#Luban官方文档
+https://luban.doc.code-philosophy.com/docs/beginner/quickstart

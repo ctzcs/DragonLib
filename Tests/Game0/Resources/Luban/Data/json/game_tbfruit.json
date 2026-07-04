@@ -1,0 +1,41 @@
+[
+  {
+    "id": 0,
+    "radius": 14,
+    "score": 10,
+    "sword_intent": 1,
+    "growth_reward": 12,
+    "time_bonus": 0,
+    "color_r": 1,
+    "color_g": 0.42,
+    "color_b": 0.46,
+    "render_scale": 1,
+    "spawn_weight": 70
+  },
+  {
+    "id": 1,
+    "radius": 16,
+    "score": 25,
+    "sword_intent": 2,
+    "growth_reward": 18,
+    "time_bonus": 1,
+    "color_r": 1,
+    "color_g": 0.86,
+    "color_b": 0.28,
+    "render_scale": 1,
+    "spawn_weight": 30
+  },
+  {
+    "id": 2,
+    "radius": 18,
+    "score": 40,
+    "sword_intent": 3,
+    "growth_reward": 24,
+    "time_bonus": 1.6,
+    "color_r": 0.52,
+    "color_g": 0.92,
+    "color_b": 1,
+    "render_scale": 1.15,
+    "spawn_weight": 0
+  }
+]

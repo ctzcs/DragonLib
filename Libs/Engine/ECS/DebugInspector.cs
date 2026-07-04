@@ -297,34 +297,11 @@ public class EcsInspector
         }
     }
 
-    private static readonly Dictionary<Type, MethodInfo> _getPoolInstanceCache = new();
-    private static readonly MethodInfo _getPoolInstanceOpen =
-        typeof(EcsWorld).GetMethods(BindingFlags.Instance | BindingFlags.Public)
-            .First(m => m.Name == "GetPoolInstance" && m.IsGenericMethodDefinition && m.GetParameters().Length == 0);
-
-    private static IEcsPool? GetOrCreatePoolFor(EcsWorld world, Type componentType)
-    {
-        Type poolType;
-        if (typeof(IEcsTagComponent).IsAssignableFrom(componentType))
-            poolType = typeof(EcsTagPool<>).MakeGenericType(componentType);
-        else if (typeof(IEcsValueComponent).IsAssignableFrom(componentType))
-            poolType = typeof(EcsValuePool<>).MakeGenericType(componentType);
-        else
-            poolType = typeof(EcsPool<>).MakeGenericType(componentType);
-
-        if (!_getPoolInstanceCache.TryGetValue(poolType, out var mi))
-        {
-            mi = _getPoolInstanceOpen.MakeGenericMethod(poolType);
-            _getPoolInstanceCache[poolType] = mi;
-        }
-        return mi.Invoke(world, null) as IEcsPool;
-    }
-
     private static void TryAddComponent(EcsWorld world, int entity, Type type)
     {
         try
         {
-            var pool = GetOrCreatePoolFor(world, type);
+            var pool = EcsPoolUtil.GetOrCreatePoolFor(world, type);
             if (pool == null)
             {
                 EcsDebug.PrintWarning($"Add component {type.Name} failed: cannot resolve pool.");
