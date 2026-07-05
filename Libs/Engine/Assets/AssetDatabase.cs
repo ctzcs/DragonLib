@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using SDL3;
+
 namespace Engine.Assets;
 
 /// <summary>
@@ -28,6 +31,15 @@ public sealed class AssetDatabase
         if (_names.TryGetValue(id, out var existing) && existing != norm)
             throw new InvalidOperationException(
                 $"AssetId 哈希碰撞: '{norm}' 与 '{existing}' 得到同一 id {id.ToHex()}。请改名其一。");
+
+        // 资产的 id 由这里回填：保证存储 id 永远等于注册 id，单一真相源。
+        // name 也顺带回填（若资产没自带名）。运行时解析不依赖这俩字段，它们供存盘追溯。
+        
+        if (asset is IAsset typed)
+        {
+            typed.Id = id;
+            if (string.IsNullOrEmpty(typed.Name)) typed.Name = norm;
+        }
 
         _registry.Register(id, asset);
         _names[id] = norm;

@@ -243,10 +243,10 @@ public sealed class LevelEditorSystem : IUpdateSystem
         if (ImGui.Button("Save as Prefab"))
         {
             // 内容名带子目录前缀（Prefabs/xxx），与启动扫描器算的 AssetId 一致。
+            // Id 不在此赋值：Register 会按 contentName 回填，保证存盘 id ≡ 注册 id。
             var contentName = PrefabName(_newPrefabName);
-            var id = AssetId.FromName(contentName);
-            var prefab = PrefabSerializer.Capture(_world, e, id, contentName);
-            _assets.Register(contentName, prefab);                          // 进库，调色板立刻可见
+            var prefab = PrefabSerializer.Capture(_world, e, contentName);
+            _assets.Register(contentName, prefab);                          // 进库并回填 Id，调色板立刻可见
             StorageUtils.GetDevGameRoot.SaveJson(PrefabPath(_newPrefabName), prefab, PrefabSerializer.Options);
             _status = $"Saved prefab '{contentName}'.";
         }

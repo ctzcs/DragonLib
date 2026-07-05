@@ -27,6 +27,7 @@ public readonly record struct AssetId(long Value)
     /// </summary>
     public static AssetId FromName(string name) => new(Fnv1a64(Normalize(name)));
 
+    /// 小写的意义在于跨平台识别，这个字符串作为id存在
     /// <summary>把任意路径规范成用于哈希的 key：正斜杠、去首尾斜杠、去扩展名、小写。</summary>
     public static string Normalize(string name)
     {

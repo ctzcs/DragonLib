@@ -30,9 +30,12 @@ public struct SpawnIdComp : IEcsComponent
 /// Components 是"组件类型名 → 默认值(JSON)"。实例化时先套用这些默认组件，
 /// 再套用关卡记录里的字段覆盖（override）。这样关卡文件只需存与默认不同的部分。
 /// </summary>
-public sealed class Prefab
+public sealed class Prefab : IAsset
 {
+    /// <summary>登记 id，由 <see cref="AssetDatabase.Register"/> 按名字回填；供存盘追溯，非解析来源。</summary>
     public AssetId Id { get; set; }
+
+    /// <summary>人类可读名（编辑器 / 调试显示）。</summary>
     public string Name { get; set; } = "";
 
     /// <summary>组件类型名（Type.Name）→ 默认值。用 JsonElement 保存，实例化时按类型反序列化。</summary>

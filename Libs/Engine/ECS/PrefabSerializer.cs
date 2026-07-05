@@ -11,9 +11,9 @@ var elevatorPrefab = assets.Get<Prefab>(AssetId.FromName("prefabs/elevator"));
 int e = PrefabSerializer.Instantiate(world, elevatorPrefab);   // 自动发 SpawnId
 //覆盖实例化
 int e = PrefabSerializer.Instantiate(world, elevatorPrefab, overrides);
-//从实体生成预制体
-// prefab 再存成 Content/Prefabs/elevator.json,并 assets.Register 进库
-var prefab = PrefabSerializer.Capture(world, selectedEntity, AssetId.FromName("prefabs/elevator"), "Elevator");
+//从实体生成预制体（id 不在此给，Register 按名字回填）
+var prefab = PrefabSerializer.Capture(world, selectedEntity, "prefabs/elevator");
+assets.Register("prefabs/elevator", prefab);   // 进库并回填 Id，再存成 Prefabs/elevator.json
 
 
 override是level概念，覆盖实体的数据存到Level中
@@ -60,10 +60,14 @@ public static class PrefabSerializer
     /// <summary>
     /// 从一个实体反向生成预制体定义（编辑器"把选中对象存成预制体"用）。
     /// 导出实体上除身份组件外的所有组件作为默认值。
+    /// id 不在这里给：交给 <see cref="AssetDatabase.Register"/> 按登记名回填，单一真相源。
     /// </summary>
-    public static Prefab Capture(EcsWorld world, int entity, AssetId prefabId, string name)
+    public static Prefab Capture(EcsWorld world, int entity, string name)
     {
-        var prefab = new Prefab { Id = prefabId, Name = name };
+        var prefab = new Prefab
+        {
+            Name = name
+        };
         var pools = world.AllPools;
 
         foreach (int cid in world.GetComponentTypeIDsFor(entity))

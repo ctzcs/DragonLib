@@ -120,7 +120,7 @@ sprite 名字，选中存哈希，`(none)` 清空，引用失效时显示 `<miss
 
 ---
 
-## SpawnId：关卡里"这一个"的身份
+## SpawnId：关卡里"这一个"的身份, 关卡中的唯一Id
 
 `AssetId` 回答"长什么样"（用哪个 sprite），`SpawnId` 回答"是哪一个"。
 同一个电梯预制体在关卡里摆 3 台，它们 `AssetId` 相同、`SpawnId` 各不相同。
