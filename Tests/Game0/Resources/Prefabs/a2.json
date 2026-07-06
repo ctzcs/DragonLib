@@ -1,0 +1,12 @@
+{
+  "Id": 3995137276754231842,
+  "Name": "Prefabs/a2",
+  "Components": {
+    "PositionComp": {
+      "Value": {
+        "X": 0,
+        "Y": 0
+      }
+    }
+  }
+}

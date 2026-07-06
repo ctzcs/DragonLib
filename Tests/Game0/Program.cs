@@ -103,6 +103,8 @@ public class MyGame : GameApp
             .Inject(_editorCamera)
             .Inject(_imGui)
             .Inject(_assets)
+            .Inject(Input)      // 场景视口需要原始鼠标 / 滚轮输入
+            .Inject(Window)     // 屏幕 ↔ 世界坐标换算（相机矩阵按窗口像素尺寸）
             .AddModule(new EditorModule())
             .AutoInject()
             .BuildAndInit();
@@ -230,6 +232,27 @@ public struct PositionComp : IEcsComponent
 {
     public Vector2 Value;
 }
+
+/// <summary>绘制形状。编辑器 Render 按此选择画矩形还是圆。</summary>
+public enum RenderShape { Rect, Circle }
+
+/// <summary>
+/// 可视组件：告诉编辑器 / 渲染这个实体长什么样。颜色来源于这里（不再按名字散列）。
+/// Color 用 Vector4(RGBA 0..1) 便于 Inspector 里用颜色选择器编辑。
+/// Size 为世界单位：Rect 是宽高，Circle 用 X 当直径。
+/// </summary>
+public struct RenderComp : IEcsComponent
+{
+    public Vector4 Color;
+    public Vector2 Size;
+    public RenderShape Shape;
+}
+
+/// <summary>
+/// 标记"这是一个网格 Tile"：编辑器摆放时吸附到格、一格一个（覆盖）；渲染时填满整格。
+/// 不带此标记的实体是"自由实体"：落在光标精确位置、可重叠、按 RenderComp.Size 画自身形状。
+/// </summary>
+public struct TileComp : IEcsTagComponent { }
 
 public struct VelocityComp : IEcsComponent
 {
