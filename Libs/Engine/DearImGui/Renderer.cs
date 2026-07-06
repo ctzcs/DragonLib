@@ -1,4 +1,6 @@
-﻿namespace Engine.DearImGui;
+﻿using System.Runtime.InteropServices;
+
+namespace Engine.DearImGui;
 using System.Diagnostics;
 using System.Numerics;
 using Foster.Framework;
@@ -144,7 +146,7 @@ public class Renderer : IDisposable
 	/// </summary>
 	public bool WantsTextInput { get; private set; }
 
-	public Renderer(App app, string? customFontPath = null)
+	/*public Renderer(App app, string? customFontPath = null)
 	{
 		this.app = app;
 
@@ -181,7 +183,81 @@ public class Renderer : IDisposable
 		material = app.GraphicsDevice.Defaults.TexturedMaterial; //new(new TexturedShader(app.GraphicsDevice));
 		ImGui.SetCurrentContext(nint.Zero);
 	}
+	*/
+    
 
+    public Renderer(App app, byte[]? customFontData = null, int[]? glyphCodepoints = null)
+    {
+        this.app = app;
+
+        // create imgui context
+        context = ImGui.CreateContext(null);
+        ImGui.SetCurrentContext(context);
+
+        var io = ImGui.GetIO();
+        io.BackendFlags = ImGuiBackendFlags.None;
+        io.ConfigFlags = ImGuiConfigFlags.DockingEnable;
+
+        GCHandle rangesHandle = default;
+        
+        // load ImGui Font
+        {
+            if (customFontData != null && customFontData.Length > 0)
+            {
+                unsafe
+                {
+                    // 分配非托管内存并拷贝 TTF 数据；FontDataOwnedByAtlas 默认 true，
+                    // ImGui 构建完 atlas 后会自己 free 这块内存，所以不能传托管 byte[] 指针
+                    nint dataPtr = Marshal.AllocHGlobal(customFontData.Length);
+                    Marshal.Copy(customFontData, 0, dataPtr, customFontData.Length);
+
+                    //glyph ranges 用传入的codepoints生成，如果没有退回ImGui内置的常用字
+                    nint rangesPtr;
+                    if (glyphCodepoints != null && glyphCodepoints.Length > 0)
+                    {
+                        ushort[] ranges = BuildGlyphRanges(glyphCodepoints);
+                        rangesHandle = GCHandle.Alloc(ranges, GCHandleType.Pinned);
+                        rangesPtr = rangesHandle.AddrOfPinnedObject();
+                    }
+                    else
+                    {
+                        rangesPtr = io.Fonts.GetGlyphRangesChineseSimplifiedCommon();
+                    }
+                    
+                    
+                    io.Fonts.AddFontFromMemoryTTF(
+                        dataPtr,
+                        customFontData.Length,
+                        64,                                // 像素大小，沿用原来的 64
+                        null,                  // ImFontConfig*，null 用默认
+                        rangesPtr);
+                }
+                io.FontGlobalScale = 16.0f / 64.0f;            // 沿用原来的缩放
+            }
+            else
+            {
+                io.Fonts.AddFontDefault();
+            }
+        }
+
+        // create font texture
+        unsafe
+        {
+            io.Fonts.GetTexDataAsRGBA32(out byte* pixelData, out int width, out int height, out int bytesPerPixel);
+            fontTexture = new Texture(app.GraphicsDevice, width, height, new ReadOnlySpan<byte>(pixelData, width * height * 4));
+        }
+        //atlas已构建 释放ranges
+        if(rangesHandle.IsAllocated)
+            rangesHandle.Free();
+        
+        
+        // create drawing resources
+        mesh = new Mesh<PosTexColVertex, ushort>(app.GraphicsDevice);
+        material = app.GraphicsDevice.Defaults.TexturedMaterial; //new(new TexturedShader(app.GraphicsDevice));
+        ImGui.SetCurrentContext(nint.Zero);
+    }
+    
+    
 	~Renderer() => Dispose();
 
 	/// <summary>
@@ -432,4 +508,25 @@ public class Renderer : IDisposable
 		GC.SuppressFinalize(this);
 		ImGui.DestroyContext(context);
 	}
+    
+    
+    // 把 codepoint 列表压成 ImGui 的配对 range 格式 [start1,end1, start2,end2, ..., 0]
+    static ushort[] BuildGlyphRanges(int[] codepoints)
+    {
+        var sorted = codepoints.Where(c => c is > 0 and <= 0xFFFF)
+            .Distinct().Order().ToArray();
+        var ranges = new List<ushort>();
+        int i = 0;
+        while (i < sorted.Length)
+        {
+            int start = sorted[i], end = start;
+            while (i + 1 < sorted.Length && sorted[i + 1] == end + 1)
+                end = sorted[++i];
+            ranges.Add((ushort)start);
+            ranges.Add((ushort)end);
+            i++;
+        }
+        ranges.Add(0);   // 结束哨兵
+        return ranges.ToArray();
+    }
 }

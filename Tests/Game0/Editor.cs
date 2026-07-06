@@ -44,7 +44,7 @@ public sealed class LevelEditorSystem : IUpdateSystem, IRenderSystem
     [DI] private Window _window;
 
     public bool IsOpen = true;
-    public string WindowTitle = "Level Editor";
+    public string WindowTitle = "关卡编辑器";
 
     private string _levelName = "untitled";
     private string _newPrefabName = "new_prefab";

@@ -55,8 +55,17 @@ public class MyGame : GameApp
     public MyGame(in AppConfig config) : base(in config)
     {
         _appState = new AppState();
-        _imGui = new Renderer(this);
-
+        //codepoints
+        int[] codepoints = FontUtility.GetCodepoints(0, FontLanguage.SimplifiedChinese);
+        //UI Font
+        var storage = StorageUtils.GetDevGameRoot;
+        byte[] fontData = storage.ReadAllBytes("Resources/Fonts/MapleMono-CN-Medium.ttf");
+        _imGui = new Renderer(this, fontData, codepoints);
+        //Game Font
+        using var s = storage.OpenRead("Resources/Fonts/MapleMono-CN-Medium.ttf");
+        var chineseFont = new SpriteFont(GraphicsDevice, new Font(s), size: 32, codepoints);
+        
+        
         _batcher = new Batcher(this.GraphicsDevice);
         _camera = new Camera2D();
 
@@ -75,6 +84,11 @@ public class MyGame : GameApp
             scanDir: "Resources/Prefabs", nameRoot: "Resources", options: PrefabSerializer.Options);
         Log.Info($"Loaded {loaded} prefab(s) from Resources/Prefabs.");
 
+        //Font Load
+        
+        
+        
+        
         // Game 世界 + pipeline
         _world = new EcsDefaultWorld();
         _eventWorld = new EcsEventWorld();

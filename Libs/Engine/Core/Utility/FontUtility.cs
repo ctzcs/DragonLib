@@ -1,5 +1,16 @@
 ﻿
 namespace Engine;
+/*
+    //codepoints
+        int[] codepoints = FontUtility.GetCodepoints(0, FontLanguage.SimplifiedChinese);
+    //UI Font
+        var storage = StorageUtils.GetDevGameRoot;
+        byte[] fontData = storage.ReadAllBytes("Resources/Fonts/MapleMono-CN-Medium.ttf");
+        _imGui = new Renderer(this, fontData, codepoints);
+    //Game Font
+        using var s = storage.OpenRead("Resources/Fonts/MapleMono-CN-Medium.ttf");
+        var chineseFont = new SpriteFont(GraphicsDevice, new Font(s), size: 32, codepoints);
+ */
 
 public enum FontLanguage
 {
