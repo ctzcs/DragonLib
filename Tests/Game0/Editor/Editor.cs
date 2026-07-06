@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Numerics;
 using System.Text.Json;
 using DCFApixels.DragonECS;
@@ -11,7 +10,7 @@ using Engine.World;
 using Foster.Framework;
 using ImGuiNET;
 
-namespace Game0;
+namespace Game0.Editor;
 
 
 public class EditorModule : IEcsModule
@@ -41,7 +40,6 @@ public sealed class LevelEditorSystem : IUpdateSystem, IRenderSystem
     [DI] private Batcher _batcher;
     [DI] private Camera2D _camera;
     [DI] private Input _input;
-    [DI] private Window _window;
 
     public bool IsOpen = true;
     public string WindowTitle = "关卡编辑器";
@@ -152,7 +150,7 @@ public sealed class LevelEditorSystem : IUpdateSystem, IRenderSystem
     /// <summary>像素坐标 → 世界坐标：相机矩阵求逆后变换。</summary>
     private Vector2 ScreenToWorld(Vector2 pixel)
     {
-        var m = _camera.GetMatrix(_window);
+        var m = _camera.Matrix;
         return Matrix3x2.Invert(m, out var inv) ? Vector2.Transform(pixel, inv) : pixel;
     }
 
@@ -403,8 +401,8 @@ public sealed class LevelEditorSystem : IUpdateSystem, IRenderSystem
     {
         // 视野半宽/半高（世界单位）= 屏幕半像素 / (PPU*Zoom)。
         float unitsPerPixel = 1f / (_camera.PPU * _camera.Zoom);
-        float halfW = _window.WidthInPixels * 0.5f * unitsPerPixel;
-        float halfH = _window.HeightInPixels * 0.5f * unitsPerPixel;
+        float halfW = _camera.Viewport.X * 0.5f * unitsPerPixel;
+        float halfH = _camera.Viewport.Y * 0.5f * unitsPerPixel;
         var center = _camera.Position;
 
         float s = _gridSize;

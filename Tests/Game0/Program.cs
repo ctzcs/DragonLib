@@ -8,7 +8,7 @@ using Engine.DearImGui;
 using Engine.ECS;
 using Engine.World;
 using Foster.Framework;
-using Game0;
+using Game0.Editor;
 using ImGuiNET;
 
 internal static class Program
@@ -118,7 +118,6 @@ public class MyGame : GameApp
             .Inject(_imGui)
             .Inject(_assets)
             .Inject(Input)      // 场景视口需要原始鼠标 / 滚轮输入
-            .Inject(Window)     // 屏幕 ↔ 世界坐标换算（相机矩阵按窗口像素尺寸）
             .AddModule(new EditorModule())
             .AutoInject()
             .BuildAndInit();
@@ -168,8 +167,11 @@ public class MyGame : GameApp
     {
         Window.Clear(_appState.IsEditorMode ? new Color(0x22, 0x26, 0x2b, 0xff) : Color.AliceBlue);
 
+        var camera = ActiveCamera;
+        camera.Viewport = new Point2(Window.WidthInPixels, Window.HeightInPixels);
+
         var batcher = ActiveBatcher;
-        batcher.PushMatrix(ActiveCamera.GetMatrix(Window));
+        batcher.PushMatrix(camera.Matrix);
         ActivePipeline.Render();
         batcher.Render(Window);
         batcher.Clear();
