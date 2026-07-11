@@ -87,8 +87,6 @@ public class MyGame : GameApp
         //Font Load
         
         
-        
-        
         // Game 世界 + pipeline
         _world = new EcsDefaultWorld();
         _eventWorld = new EcsEventWorld();
@@ -175,11 +173,9 @@ public class MyGame : GameApp
         ActivePipeline.Render();
         batcher.Render(Window);
         batcher.Clear();
-
         _imGui.Render();
     }
 }
-
 
 
 
@@ -390,3 +386,19 @@ public class ManySystemsStressSystem : IEcsPreInit, IUpdateSystem
         ImGui.End();
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

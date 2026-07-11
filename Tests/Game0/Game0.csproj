@@ -10,7 +10,6 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\..\Libs\DragonECS\DragonECS.csproj" />
       <ProjectReference Include="..\..\Libs\Engine\Engine.csproj" />
     </ItemGroup>
 
