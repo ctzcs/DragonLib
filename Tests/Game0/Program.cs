@@ -6,10 +6,16 @@ using Engine;
 using Engine.Assets;
 using Engine.DearImGui;
 using Engine.ECS;
+using Engine.Paper;
 using Engine.World;
 using Foster.Framework;
 using Game0.Editor;
 using ImGuiNET;
+using Prowl.PaperUI;
+using Prowl.Quill;
+using Prowl.Scribe;
+using PaperColor = Prowl.Vector.Color;
+using PaperAlign = Prowl.PaperUI.TextAlignment;
 
 internal static class Program
 {
@@ -38,6 +44,12 @@ public class MyGame : GameApp
     private AppState _appState;
     private Renderer _imGui;
 
+    // Paper UI（FosterCanvasRenderer + Paper）
+    private FosterCanvasRenderer _paperRenderer = null!;
+    private Paper _paper = null!;
+    private FontFile _paperFont = null!;
+    private Point2 _paperResolution;
+
     // ---- Editor 态：编辑器世界，独立的 pipeline / camera / batcher ----
     private EcsEditorWorld _editorWorld;
     private EcsPipeline _editorPipeline;
@@ -64,8 +76,12 @@ public class MyGame : GameApp
         //Game Font
         using var s = storage.OpenRead("Resources/Fonts/MapleMono-CN-Medium.ttf");
         var chineseFont = new SpriteFont(GraphicsDevice, new Font(s), size: 32, codepoints);
-        
-        
+
+        _paperRenderer = new FosterCanvasRenderer(this);
+        _paperResolution = new Point2(Window.WidthInPixels, Window.HeightInPixels);
+        _paper = new Paper(_paperRenderer, _paperResolution.X, _paperResolution.Y, new FontAtlasSettings());
+        _paperFont = new FontFile(fontData);
+
         _batcher = new Batcher(this.GraphicsDevice);
         _camera = new Camera2D();
 
@@ -98,9 +114,12 @@ public class MyGame : GameApp
             .Inject(_batcher)
             .Inject(_camera)
             .Inject(_imGui)
+            .Inject(_paper)
+            .Inject(_paperFont)
             .AddModule(new SimpleModule())
             .AddModule(new TestModule())
             .AddModule(new DebugInspectorModule())
+            .AddModule(new PaperTestModule())
             .Add(new EcsInspectorSystem(() => { Log.Info("Register Custom Drawer");}))
             .AutoInject()
             .BuildAndInit();
@@ -128,6 +147,7 @@ public class MyGame : GameApp
         _eventWorld?.Destroy();
         _editorPipeline?.Destroy();
         _editorWorld?.Destroy();
+        _paperRenderer?.Dispose();
     }
 
     private void HandleModeToggle()
@@ -149,8 +169,18 @@ public class MyGame : GameApp
     {
         HandleModeToggle();
 
+        var size = new Point2(Window.WidthInPixels, Window.HeightInPixels);
+        if (size != _paperResolution)
+        {
+            _paperResolution = size;
+            _paper.SetResolution(size.X, size.Y);
+        }
+
+        PaperInput.Update(_paper, this);
+        _paper.BeginFrame(Time.Delta, dpiScale: 1f);
+
         _imGui.BeginLayout();
-        if (_imGui.WantsTextInput)
+        if (_imGui.WantsTextInput || _paper.WantsCaptureKeyboard)
             Window.StartTextInput();
         else
             Window.StopTextInput();
@@ -174,6 +204,8 @@ public class MyGame : GameApp
         batcher.Render(Window);
         batcher.Clear();
         _imGui.Render();
+        // EndFrame 会走 FosterCanvasRenderer.RenderCalls，叠在世界 / ImGui 之上
+        _paper.EndFrame();
     }
 }
 
@@ -195,12 +227,72 @@ public class DebugInspectorModule : IEcsModule
     }
 }
 
+public class PaperTestModule : IEcsModule
+{
+    public void Import(EcsPipeline.Builder b)
+    {
+        b.Add(new PaperTestSystem());
+    }
+}
 
 public class TestModule : IEcsModule
 {
     public void Import(EcsPipeline.Builder b)
     {
         b.Add(new ManySystemsStressSystem());
+    }
+}
+
+/// <summary>
+/// Paper UI 冒烟测试：顶栏 + 可点击按钮 + 点击计数。
+/// </summary>
+public class PaperTestSystem : IUpdateSystem
+{
+    [DI] private Paper _paper = null!;
+    [DI] private FontFile _font = null!;
+
+    private int _clicks;
+
+    public void Update()
+    {
+        using (_paper.Column("PaperTestRoot")
+                   .BackgroundColor(new PaperColor(0, 0, 0, 0))
+                   .Enter())
+        {
+            _paper.Box("PaperHeader")
+                .Height(72)
+                .BackgroundColor(PaperColor.CornflowerBlue)
+                .Rounded(0)
+                .Text($"Paper UI 测试  |  点击次数: {_clicks}", _font)
+                .TextColor(PaperColor.White)
+                .FontSize(28)
+                .Alignment(PaperAlign.MiddleCenter);
+
+            _paper.Box("PaperHint")
+                .Height(40)
+                .Margin(16)
+                .Text("下面按钮点一下计数 +1（F2 仍可切编辑器）", _font)
+                .TextColor(PaperColor.DimGray)
+                .FontSize(18)
+                .Alignment(PaperAlign.MiddleLeft);
+
+            _paper.Box("PaperButton")
+                .Size(200, 52)
+                .Margin(_paper.Stretch(1f), _paper.Stretch(1f), 8, 0)
+                .BackgroundColor(PaperColor.ForestGreen)
+                .Rounded(10)
+                .Text("点我", _font)
+                .TextColor(PaperColor.White)
+                .FontSize(22)
+                .Alignment(PaperAlign.MiddleCenter)
+                .Hovered
+                    .BackgroundColor(PaperColor.LimeGreen)
+                    .End()
+                .Active
+                    .BackgroundColor(PaperColor.DarkGreen)
+                    .End()
+                .OnClick(_ => _clicks++);
+        }
     }
 }
 

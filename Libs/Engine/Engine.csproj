@@ -17,6 +17,14 @@
 
     <ItemGroup>
       <PackageReference Include="ImGui.NET" Version="1.91.6.1" />
+      <PackageReference Include="Prowl.Origami" Version="2.7.0" />
+      <PackageReference Include="Prowl.Paper" Version="2.7.0" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <EmbeddedResource Include="$(ProjectDir)Paper/Shaders/Compiled/**" Visible="false">
+        <LogicalName>Shaders/%(Filename)%(Extension)</LogicalName>
+      </EmbeddedResource>
     </ItemGroup>
 
 </Project>
