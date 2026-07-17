@@ -1,5 +1,6 @@
 ﻿using System.Numerics;
 using Foster.Framework;
+using System.Runtime.InteropServices;
 using Prowl.Quill;
 using Prowl.Vector;
 using Color = Foster.Framework.Color;
@@ -18,6 +19,15 @@ namespace Engine.Paper;
 public sealed class FosterCanvasRenderer : ICanvasRenderer
 {
 	private const float DefaultSdfDistanceRange = 4f;
+
+	[StructLayout(LayoutKind.Sequential)]
+	private struct FragmentUniformData
+	{
+		public Matrix4x4 BrushTextureMatrix;
+		public float DistanceRange;
+		public float DpiScale;
+		public Vector2 Padding;
+	}
 
 	private readonly GraphicsDevice _device;
 	private readonly Mesh<PosTexColVertex, uint> _mesh;
@@ -45,7 +55,6 @@ public sealed class FosterCanvasRenderer : ICanvasRenderer
 
 		_mesh = new Mesh<PosTexColVertex, uint>(device, "Quill Mesh");
 		_material = CreateMaterial(device);
-		_material.Fragment.SetUniformBuffer([DefaultSdfDistanceRange]);
 
 		_whiteTexture = new Texture(device, 1, 1, [Color.White], name: "Quill White");
 		_ownedTextures.Add(_whiteTexture);
@@ -121,6 +130,12 @@ public sealed class FosterCanvasRenderer : ICanvasRenderer
 			// 官方 Quill renderer 使用两个独立 sampler：普通 brush 与 font atlas。
 			pass.FragmentSamplers[0] = new BoundSampler(call.Texture as Texture ?? _whiteTexture, _sampler);
 			pass.FragmentSamplers[1] = new BoundSampler(call.FontAtlas as Texture ?? _whiteTexture, _sampler);
+			_material.Fragment.SetUniformBuffer(new FragmentUniformData
+			{
+				BrushTextureMatrix = call.Brush.TextureMatrix,
+				DistanceRange = DefaultSdfDistanceRange,
+				DpiScale = MathF.Max(canvas.FramebufferScale, 0.000001f),
+			});
 			pass.IndexOffset = indexOffset;
 			pass.IndexCount = elementCount;
 			pass.Scissor = TryGetScissor(call, size);

@@ -5,7 +5,10 @@ cbuffer VertexUniformBlock : register(b0, space1)
 
 cbuffer FragmentUniformBlock : register(b0, space3)
 {
+    float4x4 BrushTextureMatrix;
     float DistanceRange;
+    float DpiScale;
+    float2 FragmentPadding;
 };
 
 Texture2D BrushTexture : register(t0, space2);
@@ -24,6 +27,7 @@ struct VsOutput
 {
     float2 TexCoord : TEXCOORD0;
     float4 Color : TEXCOORD1;
+    float2 FragmentPosition : TEXCOORD2;
     float4 Position : SV_Position;
 };
 
@@ -32,6 +36,7 @@ VsOutput vertex_main(VsInput input)
     VsOutput output;
     output.TexCoord = input.TexCoord;
     output.Color = input.Color;
+    output.FragmentPosition = input.Position;
     output.Position = mul(Matrix, float4(input.Position, 0.0, 1.0));
     return output;
 }
@@ -59,6 +64,8 @@ float4 fragment_main(VsOutput input) : SV_Target0
 
     // Quill stores vector-geometry fringe coverage in TexCoord.x.
     float edgeCoverage = saturate(input.TexCoord.x);
-    float4 fill = input.Color * BrushTexture.Sample(BrushSampler, input.TexCoord);
+    float2 logicalPosition = input.FragmentPosition / max(DpiScale, 0.000001);
+    float2 brushUv = mul(BrushTextureMatrix, float4(logicalPosition, 0.0, 1.0)).xy;
+    float4 fill = input.Color * BrushTexture.Sample(BrushSampler, brushUv);
     return fill * edgeCoverage;
 }

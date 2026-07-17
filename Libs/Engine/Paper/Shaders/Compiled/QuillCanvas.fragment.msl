@@ -5,7 +5,10 @@ using namespace metal;
 
 struct type_FragmentUniformBlock
 {
+    float4x4 BrushTextureMatrix;
     float DistanceRange;
+    float DpiScale;
+    float2 FragmentPadding;
 };
 
 struct fragment_main_out
@@ -17,25 +20,26 @@ struct fragment_main_in
 {
     float2 in_var_TEXCOORD0 [[user(locn0)]];
     float4 in_var_TEXCOORD1 [[user(locn1)]];
+    float2 in_var_TEXCOORD2 [[user(locn2)]];
 };
 
 fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], constant type_FragmentUniformBlock& FragmentUniformBlock [[buffer(0)]], texture2d<float> BrushTexture [[texture(0)]], texture2d<float> FontTexture [[texture(1)]], sampler BrushSampler [[sampler(0)]], sampler FontSampler [[sampler(1)]])
 {
     fragment_main_out out = {};
-    float4 _86;
+    float4 _104;
     do
     {
         if (in.in_var_TEXCOORD0.x >= 2.0)
         {
-            float2 _52 = in.in_var_TEXCOORD0 - float2(2.0);
-            uint2 _58 = uint2(FontTexture.get_width(), FontTexture.get_height());
-            _86 = in.in_var_TEXCOORD1 * fast::clamp((precise::max(0.5 * dot(float2(FragmentUniformBlock.DistanceRange) / float2(float(_58.x), float(_58.y)), float2(1.0) / precise::max(fwidth(_52), float2(9.9999999747524270787835121154785e-07))), 1.0) * (FontTexture.sample(FontSampler, _52).x - 0.5)) + 0.5, 0.0, 1.0);
+            float2 _58 = in.in_var_TEXCOORD0 - float2(2.0);
+            uint2 _64 = uint2(FontTexture.get_width(), FontTexture.get_height());
+            _104 = in.in_var_TEXCOORD1 * fast::clamp((precise::max(0.5 * dot(float2(FragmentUniformBlock.DistanceRange) / float2(float(_64.x), float(_64.y)), float2(1.0) / precise::max(fwidth(_58), float2(9.9999999747524270787835121154785e-07))), 1.0) * (FontTexture.sample(FontSampler, _58).x - 0.5)) + 0.5, 0.0, 1.0);
             break;
         }
-        _86 = (in.in_var_TEXCOORD1 * BrushTexture.sample(BrushSampler, in.in_var_TEXCOORD0)) * fast::clamp(in.in_var_TEXCOORD0.x, 0.0, 1.0);
+        _104 = (in.in_var_TEXCOORD1 * BrushTexture.sample(BrushSampler, (FragmentUniformBlock.BrushTextureMatrix * float4(in.in_var_TEXCOORD2 / float2(precise::max(FragmentUniformBlock.DpiScale, 9.9999999747524270787835121154785e-07)), 0.0, 1.0)).xy)) * fast::clamp(in.in_var_TEXCOORD0.x, 0.0, 1.0);
         break;
     } while(false);
-    out.out_var_SV_Target0 = _86;
+    out.out_var_SV_Target0 = _104;
     return out;
 }
 
