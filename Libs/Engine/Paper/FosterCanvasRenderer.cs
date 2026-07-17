@@ -130,9 +130,14 @@ public sealed class FosterCanvasRenderer : ICanvasRenderer
 			// 官方 Quill renderer 使用两个独立 sampler：普通 brush 与 font atlas。
 			pass.FragmentSamplers[0] = new BoundSampler(call.Texture as Texture ?? _whiteTexture, _sampler);
 			pass.FragmentSamplers[1] = new BoundSampler(call.FontAtlas as Texture ?? _whiteTexture, _sampler);
+
 			_material.Fragment.SetUniformBuffer(new FragmentUniformData
 			{
-				BrushTextureMatrix = call.Brush.TextureMatrix,
+				// Prowl 的 TextureMatrix 是列向量约定（平移在第 4 列），而本管线走
+				// 「C# 行主序上传 → HLSL 列主序读取」隐含一次转置。对投影矩阵（System.Numerics
+				// 行向量约定）恰好抵消正确，但对这个列向量矩阵会被转错，导致 brush UV 丢失平移、
+				// 图片被挤到 [0,1] 之外。上传前显式转置一次抵消。
+				BrushTextureMatrix = Matrix4x4.Transpose(call.Brush.TextureMatrix),
 				DistanceRange = DefaultSdfDistanceRange,
 				DpiScale = MathF.Max(canvas.FramebufferScale, 0.000001f),
 			});
