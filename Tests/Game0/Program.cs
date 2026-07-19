@@ -9,6 +9,7 @@ using Engine.ECS;
 using Engine.Paper;
 using Engine.World;
 using Foster.Framework;
+using Game0;
 using Game0.Editor;
 using ImGuiNET;
 using Prowl.PaperUI;
@@ -16,6 +17,7 @@ using Prowl.Quill;
 using Prowl.Scribe;
 using PaperColor = Prowl.Vector.Color;
 using PaperAlign = Prowl.PaperUI.TextAlignment;
+
 
 internal static class Program
 {
@@ -48,7 +50,6 @@ public class MyGame : GameApp
     private FosterCanvasRenderer _paperRenderer = null!;
     private Paper _paper = null!;
     private FontFile _paperFont = null!;
-    private Texture _paperDemoImage = null!;
     private Point2 _paperResolution;
 
     // ---- Editor 态：编辑器世界，独立的 pipeline / camera / batcher ----
@@ -82,7 +83,6 @@ public class MyGame : GameApp
         _paperResolution = new Point2(Window.WidthInPixels, Window.HeightInPixels);
         _paper = new Paper(_paperRenderer, _paperResolution.X, _paperResolution.Y, new FontAtlasSettings());
         _paperFont = new FontFile(fontData);
-        _paperDemoImage = LoadPaperImage(GraphicsDevice, storage, "Resources/Images/Poster.png");
 
         _batcher = new Batcher(this.GraphicsDevice);
         _camera = new Camera2D();
@@ -118,11 +118,10 @@ public class MyGame : GameApp
             .Inject(_imGui)
             .Inject(_paper)
             .Inject(_paperFont)
-            .Inject(_paperDemoImage)
+            .Inject(this)
             .AddModule(new SimpleModule())
-            .AddModule(new TestModule())
             .AddModule(new DebugInspectorModule())
-            .AddModule(new PaperTestModule())
+            .AddModule(new GameMenuModule())
             .Add(new EcsInspectorSystem(() => { Log.Info("Register Custom Drawer");}))
             .AutoInject()
             .BuildAndInit();
@@ -150,40 +149,7 @@ public class MyGame : GameApp
         _eventWorld?.Destroy();
         _editorPipeline?.Destroy();
         _editorWorld?.Destroy();
-        _paperDemoImage?.Dispose();
         _paperRenderer?.Dispose();
-    }
-
-    private static Texture LoadPaperImage(GraphicsDevice device, LocalStorage storage, string path)
-    {
-        // 从磁盘读 PNG -> Foster.Image -> Texture，交给 Paper 的 .Image() 绘制。
-        using var stream = storage.OpenRead(path);
-        using var image = new Image(stream);
-        return new Texture(device, image, name: path);
-    }
-
-    private static Texture CreatePaperDemoImage(GraphicsDevice device)
-    {
-        const int width = 96;
-        const int height = 56;
-        var pixels = new Color[width * height];
-
-        for (var y = 0; y < height; y++)
-        for (var x = 0; x < width; x++)
-        {
-            var glow = 1f - Vector2.Distance(
-                new Vector2(x / (float)(width - 1), y / (float)(height - 1)),
-                new Vector2(0.68f, 0.42f));
-            glow = Math.Clamp(glow, 0f, 1f);
-            var stripe = ((x + y * 2) / 9) % 2 == 0 ? 22 : 0;
-            pixels[y * width + x] = new Color(
-                (byte)Math.Clamp(45 + stripe + glow * 80, 0, 255),
-                (byte)Math.Clamp(55 + glow * 55, 0, 255),
-                (byte)Math.Clamp(155 + stripe + glow * 75, 0, 255),
-                255);
-        }
-
-        return new Texture(device, width, height, pixels, name: "Paper Demo Image");
     }
 
     private void HandleModeToggle()
@@ -263,553 +229,428 @@ public class DebugInspectorModule : IEcsModule
     }
 }
 
-public class PaperTestModule : IEcsModule
+public class GameMenuModule : IEcsModule
 {
     public void Import(EcsPipeline.Builder b)
     {
-        b.Add(new PaperTestSystem());
+        b.Add(new GameMenuSystem());
     }
 }
 
-public class TestModule : IEcsModule
-{
-    public void Import(EcsPipeline.Builder b)
-    {
-        b.Add(new ManySystemsStressSystem());
-    }
-}
-
-/// <summary>Paper UI 综合面板示例：导航、指标卡、任务进度、活动流与交互按钮。</summary>
-public class PaperTestSystem : IUpdateSystem
+/// <summary>
+/// Paper 测试用的游戏菜单：Esc 开关，主菜单（返回游戏 / 设置 / 退出），
+/// 设置页可调分辨率（真实改窗口）、主音量（可拖拽滑块，仅 UI 值）、全屏。
+/// </summary>
+public class GameMenuSystem : IUpdateSystem
 {
     [DI] private Paper _paper = null!;
     [DI] private FontFile _font = null!;
-    [DI] private Texture _demoImage = null!;
+    [DI] private MyGame _game = null!;   // 读 Window / Input / Exit
 
-    private static readonly string[] Sections = ["总览", "世界", "资源", "性能", "设置"];
-    private static readonly (string Name, int Progress, string Status)[] Tasks =
+    private enum MenuPage { Closed, Main, Settings }
+
+    private static readonly (int W, int H)[] Resolutions =
     [
-        ("烘焙导航网格", 82, "运行中"),
-        ("生成资源索引", 64, "运行中"),
-        ("验证关卡引用", 100, "已完成"),
+        (1280, 720),
+        (1920, 1080),
+        (2560, 1440),
     ];
 
-    private int _selectedSection;
-    private int _deployments = 12;
-    private bool _autoRefresh = true;
-    private string _lastAction = "等待操作";
+    // 设置页的“暂存值”：点“应用”才真正写入窗口。
+    private int _pendingResIndex = 2;      // 默认 2560x1440，与启动一致
+    private bool _pendingFullscreen;
+    private float _volume = 0.8f;          // 0..1，仅 UI（TODO: 接 Audio.Volume）
+
+    // 按钮 hover 震动：记录“上一帧是否 hover”和“本次 hover 触发时刻”，用于一次性衰减抖动。
+    private readonly Dictionary<string, bool> _btnHoverPrev = new();
+    private readonly Dictionary<string, float> _btnHoverTime = new();
+
+    // ---- 页面过渡（主菜单 <-> 设置）：顺序式，旧页滑出淡出后，新页滑入淡入 ----
+    private MenuPage _displayPage = MenuPage.Closed;  // 当前实际绘制的页
+    private MenuPage? _queuedPage;                     // 等旧页退场后要切到的页
+    private float _pageT;                              // 0=页面完全就位，1=完全退场
+    private float _slideSign = 1f;                     // 退场滑动方向：+1 向右，-1 向左
+    private bool _leaving;                             // 本帧面板是在退场还是入场
+    private float _backdropT;                          // 遮罩显隐进度（整菜单开关时才动）
+    private const float TransitionDuration = 0.18f;    // 单程时长（秒）
+    private const float SlideDistance = 60f;           // 横向滑动像素
 
     public void Update()
     {
-        using (_paper.Column("DashboardRoot")
-                   .BackgroundColor(C(10, 16, 30))
-                   .Padding(24)
+        HandleToggle();
+
+        // 关键：AnimateBool 把动画状态存在“当前元素”上，而根元素每帧重建、其存储会被
+        // EndFrame 清理，导致状态不跨帧、动画不推进。因此必须先进入一个「稳定 string id」的
+        // 持久容器（MenuRoot 每帧同 id => 同 ID => 存储跨帧保留），在其内部再调 AnimateBool。
+        // MenuRoot 始终绘制（即使菜单关闭），以维持动画存储；关闭且动画归零时内部不画东西。
+        using (_paper.Column("MenuRoot")
+                   .Width(_paper.Stretch())
+                   .Height(_paper.Stretch())
                    .Enter())
         {
-            using (_paper.Column("DashboardShell")
-                       .Width(_paper.Stretch())
-                       .Height(_paper.Stretch())
-                       .BackgroundColor(C(20, 28, 48))
-                       .BorderColor(C(51, 65, 92))
-                       .BorderWidth(1)
-                       .Rounded(18)
-                       .Enter())
+            UpdateTransition();
+
+            // 菜单完全关闭且过渡结束 => 不绘制任何面板（但 MenuRoot 仍在，保住存储）。
+            if (_displayPage == MenuPage.Closed && _backdropT <= 0.001f)
+                return;
+
+            switch (_displayPage)
             {
-                DrawHeader();
-
-                using (_paper.Row("DashboardBody")
-                           .Width(_paper.Stretch())
-                           .Height(_paper.Stretch())
-                           .Padding(18)
-                           .Enter())
-                {
-                    DrawSidebar();
-                    DrawMainContent();
-                }
-
-                _paper.Box("DashboardFooter")
-                    .Height(42)
-                    .Padding(18, 0)
-                    .BackgroundColor(C(16, 23, 40))
-                    .Text($"● 系统在线    |    自动刷新：{(_autoRefresh ? "开启" : "关闭")}    |    最近操作：{_lastAction}", _font)
-                    .TextColor(C(139, 158, 190))
-                    .FontSize(14)
-                    .Alignment(PaperAlign.MiddleLeft);
+                case MenuPage.Main: DrawOverlay("MainPanel", 380, DrawMainMenu); break;
+                case MenuPage.Settings: DrawOverlay("SettingsPanel", 470, DrawSettings); break;
+                case MenuPage.Closed:
+                    // 关闭中但遮罩还在淡出：只画遮罩，不画面板。
+                    DrawBackdropOnly();
+                    break;
             }
         }
     }
 
-    private void DrawHeader()
+    // 请求切到某页。Closed 也是合法目标（关闭菜单）。
+    // 若当前有页在显示，先让它退场（_queuedPage 记住目标），退场完成后在 UpdateTransition 里交换。
+    private void GoToPage(MenuPage target)
     {
-        using (_paper.Row("DashboardHeader")
-                   .Height(78)
-                   .Padding(22, 14)
-                   .BackgroundColor(C(27, 38, 64))
+        // 方向：往“更深”的设置页 => 旧页向左退、新页从右来（-1）；返回/关闭 => 反向（+1）。
+        _slideSign = target == MenuPage.Settings ? -1f : 1f;
+
+        if (_displayPage == MenuPage.Closed)
+            _displayPage = target;          // 无页在显示，直接成为当前页（AnimateBool 会把它滑入）
+        else if (_displayPage != target)
+            _queuedPage = target;           // 有页在显示，排队等它退场
+    }
+
+    // 用 Paper 的 AnimateBool 驱动进度。两条独立动画：
+    // _pageT   —— 面板滑动+淡出（换页、开关都用）；
+    // _backdropT —— 遮罩显隐，只在“整菜单开/关”时变化，换页时保持常亮，避免中途闪一下。
+    private void UpdateTransition()
+    {
+        _leaving = _queuedPage.HasValue || _displayPage == MenuPage.Closed;
+        _pageT = _paper.AnimateBool(_leaving, TransitionDuration, Easing.CubicInOut, id: "MenuPageT");
+
+        var menuVisible = EffectivePage != MenuPage.Closed;
+        _backdropT = _paper.AnimateBool(menuVisible, TransitionDuration, Easing.CubicInOut, id: "MenuBackdrop");
+
+        // 诊断：值在 0/1 之间变化时打印，确认动画在推进。
+        if (_backdropT > 0.001f && _backdropT < 0.999f || _pageT > 0.001f && _pageT < 0.999f)
+            Log.Info($"[MenuAnim] pageT={_pageT:F3} backdropT={_backdropT:F3} disp={_displayPage} queued={_queuedPage} dt={_paper.DeltaTime:F4}");
+
+        // 旧页退到位 => 交换到排队页；下一帧 _leaving 变 false，新页自动滑入。
+        if (_queuedPage.HasValue && _pageT > 0.98f)
+        {
+            _displayPage = _queuedPage.Value;
+            _queuedPage = null;
+        }
+    }
+
+    private void HandleToggle()
+    {
+        // Esc 边沿（Pressed = 本帧按下）。菜单开着 => 关；关着 => 开主菜单。
+        // 设置页时 Esc 先回主菜单（带过渡）。
+        if (!_game.Input.Keyboard.Pressed(Keys.Escape))
+            return;
+
+        if (_displayPage == MenuPage.Closed && !_queuedPage.HasValue)
+            GoToPage(MenuPage.Main);
+        else if (EffectivePage == MenuPage.Settings)
+            GoToPage(MenuPage.Main);
+        else
+            GoToPage(MenuPage.Closed);
+    }
+
+    // 正在退场时“意图中的页”是排队页，否则是当前显示页。
+    private MenuPage EffectivePage => _queuedPage ?? _displayPage;
+
+    // 半透明遮罩 + 居中面板容器。面板用固定高度（panelHeight），这样上下 Stretch spacer
+    // 只负责把它压到垂直居中，而不会随分辨率缩放面板本身、导致内容溢出。
+    // 过渡：面板按 _pageT 做横向滑动 + 整体淡入淡出（淡出靠 _uiAlpha 乘到所有颜色上）。
+    private void DrawOverlay(string panelId, float panelHeight, Action body)
+    {
+        // 退场时按 _slideSign 方向滑走；入场时反向滑入。_pageT: 0=就位, 1=离场。
+        var dir = _leaving ? _slideSign : -_slideSign;
+        var offsetX = dir * SlideDistance * _pageT;
+        var panelAlpha = 1f - _pageT;
+
+        // 遮罩：独立的 _backdropT，换页时保持常亮；这里不走 _uiAlpha。
+        _uiAlpha = 1f;
+        using (_paper.Column("MenuOverlay")
+                   .Width(_paper.Stretch())
+                   .Height(_paper.Stretch())
+                   .BackgroundColor(new PaperColor((byte)0, (byte)0, (byte)0, (byte)(160 * _backdropT)))
                    .Enter())
         {
-            _paper.Box("BrandArtwork")
-                .Size(140, 50)
-                .Margin(0, 16, 0, 0)
-                .Padding(5)
-                .BackgroundColor(C(15, 23, 42))
-                .Rounded(10)
-                .Clip()
-                .Image(_demoImage, scaleMode: ImageScaleMode.Fit);
+            // 上留白
+            _paper.Box("MenuTopSpacer").Height(_paper.Stretch());
 
-            using (_paper.Column("BrandBlock")
-                       .Width(_paper.Stretch())
-                       .Enter())
+            // 面板行：高度固定 = 面板高度，水平方向用左右 spacer 居中
+            using (_paper.Row("MenuPanelRow").Height(panelHeight).Enter())
             {
-                _paper.Box("BrandTitle")
-                    .Height(32)
-                    .Text("DRAGON CONTROL CENTER", _font)
-                    .TextColor(C(240, 245, 255))
-                    .FontSize(24)
-                    .Alignment(PaperAlign.MiddleLeft);
+                _paper.Box("MenuLeftSpacer").Width(_paper.Stretch());
 
-                _paper.Box("BrandSubtitle")
-                    .Height(22)
-                    .Text("Paper UI · Runtime Dashboard", _font)
-                    .TextColor(C(125, 148, 184))
-                    .FontSize(14)
-                    .Alignment(PaperAlign.MiddleLeft);
+                // 从这里开始，面板内所有颜色都乘 _uiAlpha 实现整体淡入淡出。
+                _uiAlpha = panelAlpha;
+                using (_paper.Column(panelId)
+                           .Width(460)
+                           .Height(panelHeight)
+                           .TranslateX(offsetX)
+                           .Padding(28)
+                           .BackgroundColor(C(20, 28, 48))
+                           .BorderColor(C(51, 65, 92))
+                           .BorderWidth(1)
+                           .Rounded(16)
+                           .Enter())
+                {
+                    body();
+                }
+                _uiAlpha = 1f;
+
+                _paper.Box("MenuRightSpacer").Width(_paper.Stretch());
             }
 
-            _paper.Box("EnvironmentBadge")
-                .Size(156, 42)
-                .Margin(8, 8, 4, 4)
-                .BackgroundColor(C(21, 94, 75))
-                .Rounded(21)
-                .Text("●  DEVELOPMENT", _font)
-                .TextColor(C(167, 243, 208))
-                .FontSize(14)
-                .Alignment(PaperAlign.MiddleCenter);
+            // 下留白
+            _paper.Box("MenuBottomSpacer").Height(_paper.Stretch());
+        }
+    }
 
-            _paper.Box("DeployButton")
-                .Size(166, 46)
-                .Margin(8, 0, 2, 2)
-                .BackgroundColor(C(79, 70, 229))
+    // 关闭过渡中：只画正在淡出的遮罩，不画面板。
+    private void DrawBackdropOnly()
+    {
+        _uiAlpha = 1f;
+        _paper.Box("MenuOverlay")
+            .Width(_paper.Stretch())
+            .Height(_paper.Stretch())
+            .BackgroundColor(new PaperColor((byte)0, (byte)0, (byte)0, (byte)(160 * _backdropT)));
+    }
+
+    private void DrawMainMenu()
+    {
+        _paper.Box("MenuTitle")
+            .Height(48)
+            .Text("游戏菜单", _font)
+            .TextColor(C(240, 245, 255))
+            .FontSize(28)
+            .Alignment(PaperAlign.MiddleCenter);
+
+        _paper.Box("MenuSubtitle")
+            .Height(28)
+            .Margin(0, 0, 0, 12)
+            .Text("Esc 关闭 · Paper UI 测试", _font)
+            .TextColor(C(125, 148, 184))
+            .FontSize(14)
+            .Alignment(PaperAlign.MiddleCenter);
+
+        MenuButton("BtnResume", "返回游戏", C(79, 70, 229), () => GoToPage(MenuPage.Closed));
+        MenuButton("BtnSettings", "设置", C(51, 65, 92), () => GoToPage(MenuPage.Settings));
+        MenuButton("BtnExit", "退出游戏", C(159, 54, 71), () => _game.Exit());
+    }
+
+    private void DrawSettings()
+    {
+        _paper.Box("SettingsTitle")
+            .Height(44)
+            .Margin(0, 0, 0, 12)
+            .Text("设置", _font)
+            .TextColor(C(240, 245, 255))
+            .FontSize(26)
+            .Alignment(PaperAlign.MiddleCenter);
+
+        // --- 分辨率：预设档位，点击选中（暂存） ---
+        _paper.Box("ResLabel")
+            .Height(28)
+            .Text("分辨率", _font)
+            .TextColor(C(148, 163, 184))
+            .FontSize(15)
+            .Alignment(PaperAlign.MiddleLeft);
+
+        using (_paper.Row("ResRow").Height(46).Margin(0, 0, 4, 14).Enter())
+        {
+            for (var i = 0; i < Resolutions.Length; i++)
+            {
+                var (w, h) = Resolutions[i];
+                var selected = i == _pendingResIndex;
+                _paper.Box("ResOption", i)
+                    .Width(_paper.Stretch())
+                    .Height(_paper.Stretch())
+                    .Margin(i == 0 ? 0 : 4, i == Resolutions.Length - 1 ? 0 : 4, 0, 0)
+                    .BackgroundColor(selected ? C(67, 56, 202) : C(28, 41, 67))
+                    .BorderColor(selected ? C(129, 140, 248) : C(48, 64, 94))
+                    .BorderWidth(1)
+                    .Rounded(8)
+                    .Text($"{w}×{h}", _font)
+                    .TextColor(selected ? PaperColor.White : C(148, 163, 184))
+                    .FontSize(14)
+                    .Alignment(PaperAlign.MiddleCenter)
+                    .Hovered.BackgroundColor(selected ? C(79, 70, 229) : C(35, 48, 73)).End()
+                    .OnClick(i, (idx, _) => _pendingResIndex = idx);
+            }
+        }
+
+        // --- 主音量：可拖拽滑块 ---
+        using (_paper.Row("VolLabelRow").Height(28).Enter())
+        {
+            _paper.Box("VolLabel")
+                .Width(_paper.Stretch())
+                .Text("主音量", _font)
+                .TextColor(C(148, 163, 184))
+                .FontSize(15)
+                .Alignment(PaperAlign.MiddleLeft);
+            _paper.Box("VolValue")
+                .Width(64)
+                .Text($"{(int)MathF.Round(_volume * 100)}%", _font)
+                .TextColor(C(147, 197, 253))
+                .FontSize(14)
+                .Alignment(PaperAlign.MiddleRight);
+        }
+
+        DrawVolumeSlider();
+
+        // --- 全屏开关 ---
+        using (_paper.Row("FsRow").Height(46).Margin(0, 0, 16, 18).Enter())
+        {
+            _paper.Box("FsLabel")
+                .Width(_paper.Stretch())
+                .Text("全屏", _font)
+                .TextColor(C(148, 163, 184))
+                .FontSize(15)
+                .Alignment(PaperAlign.MiddleLeft);
+
+            _paper.Box("FsToggle")
+                .Size(120, 38)
+                .BackgroundColor(_pendingFullscreen ? C(21, 128, 92) : C(51, 65, 85))
+                .Rounded(19)
+                .Text(_pendingFullscreen ? "开 ON" : "关 OFF", _font)
+                .TextColor(PaperColor.White)
+                .FontSize(14)
+                .Alignment(PaperAlign.MiddleCenter)
+                .Hovered.BackgroundColor(_pendingFullscreen ? C(16, 150, 105) : C(71, 85, 105)).End()
+                .OnClick(_ => _pendingFullscreen = !_pendingFullscreen);
+        }
+
+        // --- 底部：应用 / 返回 ---
+        using (_paper.Row("SettingsFooter").Height(48).Enter())
+        {
+            _paper.Box("BtnApply")
+                .Width(_paper.Stretch())
+                .Height(_paper.Stretch())
+                .Margin(0, 6, 0, 0)
+                .BackgroundColor(C(37, 99, 235))
                 .Rounded(10)
-                .Text("发布新版本", _font)
+                .Text("应用", _font)
                 .TextColor(PaperColor.White)
                 .FontSize(16)
                 .Alignment(PaperAlign.MiddleCenter)
-                .Hovered.BackgroundColor(C(99, 102, 241)).End()
-                .Active.BackgroundColor(C(67, 56, 202)).End()
-                .OnClick(_ =>
-                {
-                    _deployments++;
-                    _lastAction = $"创建发布 #{_deployments}";
-                });
+                .Hovered.BackgroundColor(C(59, 130, 246)).End()
+                .Active.BackgroundColor(C(29, 78, 216)).End()
+                .OnClick(_ => ApplySettings());
+
+            _paper.Box("BtnBack")
+                .Width(_paper.Stretch())
+                .Height(_paper.Stretch())
+                .Margin(6, 0, 0, 0)
+                .BackgroundColor(C(51, 65, 92))
+                .Rounded(10)
+                .Text("返回", _font)
+                .TextColor(PaperColor.White)
+                .FontSize(16)
+                .Alignment(PaperAlign.MiddleCenter)
+                .Hovered.BackgroundColor(C(71, 85, 105)).End()
+                .OnClick(_ => GoToPage(MenuPage.Main));
         }
     }
 
-    private void DrawSidebar()
+    // 自制拖拽滑块：轨道可点/可拖。事件的 NormalizedPosition 已是「指针相对元素矩形」的
+    // 归一化坐标（0..1），直接取 X 当音量，无需自己拿 Rect 换算。
+    private void DrawVolumeSlider()
     {
-        using (_paper.Column("DashboardSidebar")
-                   .Width(220)
-                   .Height(_paper.Stretch())
-                   .Padding(12)
-                   .BackgroundColor(C(16, 24, 42))
-                   .Rounded(12)
+        using (_paper.Box("VolTrack")
+                   .Height(20)
+                   .Margin(0, 0, 4, 4)
+                   .BackgroundColor(C(48, 61, 84))
+                   .Rounded(10)
+                   .OnDragging(e => _volume = Math.Clamp((float)e.NormalizedPosition.X, 0f, 1f))
+                   .OnClick(e => _volume = Math.Clamp((float)e.NormalizedPosition.X, 0f, 1f))
                    .Enter())
         {
-            _paper.Box("NavigationLabel")
-                .Height(38)
-                .Padding(12, 0)
-                .Text("工作空间", _font)
-                .TextColor(C(105, 126, 160))
-                .FontSize(13)
-                .Alignment(PaperAlign.MiddleLeft);
-
-            for (var i = 0; i < Sections.Length; i++)
-                DrawNavigationItem(i);
-
-            _paper.Box("SidebarSpacer").Height(_paper.Stretch());
-
-            using (_paper.Column("RuntimeCard")
-                       .Height(142)
-                       .Padding(14)
-                       .BackgroundColor(C(28, 41, 67))
-                       .BorderColor(C(48, 64, 94))
-                       .BorderWidth(1)
-                       .Rounded(10)
-                       .Enter())
-            {
-                _paper.Box("RuntimeTitle")
-                    .Height(28)
-                    .Text("运行时状态", _font)
-                    .TextColor(C(226, 232, 240))
-                    .FontSize(15)
-                    .Alignment(PaperAlign.MiddleLeft);
-                _paper.Box("RuntimeFps")
-                    .Height(28)
-                    .Text("FPS                         60", _font)
-                    .TextColor(C(134, 239, 172))
-                    .FontSize(14)
-                    .Alignment(PaperAlign.MiddleLeft);
-                _paper.Box("RuntimeMemory")
-                    .Height(28)
-                    .Text("内存                    384 MB", _font)
-                    .TextColor(C(148, 163, 184))
-                    .FontSize(14)
-                    .Alignment(PaperAlign.MiddleLeft);
-                _paper.Box("RuntimeEntities")
-                    .Height(28)
-                    .Text("实体                     51,000", _font)
-                    .TextColor(C(148, 163, 184))
-                    .FontSize(14)
-                    .Alignment(PaperAlign.MiddleLeft);
-            }
+            // 已填充部分
+            _paper.Box("VolFill")
+                .Width(_paper.Percent(_volume * 100f))
+                .Height(20)
+                .BackgroundColor(C(96, 165, 250))
+                .Rounded(10);
         }
     }
 
-    private void DrawNavigationItem(int index)
+    private void ApplySettings()
     {
-        var selected = index == _selectedSection;
-        _paper.Box("NavigationItem", index)
-            .Height(46)
-            .Margin(0, 0, 3, 3)
-            .Padding(14, 0)
-            .BackgroundColor(selected ? C(67, 56, 202) : C(16, 24, 42))
-            .Rounded(8)
-            .Text($"{(selected ? "●" : "○")}   {Sections[index]}", _font)
-            .TextColor(selected ? PaperColor.White : C(148, 163, 184))
-            .FontSize(15)
-            .Alignment(PaperAlign.MiddleLeft)
-            .Hovered.BackgroundColor(selected ? C(79, 70, 229) : C(35, 48, 73)).End()
-            .Active.BackgroundColor(C(55, 48, 163)).End()
-            .OnClick(index, (section, _) =>
-            {
-                _selectedSection = section;
-                _lastAction = $"切换到{Sections[section]}";
-            });
+        var (w, h) = Resolutions[_pendingResIndex];
+        var window = _game.Window;
+
+        window.Fullscreen = _pendingFullscreen;
+        if (!_pendingFullscreen)
+            window.Size = new Point2(w, h);
+
+        // 与 MyGame.Update() 里的同步逻辑一致：Paper 跟随实际像素尺寸。
+        _paper.SetResolution(window.WidthInPixels, window.HeightInPixels);
+
+        // TODO: 音量接入音频系统时，这里写 Audio.Volume = _volume;
     }
 
-    private void DrawMainContent()
+    private void MenuButton(string id, string label, PaperColor color, Action onClick)
     {
-        using (_paper.Column("DashboardMain")
-                   .Width(_paper.Stretch())
-                   .Height(_paper.Stretch())
-                   .Margin(18, 0, 0, 0)
-                   .Enter())
-        {
-            using (_paper.Row("PageHeading")
-                       .Height(62)
-                       .Enter())
-            {
-                using (_paper.Column("PageHeadingText")
-                           .Width(_paper.Stretch())
-                           .Enter())
-                {
-                    _paper.Box("PageTitle")
-                        .Height(34)
-                        .Text(Sections[_selectedSection], _font)
-                        .TextColor(C(241, 245, 249))
-                        .FontSize(26)
-                        .Alignment(PaperAlign.MiddleLeft);
-                    _paper.Box("PageDescription")
-                        .Height(24)
-                        .Text("监控世界运行状态、内容流水线与构建任务", _font)
-                        .TextColor(C(125, 145, 178))
-                        .FontSize(14)
-                        .Alignment(PaperAlign.MiddleLeft);
-                }
-
-                _paper.Box("RefreshToggle")
-                    .Size(148, 40)
-                    .Margin(0, 0, 8, 8)
-                    .BackgroundColor(_autoRefresh ? C(21, 128, 92) : C(51, 65, 85))
-                    .Rounded(20)
-                    .Text(_autoRefresh ? "自动刷新  ON" : "自动刷新  OFF", _font)
-                    .TextColor(PaperColor.White)
-                    .FontSize(13)
-                    .Alignment(PaperAlign.MiddleCenter)
-                    .Hovered.BackgroundColor(_autoRefresh ? C(16, 150, 105) : C(71, 85, 105)).End()
-                    .OnClick(_ =>
-                    {
-                        _autoRefresh = !_autoRefresh;
-                        _lastAction = _autoRefresh ? "开启自动刷新" : "暂停自动刷新";
-                    });
-            }
-
-            using (_paper.Row("MetricCards")
-                       .Height(138)
-                       .Margin(0, 0, 6, 10)
-                       .Enter())
-            {
-                DrawMetricCard(0, "活跃实体", "51,000", "+12.4%", C(96, 165, 250));
-                DrawMetricCard(1, "系统耗时", "2.84 ms", "稳定", C(52, 211, 153));
-                DrawMetricCard(2, "待处理资源", "128", "-18", C(251, 191, 36));
-                DrawMetricCard(3, "发布次数", _deployments.ToString(), "本周", C(167, 139, 250));
-            }
-
-            using (_paper.Row("DashboardPanels")
-                       .Width(_paper.Stretch())
-                       .Height(_paper.Stretch())
-                       .Margin(0, 0, 8, 0)
-                       .Enter())
-            {
-                DrawWorkColumn();
-                DrawServiceColumn();
-            }
-        }
-    }
-
-    private void DrawMetricCard(int index, string label, string value, string delta, PaperColor accent)
-    {
-        using (_paper.Column("MetricCard", index)
-                   .Width(_paper.Stretch())
-                   .Height(_paper.Stretch())
-                   .Margin(6)
-                   .Padding(16)
-                   .BackgroundColor(C(27, 38, 62))
-                   .BorderColor(C(47, 61, 88))
-                   .BorderWidth(1)
-                   .Rounded(12)
-                   .Hovered.BackgroundColor(C(34, 47, 74)).End()
-                   .Enter())
-        {
-            _paper.Box("MetricLabel")
-                .Height(24)
-                .Text(label, _font)
-                .TextColor(C(136, 153, 181))
-                .FontSize(14)
-                .Alignment(PaperAlign.MiddleLeft);
-            _paper.Box("MetricValue")
-                .Height(46)
-                .Text(value, _font)
-                .TextColor(C(241, 245, 249))
-                .FontSize(28)
-                .Alignment(PaperAlign.MiddleLeft);
-            _paper.Box("MetricDelta")
-                .Height(24)
-                .Text($"●  {delta}", _font)
-                .TextColor(accent)
-                .FontSize(13)
-                .Alignment(PaperAlign.MiddleLeft);
-        }
-    }
-
-    private void DrawWorkColumn()
-    {
-        using (_paper.Column("WorkColumn")
-                   .Width(_paper.Stretch())
-                   .Height(_paper.Stretch())
-                   .Enter())
-        {
-            using (_paper.Column("TaskPanel")
-                       .Height(252)
-                       .Padding(18)
-                       .BackgroundColor(C(27, 38, 62))
-                       .BorderColor(C(47, 61, 88))
-                       .BorderWidth(1)
-                       .Rounded(12)
-                       .Enter())
-            {
-                _paper.Box("TaskPanelTitle")
-                    .Height(34)
-                    .Text("构建任务", _font)
-                    .TextColor(C(235, 241, 250))
-                    .FontSize(18)
-                    .Alignment(PaperAlign.MiddleLeft);
-
-                for (var i = 0; i < Tasks.Length; i++)
-                    DrawTaskRow(i, Tasks[i]);
-            }
-
-            using (_paper.Column("ActivityPanel")
-                       .Height(_paper.Stretch())
-                       .Margin(0, 0, 14, 0)
-                       .Padding(18)
-                       .BackgroundColor(C(27, 38, 62))
-                       .BorderColor(C(47, 61, 88))
-                       .BorderWidth(1)
-                       .Rounded(12)
-                       .Enter())
-            {
-                _paper.Box("ActivityTitle")
-                    .Height(34)
-                    .Text("最近活动", _font)
-                    .TextColor(C(235, 241, 250))
-                    .FontSize(18)
-                    .Alignment(PaperAlign.MiddleLeft);
-
-                DrawActivity(0, C(52, 211, 153), "关卡 level_1 验证通过", "刚刚");
-                DrawActivity(1, C(96, 165, 250), "重新加载 24 个 Prefab", "2 分钟前");
-                DrawActivity(2, C(251, 191, 36), "检测到 3 个资源警告", "8 分钟前");
-                DrawActivity(3, C(167, 139, 250), "ECS Pipeline 构建完成", "12 分钟前");
-            }
-        }
-    }
-
-    private void DrawTaskRow(int index, (string Name, int Progress, string Status) task)
-    {
-        using (_paper.Row("TaskRow", index)
+        // 外层容器只负责探测 hover 并施加旋转震动；内层才是可见按钮。
+        // hover 强度用 AnimateBool 平滑（进入渐入、离开渐出），乘上 sin(Time) 得到左右摆动角度。
+        using (_paper.Row(id + "Wrap")
                    .Height(54)
-                   .Margin(0, 0, 3, 3)
-                   .Padding(10, 0)
-                   .BackgroundColor(C(22, 32, 53))
-                   .Rounded(8)
+                   .Margin(0, 0, 6, 6)
                    .Enter())
         {
-            _paper.Box("TaskName")
+            var hovered = _paper.IsParentHovered;                       // 上一帧命中结果，即时模式够用
+
+            // 只在“刚移上去”的那一帧记录触发时刻，然后播一段衰减振动，抖几下自然停。
+            _btnHoverPrev.TryGetValue(id, out var prev);
+            if (hovered && !prev)
+                _btnHoverTime[id] = _paper.Time;
+            _btnHoverPrev[id] = hovered;
+
+            // 从触发时刻起的经过时间；用指数衰减包络乘正弦 => 一次性“果冻抖动”。
+            var start = _btnHoverTime.TryGetValue(id, out var t0) ? t0 : -999f;
+            var elapsed = _paper.Time - start;
+            var wobble = 6f * MathF.Exp(-9f * elapsed) * MathF.Sin(elapsed * 34f); // 幅度6°，快速衰减
+
+            _paper.Box(id)
                 .Width(_paper.Stretch())
-                .Text(task.Name, _font)
-                .TextColor(C(203, 213, 225))
-                .FontSize(14)
-                .Alignment(PaperAlign.MiddleLeft);
-
-            using (_paper.Box("TaskProgressTrack")
-                       .Size(190, 10)
-                       .Margin(10, 10, 22, 22)
-                       .BackgroundColor(C(48, 61, 84))
-                       .Rounded(5)
-                       .Enter())
-            {
-                _paper.Box("TaskProgressFill")
-                    .Width(_paper.Percent(task.Progress))
-                    .Height(10)
-                    .BackgroundColor(task.Progress == 100 ? C(52, 211, 153) : C(96, 165, 250))
-                    .Rounded(5);
-            }
-
-            _paper.Box("TaskPercent")
-                .Width(52)
-                .Text($"{task.Progress}%", _font)
-                .TextColor(task.Progress == 100 ? C(110, 231, 183) : C(147, 197, 253))
-                .FontSize(13)
-                .Alignment(PaperAlign.MiddleCenter);
-        }
-    }
-
-    private void DrawActivity(int index, PaperColor color, string message, string time)
-    {
-        using (_paper.Row("ActivityRow", index)
-                   .Height(44)
-                   .Enter())
-        {
-            _paper.Box("ActivityDot")
-                .Size(10, 10)
-                .Margin(2, 12, 17, 17)
+                .Height(_paper.Stretch())
+                .Rotate(wobble)
+                .TransformOrigin(0.5f, 0.5f)                            // 绕自身中心转
                 .BackgroundColor(color)
-                .Rounded(5);
-            _paper.Box("ActivityMessage")
-                .Width(_paper.Stretch())
-                .Text(message, _font)
-                .TextColor(C(190, 202, 220))
-                .FontSize(14)
-                .Alignment(PaperAlign.MiddleLeft);
-            _paper.Box("ActivityTime")
-                .Width(92)
-                .Text(time, _font)
-                .TextColor(C(100, 116, 145))
-                .FontSize(12)
-                .Alignment(PaperAlign.MiddleCenter);
+                .Rounded(10)
+                .Text(label, _font)
+                .TextColor(White())
+                .FontSize(18)
+                .Alignment(PaperAlign.MiddleCenter)
+                // PaperColor 的 R/G/B 是 float 0..1；沿用 color.A 保留过渡淡入淡出的 alpha。
+                .Hovered.BackgroundColor(new PaperColor(
+                    MathF.Min(color.R + 0.1f, 1f),
+                    MathF.Min(color.G + 0.1f, 1f),
+                    MathF.Min(color.B + 0.1f, 1f),
+                    color.A)).End()
+                .Active.BackgroundColor(new PaperColor(
+                    color.R * 0.8f,
+                    color.G * 0.8f,
+                    color.B * 0.8f,
+                    color.A)).End()
+                .OnClick(_ => onClick());
         }
     }
 
-    private void DrawServiceColumn()
-    {
-        using (_paper.Column("ServiceColumn")
-                   .Width(330)
-                   .Height(_paper.Stretch())
-                   .Margin(16, 0, 0, 0)
-                   .Enter())
-        {
-            using (_paper.Column("ServicePanel")
-                       .Height(304)
-                       .Padding(18)
-                       .BackgroundColor(C(27, 38, 62))
-                       .BorderColor(C(47, 61, 88))
-                       .BorderWidth(1)
-                       .Rounded(12)
-                       .Enter())
-            {
-                _paper.Box("ServiceTitle")
-                    .Height(34)
-                    .Text("服务健康度", _font)
-                    .TextColor(C(235, 241, 250))
-                    .FontSize(18)
-                    .Alignment(PaperAlign.MiddleLeft);
+    // 面板整体淡入淡出用的 alpha 乘子（由过渡驱动）。所有颜色经 C()/White() 时都乘上它。
+    private float _uiAlpha = 1f;
 
-                DrawService(0, "World Server", "正常", C(52, 211, 153));
-                DrawService(1, "Asset Database", "正常", C(52, 211, 153));
-                DrawService(2, "Build Worker", "繁忙", C(251, 191, 36));
-                DrawService(3, "Telemetry", "正常", C(52, 211, 153));
-            }
+    private PaperColor C(byte r, byte g, byte b, byte a = 255) => new(r, g, b, (byte)(a * _uiAlpha));
 
-            using (_paper.Column("QuickActions")
-                       .Height(_paper.Stretch())
-                       .Margin(0, 0, 14, 0)
-                       .Padding(18)
-                       .BackgroundColor(C(27, 38, 62))
-                       .BorderColor(C(47, 61, 88))
-                       .BorderWidth(1)
-                       .Rounded(12)
-                       .Enter())
-            {
-                _paper.Box("QuickTitle")
-                    .Height(34)
-                    .Text("快捷操作", _font)
-                    .TextColor(C(235, 241, 250))
-                    .FontSize(18)
-                    .Alignment(PaperAlign.MiddleLeft);
-
-                DrawActionButton(0, "重新扫描内容", C(37, 99, 235));
-                DrawActionButton(1, "保存运行快照", C(88, 80, 180));
-                DrawActionButton(2, "清理缓存", C(159, 54, 71));
-            }
-        }
-    }
-
-    private void DrawService(int index, string name, string state, PaperColor color)
-    {
-        using (_paper.Row("ServiceRow", index)
-                   .Height(50)
-                   .Padding(8, 0)
-                   .Enter())
-        {
-            _paper.Box("ServiceName")
-                .Width(_paper.Stretch())
-                .Text(name, _font)
-                .TextColor(C(190, 202, 220))
-                .FontSize(14)
-                .Alignment(PaperAlign.MiddleLeft);
-            _paper.Box("ServiceState")
-                .Size(72, 28)
-                .Margin(0, 0, 11, 11)
-                .BackgroundColor(new PaperColor(color.R, color.G, color.B, 0.16f))
-                .Rounded(14)
-                .Text(state, _font)
-                .TextColor(color)
-                .FontSize(12)
-                .Alignment(PaperAlign.MiddleCenter);
-        }
-    }
-
-    private void DrawActionButton(int index, string label, PaperColor color)
-    {
-        _paper.Box("QuickActionButton", index)
-            .Height(42)
-            .Margin(0, 0, 5, 5)
-            .BackgroundColor(color)
-            .Rounded(8)
-            .Text(label, _font)
-            .TextColor(PaperColor.White)
-            .FontSize(14)
-            .Alignment(PaperAlign.MiddleCenter)
-            .Hovered.BackgroundColor(new PaperColor(
-                MathF.Min(color.R + 0.08f, 1f),
-                MathF.Min(color.G + 0.08f, 1f),
-                MathF.Min(color.B + 0.08f, 1f),
-                1f)).End()
-            .Active.BackgroundColor(new PaperColor(color.R * 0.8f, color.G * 0.8f, color.B * 0.8f, 1f)).End()
-            .OnClick(label, (action, _) => _lastAction = action);
-    }
-
-    private static PaperColor C(byte r, byte g, byte b, byte a = 255) => new(r, g, b, a);
+    // 白色（受 _uiAlpha 影响），替代裸 PaperColor.White，让文字也一起淡。
+    private PaperColor White() => C(255, 255, 255);
 }
+
 
 public class SimpleSystem : IUpdateSystem, IRenderSystem
 {
@@ -827,8 +668,6 @@ public class SimpleSystem : IUpdateSystem, IRenderSystem
         _batcher.Quad(new Quad(new Rect(-1, -1, 2, 2)), Color.Black);
     }
 }
-
-
 
 public class CameraDebugSystem : IUpdateSystem
 {
@@ -872,132 +711,6 @@ public struct RenderComp : IEcsComponent
 /// 不带此标记的实体是"自由实体"：落在光标精确位置、可重叠、按 RenderComp.Size 画自身形状。
 /// </summary>
 public struct TileComp : IEcsTagComponent { }
-
-public struct VelocityComp : IEcsComponent
-{
-    public Vector2 Value;
-}
-
-public struct TagAComp : IEcsTagComponent { }
-public struct TagBComp : IEcsTagComponent { }
-
-public sealed class MoverAspect : EcsAspect
-    {
-        public readonly EcsPool<PositionComp> Pos = B.IncludePool<EcsPool<PositionComp>>();
-        public readonly EcsPool<VelocityComp> Vel = B.IncludePool<EcsPool<VelocityComp>>();
-    }
-
-public struct GroupTag<T> : IEcsTagComponent { }
-
-public struct G0 { } public struct G1 { } public struct G2 { } public struct G3 { }
-public struct G4 { } public struct G5 { } public struct G6 { } public struct G7 { }
-public struct G8 { } public struct G9 { }
-
-public sealed class GroupAspect<T> : EcsAspect where T : struct
-{
-    public readonly EcsPool<PositionComp> Pos = B.IncludePool<EcsPool<PositionComp>>();
-    public readonly EcsPool<VelocityComp> Vel = B.IncludePool<EcsPool<VelocityComp>>();
-    public readonly EcsTagPool<GroupTag<T>> Tag = B.IncludePool<EcsTagPool<GroupTag<T>>>();
-}
-
-public class ManySystemsStressSystem : IEcsPreInit, IUpdateSystem
-{
-    [DI] private EcsDefaultWorld _world;
-
-    private int _noiseEntities = 50_000;
-    private int _entitiesPerGroup = 100;
-    private int _matched;
-    private double _totalMs;
-    private double _perGroupUs;
-
-    public void PreInit() => Rebuild();
-
-    private void Rebuild()
-    {
-        var span = _world.ToSpan();
-        for (int i = span.Count - 1; i >= 0; i--)
-            _world.DelEntity(span[i]);
-
-        var posPool = _world.GetPool<PositionComp>();
-        var velPool = _world.GetPool<VelocityComp>();
-        var rng = new Random(42);
-
-        for (int i = 0; i < _noiseEntities; i++)
-        {
-            var e = _world.NewEntity();
-            posPool.Add(e).Value = new Vector2(rng.NextSingle(), rng.NextSingle());
-            if (i % 2 == 0)
-                velPool.Add(e).Value = new Vector2(rng.NextSingle(), rng.NextSingle());
-        }
-
-        AddGroup<G0>(rng); AddGroup<G1>(rng); AddGroup<G2>(rng); AddGroup<G3>(rng); AddGroup<G4>(rng);
-        AddGroup<G5>(rng); AddGroup<G6>(rng); AddGroup<G7>(rng); AddGroup<G8>(rng); AddGroup<G9>(rng);
-    }
-
-    private void AddGroup<T>(Random rng) where T : struct
-    {
-        var posPool = _world.GetPool<PositionComp>();
-        var velPool = _world.GetPool<VelocityComp>();
-        var tagPool = _world.GetPool<GroupTag<T>>();
-
-        for (int i = 0; i < _entitiesPerGroup; i++)
-        {
-            var e = _world.NewEntity();
-            posPool.Add(e).Value = new Vector2(rng.NextSingle(), rng.NextSingle());
-            velPool.Add(e).Value = new Vector2(rng.NextSingle(), rng.NextSingle());
-            tagPool.Add(e);
-        }
-    }
-
-    private int RunGroup<T>() where T : struct
-    {
-        int count = 0;
-        foreach (var e in _world.Where(out GroupAspect<T> a))
-        {
-            ref var p = ref a.Pos.Get(e);
-            ref var v = ref a.Vel.Get(e);
-            p.Value += v.Value * 0.016f;
-            count++;
-        }
-        return count;
-    }
-
-    public void Update()
-    {
-        var sw = Stopwatch.StartNew();
-        int matched = 0;
-        matched += RunGroup<G0>(); matched += RunGroup<G1>(); matched += RunGroup<G2>();
-        matched += RunGroup<G3>(); matched += RunGroup<G4>(); matched += RunGroup<G5>();
-        matched += RunGroup<G6>(); matched += RunGroup<G7>(); matched += RunGroup<G8>();
-        matched += RunGroup<G9>();
-        sw.Stop();
-
-        _totalMs = sw.Elapsed.TotalMilliseconds;
-        _perGroupUs = _totalMs * 1000.0 / 10.0;
-        _matched = matched;
-
-        ImGui.Begin("Many Systems Stress");
-        ImGui.Text($"Noise Entities   : {_noiseEntities}");
-        ImGui.Text($"Groups (Systems) : 10");
-        ImGui.Text($"Entities per Grp : {_entitiesPerGroup}");
-        ImGui.Text($"Matched Total    : {_matched}");
-        ImGui.Separator();
-        ImGui.Text($"Total  : {_totalMs:F3} ms");
-        ImGui.Text($"Per Sys: {_perGroupUs:F2} us");
-        ImGui.Text($"FPS    : {ImGui.GetIO().Framerate:F1}");
-        ImGui.Separator();
-        ImGui.DragInt("Noise Entities", ref _noiseEntities, 1000, 0, 1_000_000);
-        ImGui.DragInt("Entities/Group", ref _entitiesPerGroup, 10, 1, 10000);
-        if (ImGui.Button("Rebuild"))
-            Rebuild();
-        ImGui.End();
-    }
-}
-
-
-
-
-
 
 
 
