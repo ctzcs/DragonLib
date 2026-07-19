@@ -50,6 +50,7 @@ public class MyGame : GameApp
     private FosterCanvasRenderer _paperRenderer = null!;
     private Paper _paper = null!;
     private FontFile _paperFont = null!;
+    private SpriteAtlas _uiAtlas = null!;
     private Point2 _paperResolution;
 
     // ---- Editor 态：编辑器世界，独立的 pipeline / camera / batcher ----
@@ -83,6 +84,9 @@ public class MyGame : GameApp
         _paperResolution = new Point2(Window.WidthInPixels, Window.HeightInPixels);
         _paper = new Paper(_paperRenderer, _paperResolution.X, _paperResolution.Y, new FontAtlasSettings());
         _paperFont = new FontFile(fontData);
+        _uiAtlas = KenneyXmlAtlasSource.Load(GraphicsDevice, storage,
+            "Resources/SpriteSheets/uipack_rpg_sheet.png",
+            "Resources/SpriteSheets/uipack_rpg_sheet.xml");
 
         _batcher = new Batcher(this.GraphicsDevice);
         _camera = new Camera2D();
@@ -118,6 +122,7 @@ public class MyGame : GameApp
             .Inject(_imGui)
             .Inject(_paper)
             .Inject(_paperFont)
+            .Inject(_uiAtlas)
             .Inject(this)
             .AddModule(new SimpleModule())
             .AddModule(new DebugInspectorModule())
@@ -149,6 +154,7 @@ public class MyGame : GameApp
         _eventWorld?.Destroy();
         _editorPipeline?.Destroy();
         _editorWorld?.Destroy();
+        _uiAtlas?.Dispose();
         _paperRenderer?.Dispose();
     }
 
@@ -246,6 +252,9 @@ public class GameMenuSystem : IUpdateSystem
     [DI] private Paper _paper = null!;
     [DI] private FontFile _font = null!;
     [DI] private MyGame _game = null!;   // 读 Window / Input / Exit
+    [DI] private SpriteAtlas _atlas = null!;
+
+    private GraphicsDevice Gpu => _game.GraphicsDevice;
 
     private enum MenuPage { Closed, Main, Settings }
 
@@ -392,13 +401,11 @@ public class GameMenuSystem : IUpdateSystem
                            .Width(460)
                            .Height(panelHeight)
                            .TranslateX(offsetX)
-                           .Padding(28)
-                           .BackgroundColor(C(20, 28, 48))
-                           .BorderColor(C(51, 65, 92))
-                           .BorderWidth(1)
-                           .Rounded(16)
+                           .Padding(34)
                            .Enter())
                 {
+                    // 面板背景：Kenney panel_brown 九宫格（角不变形、边单向拉）。
+                    _paper.DrawNineSlice(Gpu, _atlas, "panel_brown", 32, panelAlpha);
                     body();
                 }
                 _uiAlpha = 1f;
@@ -426,7 +433,7 @@ public class GameMenuSystem : IUpdateSystem
         _paper.Box("MenuTitle")
             .Height(48)
             .Text("游戏菜单", _font)
-            .TextColor(C(240, 245, 255))
+            .TextColor(C(74, 44, 20))
             .FontSize(28)
             .Alignment(PaperAlign.MiddleCenter);
 
@@ -434,13 +441,13 @@ public class GameMenuSystem : IUpdateSystem
             .Height(28)
             .Margin(0, 0, 0, 12)
             .Text("Esc 关闭 · Paper UI 测试", _font)
-            .TextColor(C(125, 148, 184))
+            .TextColor(C(120, 90, 60))
             .FontSize(14)
             .Alignment(PaperAlign.MiddleCenter);
 
-        MenuButton("BtnResume", "返回游戏", C(79, 70, 229), () => GoToPage(MenuPage.Closed));
-        MenuButton("BtnSettings", "设置", C(51, 65, 92), () => GoToPage(MenuPage.Settings));
-        MenuButton("BtnExit", "退出游戏", C(159, 54, 71), () => _game.Exit());
+        MenuButton("BtnResume", "返回游戏", () => GoToPage(MenuPage.Closed));
+        MenuButton("BtnSettings", "设置", () => GoToPage(MenuPage.Settings));
+        MenuButton("BtnExit", "退出游戏", () => _game.Exit());
     }
 
     private void DrawSettings()
@@ -449,38 +456,41 @@ public class GameMenuSystem : IUpdateSystem
             .Height(44)
             .Margin(0, 0, 0, 12)
             .Text("设置", _font)
-            .TextColor(C(240, 245, 255))
+            .TextColor(C(74, 44, 20))
             .FontSize(26)
             .Alignment(PaperAlign.MiddleCenter);
 
-        // --- 分辨率：预设档位，点击选中（暂存） ---
+        // --- 分辨率：预设档位，点击选中（暂存），用 panelInset 九宫格做底 ---
         _paper.Box("ResLabel")
             .Height(28)
             .Text("分辨率", _font)
-            .TextColor(C(148, 163, 184))
+            .TextColor(C(120, 90, 60))
             .FontSize(15)
             .Alignment(PaperAlign.MiddleLeft);
 
-        using (_paper.Row("ResRow").Height(46).Margin(0, 0, 4, 14).Enter())
+        using (_paper.Row("ResRow").Height(50).Margin(0, 0, 4, 14).Enter())
         {
             for (var i = 0; i < Resolutions.Length; i++)
             {
                 var (w, h) = Resolutions[i];
                 var selected = i == _pendingResIndex;
-                _paper.Box("ResOption", i)
-                    .Width(_paper.Stretch())
-                    .Height(_paper.Stretch())
-                    .Margin(i == 0 ? 0 : 4, i == Resolutions.Length - 1 ? 0 : 4, 0, 0)
-                    .BackgroundColor(selected ? C(67, 56, 202) : C(28, 41, 67))
-                    .BorderColor(selected ? C(129, 140, 248) : C(48, 64, 94))
-                    .BorderWidth(1)
-                    .Rounded(8)
-                    .Text($"{w}×{h}", _font)
-                    .TextColor(selected ? PaperColor.White : C(148, 163, 184))
-                    .FontSize(14)
-                    .Alignment(PaperAlign.MiddleCenter)
-                    .Hovered.BackgroundColor(selected ? C(79, 70, 229) : C(35, 48, 73)).End()
-                    .OnClick(i, (idx, _) => _pendingResIndex = idx);
+                using (_paper.Box("ResOption", i)
+                           .Width(_paper.Stretch())
+                           .Height(_paper.Stretch())
+                           .Margin(i == 0 ? 0 : 4, i == Resolutions.Length - 1 ? 0 : 4, 0, 0)
+                           .OnClick(i, (idx, _) => _pendingResIndex = idx)
+                           .Enter())
+                {
+                    // 选中用普通 panel（凸起），未选用 panelInset（凹陷），形成明显区分。
+                    _paper.DrawNineSlice(Gpu, _atlas, selected ? "panel_brown" : "panelInset_brown", 20, _uiAlpha);
+                    _paper.Box("ResText", i)
+                        .Width(_paper.Stretch())
+                        .Height(_paper.Stretch())
+                        .Text($"{w}×{h}", _font)
+                        .TextColor(selected ? C(74, 44, 20) : C(120, 96, 68))
+                        .FontSize(14)
+                        .Alignment(PaperAlign.MiddleCenter);
+                }
             }
         }
 
@@ -490,92 +500,77 @@ public class GameMenuSystem : IUpdateSystem
             _paper.Box("VolLabel")
                 .Width(_paper.Stretch())
                 .Text("主音量", _font)
-                .TextColor(C(148, 163, 184))
+                .TextColor(C(120, 90, 60))
                 .FontSize(15)
                 .Alignment(PaperAlign.MiddleLeft);
             _paper.Box("VolValue")
                 .Width(64)
                 .Text($"{(int)MathF.Round(_volume * 100)}%", _font)
-                .TextColor(C(147, 197, 253))
+                .TextColor(C(74, 44, 20))
                 .FontSize(14)
                 .Alignment(PaperAlign.MiddleRight);
         }
 
         DrawVolumeSlider();
 
-        // --- 全屏开关 ---
-        using (_paper.Row("FsRow").Height(46).Margin(0, 0, 16, 18).Enter())
+        // --- 全屏开关：勾选框用 iconCheck 子图 ---
+        using (_paper.Row("FsRow").Height(46).Margin(0, 0, 16, 18)
+                   .OnClick(_ => _pendingFullscreen = !_pendingFullscreen)
+                   .Enter())
         {
             _paper.Box("FsLabel")
                 .Width(_paper.Stretch())
                 .Text("全屏", _font)
-                .TextColor(C(148, 163, 184))
+                .TextColor(C(120, 90, 60))
                 .FontSize(15)
                 .Alignment(PaperAlign.MiddleLeft);
 
-            _paper.Box("FsToggle")
-                .Size(120, 38)
-                .BackgroundColor(_pendingFullscreen ? C(21, 128, 92) : C(51, 65, 85))
-                .Rounded(19)
-                .Text(_pendingFullscreen ? "开 ON" : "关 OFF", _font)
-                .TextColor(PaperColor.White)
-                .FontSize(14)
-                .Alignment(PaperAlign.MiddleCenter)
-                .Hovered.BackgroundColor(_pendingFullscreen ? C(16, 150, 105) : C(71, 85, 105)).End()
-                .OnClick(_ => _pendingFullscreen = !_pendingFullscreen);
+            using (_paper.Box("FsCheck")
+                       .Size(38, 38)
+                       .Enter())
+            {
+                // 底：凹陷小面板；勾：iconCheck（仅开启时画）
+                _paper.DrawNineSlice(Gpu, _atlas, "panelInset_brown", 14, _uiAlpha);
+                if (_pendingFullscreen)
+                    using (_paper.Box("FsCheckMark").Width(_paper.Stretch()).Height(_paper.Stretch()).Padding(8).Enter())
+                        _paper.DrawSprite(Gpu, _atlas, "iconCheck_bronze", _uiAlpha);
+            }
         }
 
         // --- 底部：应用 / 返回 ---
-        using (_paper.Row("SettingsFooter").Height(48).Enter())
+        using (_paper.Row("SettingsFooter").Height(52).Enter())
         {
-            _paper.Box("BtnApply")
-                .Width(_paper.Stretch())
-                .Height(_paper.Stretch())
-                .Margin(0, 6, 0, 0)
-                .BackgroundColor(C(37, 99, 235))
-                .Rounded(10)
-                .Text("应用", _font)
-                .TextColor(PaperColor.White)
-                .FontSize(16)
-                .Alignment(PaperAlign.MiddleCenter)
-                .Hovered.BackgroundColor(C(59, 130, 246)).End()
-                .Active.BackgroundColor(C(29, 78, 216)).End()
-                .OnClick(_ => ApplySettings());
+            using (_paper.Box("BtnApplyWrap").Width(_paper.Stretch()).Height(_paper.Stretch()).Margin(0, 6, 0, 0)
+                       .OnClick(_ => ApplySettings()).Enter())
+            {
+                _paper.DrawNineSlice(Gpu, _atlas, _paper.IsParentActive ? "buttonLong_brown_pressed" : "buttonLong_brown", 14, _uiAlpha);
+                _paper.Box("BtnApplyText").Width(_paper.Stretch()).Height(_paper.Stretch())
+                    .Text("应用", _font).TextColor(C(74, 44, 20)).FontSize(16).Alignment(PaperAlign.MiddleCenter);
+            }
 
-            _paper.Box("BtnBack")
-                .Width(_paper.Stretch())
-                .Height(_paper.Stretch())
-                .Margin(6, 0, 0, 0)
-                .BackgroundColor(C(51, 65, 92))
-                .Rounded(10)
-                .Text("返回", _font)
-                .TextColor(PaperColor.White)
-                .FontSize(16)
-                .Alignment(PaperAlign.MiddleCenter)
-                .Hovered.BackgroundColor(C(71, 85, 105)).End()
-                .OnClick(_ => GoToPage(MenuPage.Main));
+            using (_paper.Box("BtnBackWrap").Width(_paper.Stretch()).Height(_paper.Stretch()).Margin(6, 0, 0, 0)
+                       .OnClick(_ => GoToPage(MenuPage.Main)).Enter())
+            {
+                _paper.DrawNineSlice(Gpu, _atlas, _paper.IsParentActive ? "buttonLong_grey_pressed" : "buttonLong_grey", 14, _uiAlpha);
+                _paper.Box("BtnBackText").Width(_paper.Stretch()).Height(_paper.Stretch())
+                    .Text("返回", _font).TextColor(C(70, 70, 74)).FontSize(16).Alignment(PaperAlign.MiddleCenter);
+            }
         }
     }
 
-    // 自制拖拽滑块：轨道可点/可拖。事件的 NormalizedPosition 已是「指针相对元素矩形」的
-    // 归一化坐标（0..1），直接取 X 当音量，无需自己拿 Rect 换算。
+    // 拖拽滑块：底槽 barBack 三段式满铺，填充 barYellow 画到 _volume 比例。
+    // NormalizedPosition 是指针相对元素矩形的 0..1，直接当音量。
     private void DrawVolumeSlider()
     {
         using (_paper.Box("VolTrack")
-                   .Height(20)
+                   .Height(24)
                    .Margin(0, 0, 4, 4)
-                   .BackgroundColor(C(48, 61, 84))
-                   .Rounded(10)
                    .OnDragging(e => _volume = Math.Clamp((float)e.NormalizedPosition.X, 0f, 1f))
                    .OnClick(e => _volume = Math.Clamp((float)e.NormalizedPosition.X, 0f, 1f))
                    .Enter())
         {
-            // 已填充部分
-            _paper.Box("VolFill")
-                .Width(_paper.Percent(_volume * 100f))
-                .Height(20)
-                .BackgroundColor(C(96, 165, 250))
-                .Rounded(10);
+            _paper.DrawHBar(Gpu, _atlas, "barBack_horizontalLeft", "barBack_horizontalMid", "barBack_horizontalRight", 1f, _uiAlpha);
+            _paper.DrawHBar(Gpu, _atlas, "barYellow_horizontalLeft", "barYellow_horizontalMid", "barYellow_horizontalRight", _volume, _uiAlpha);
         }
     }
 
@@ -594,16 +589,16 @@ public class GameMenuSystem : IUpdateSystem
         // TODO: 音量接入音频系统时，这里写 Audio.Volume = _volume;
     }
 
-    private void MenuButton(string id, string label, PaperColor color, Action onClick)
+    private void MenuButton(string id, string label, Action onClick)
     {
-        // 外层容器只负责探测 hover 并施加旋转震动；内层才是可见按钮。
-        // hover 强度用 AnimateBool 平滑（进入渐入、离开渐出），乘上 sin(Time) 得到左右摆动角度。
+        // 外层容器负责探测 hover/active、画按钮九宫格背景、施加旋转震动；内层放文字。
         using (_paper.Row(id + "Wrap")
                    .Height(54)
                    .Margin(0, 0, 6, 6)
                    .Enter())
         {
-            var hovered = _paper.IsParentHovered;                       // 上一帧命中结果，即时模式够用
+            var hovered = _paper.IsParentHovered;
+            var pressed = _paper.IsParentActive;
 
             // 只在“刚移上去”的那一帧记录触发时刻，然后播一段衰减振动，抖几下自然停。
             _btnHoverPrev.TryGetValue(id, out var prev);
@@ -611,34 +606,32 @@ public class GameMenuSystem : IUpdateSystem
                 _btnHoverTime[id] = _paper.Time;
             _btnHoverPrev[id] = hovered;
 
-            // 从触发时刻起的经过时间；用指数衰减包络乘正弦 => 一次性“果冻抖动”。
             var start = _btnHoverTime.TryGetValue(id, out var t0) ? t0 : -999f;
             var elapsed = _paper.Time - start;
-            var wobble = 6f * MathF.Exp(-9f * elapsed) * MathF.Sin(elapsed * 34f); // 幅度6°，快速衰减
+            var wobble = 6f * MathF.Exp(-9f * elapsed) * MathF.Sin(elapsed * 34f);
 
-            _paper.Box(id)
-                .Width(_paper.Stretch())
-                .Height(_paper.Stretch())
-                .Rotate(wobble)
-                .TransformOrigin(0.5f, 0.5f)                            // 绕自身中心转
-                .BackgroundColor(color)
-                .Rounded(10)
-                .Text(label, _font)
-                .TextColor(White())
-                .FontSize(18)
-                .Alignment(PaperAlign.MiddleCenter)
-                // PaperColor 的 R/G/B 是 float 0..1；沿用 color.A 保留过渡淡入淡出的 alpha。
-                .Hovered.BackgroundColor(new PaperColor(
-                    MathF.Min(color.R + 0.1f, 1f),
-                    MathF.Min(color.G + 0.1f, 1f),
-                    MathF.Min(color.B + 0.1f, 1f),
-                    color.A)).End()
-                .Active.BackgroundColor(new PaperColor(
-                    color.R * 0.8f,
-                    color.G * 0.8f,
-                    color.B * 0.8f,
-                    color.A)).End()
-                .OnClick(_ => onClick());
+            // 按钮背景：按下换成 _pressed 子图；用九宫格保持圆角不变形。
+            var sprite = pressed ? "buttonLong_brown_pressed" : "buttonLong_brown";
+            _paper.DrawNineSlice(Gpu, _atlas, sprite, 14, _uiAlpha);
+
+            // 文字层：旋转震动 + hover 时轻微提亮。按下时随 _pressed 图整体下沉 2px。
+            using (_paper.Box(id)
+                       .Width(_paper.Stretch())
+                       .Height(_paper.Stretch())
+                       .Rotate(wobble)
+                       .TransformOrigin(0.5f, 0.5f)
+                       .OnClick(_ => onClick())
+                       .Enter())
+            {
+                _paper.Box(id + "Label")
+                    .Width(_paper.Stretch())
+                    .Height(_paper.Stretch())
+                    .Margin(0, 0, pressed ? 2 : 0, 0)
+                    .Text(label, _font)
+                    .TextColor(hovered ? C(255, 249, 222) : C(74, 44, 20))
+                    .FontSize(18)
+                    .Alignment(PaperAlign.MiddleCenter);
+            }
         }
     }
 

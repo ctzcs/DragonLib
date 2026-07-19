@@ -238,7 +238,95 @@ _paper.Box("DeployButton")
 
 ---
 
-## 4. 动画（Animation）
+## 4. 图集与九宫格（SpriteAtlas / Nine-slice）
+
+用一张图集（spritesheet）里的子图给 UI 贴皮：面板、按钮、进度条、图标。
+相关类都在引擎层 `Libs/Engine/Rendering/`（图集）与 `Libs/Engine/Paper/PaperSprite.cs`（绘制）。
+
+### 加载图集
+
+图集 = 一张 PNG + 一份坐标（哪个子图在图集的哪个像素矩形）。坐标格式**可插拔**：
+核心 `SpriteAtlas` 不认识任何具体格式，由 `ISpriteAtlasSource` 的实现负责解析。
+
+```csharp
+using Engine;   // SpriteAtlas / KenneyXmlAtlasSource
+
+// Kenney / Starling 风格 XML（<TextureAtlas><SubTexture name x y width height/>）
+var atlas = KenneyXmlAtlasSource.Load(GraphicsDevice, StorageUtils.GetDevGameRoot,
+    "Resources/SpriteSheets/ui.png", "Resources/SpriteSheets/ui.xml");
+
+// 或等分网格（无坐标文件，按 cellW×cellH 切格，名字 "r{行}_c{列}"）
+var grid = GridAtlasSource.Load(GraphicsDevice, storage, "Resources/tiles.png", 32, 32);
+```
+
+> 图集是 `IDisposable`——在 `Shutdown` 里 `atlas.Dispose()`（会一并释放裁剪出的小纹理）。
+
+### 加新格式 = 加一个 source 实现
+
+要支持别的图集格式（TexturePacker JSON、Aseprite…），**新建一个 `.cs` 实现
+`ISpriteAtlasSource` 即可**，核心与其它格式一行不用改：
+
+```csharp
+public sealed class MyJsonAtlasSource(string jsonPath) : ISpriteAtlasSource
+{
+    public IReadOnlyDictionary<string, RectInt> BuildRects(LocalStorage storage, int atlasW, int atlasH)
+    {
+        // 读 jsonPath，解析成 名字 -> RectInt(x, y, w, h)
+    }
+}
+// 用：SpriteAtlas.Load(device, storage, png, new MyJsonAtlasSource(json));
+```
+
+### 绘制：整图 / 九宫格 / 三段条
+
+`PaperSprite`（`Engine.Paper` 命名空间）给 Paper 加了几个扩展方法。**都要在元素
+`Enter()` 之后调用**（画到当前元素矩形内），配合布局用：
+
+```csharp
+using Engine.Paper;   // DrawSprite / DrawNineSlice / DrawHBar
+
+// 面板背景：九宫格。inset = 四边不拉伸的边框像素（角不变形、边单向拉、中心拉伸）
+using (_paper.Column("Panel").Width(460).Height(300).Padding(34).Enter())
+{
+    _paper.DrawNineSlice(Gpu, atlas, "panel_brown", inset: 32);
+    // ... 面板内容
+}
+
+// 按钮：同样九宫格，按下换 _pressed 子图
+using (_paper.Box("Btn").Size(190, 54).OnClick(_ => {...}).Enter())
+{
+    _paper.DrawNineSlice(Gpu, atlas, pressed ? "button_pressed" : "button", inset: 14);
+    _paper.Box("BtnText").Text("开始", _font).Alignment(PaperAlign.MiddleCenter);
+}
+
+// 图标 / 箭头：整张子图铺满
+using (_paper.Box("Check").Size(24, 24).Enter())
+    _paper.DrawSprite(Gpu, atlas, "iconCheck");
+
+// 进度条 / 音量：三段式横条（Left 帽 + Mid 拉伸 + Right 帽），fill 是 0..1 填充比例
+using (_paper.Box("Vol").Height(24).Enter())
+{
+    _paper.DrawHBar(Gpu, atlas, "barBack_left", "barBack_mid", "barBack_right", fill: 1f);
+    _paper.DrawHBar(Gpu, atlas, "barYellow_left", "barYellow_mid", "barYellow_right", fill: _volume);
+}
+```
+
+三个方法都有可选的 `alpha` 尾参，做整体淡入淡出时把过渡进度传进去（配合第 5 节）。
+
+### 为什么用「裁剪」而不是直接采样子区域
+
+Paper 的 `.Image()` 只能画**整张**纹理，没有 source-rect / UV 参数。`SpriteAtlas.Crop`
+的做法是**把子图从图集拷成一张独立小纹理**（带缓存，跨帧只裁一次），九宫格的 9 块、
+三段条的 3 段都各用一张小纹理走**整图绘制**路径——从而绕开图集 UV 矩阵的方向坑
+（brush 矩阵的行/列约定很容易画歪，见第 8 节的已知坑）。
+
+> `inset` 是**素材相关**参数：Kenney 面板 ~32、按钮 ~14，换一套素材要按其边框重调。
+> 子图名字、inset、配色这些**绑具体图集**的东西留在业务层（如 `GameMenuSystem`），
+> 引擎层的图集 / 绘制代码对它们无感知。
+
+---
+
+## 5. 动画（Animation）
 
 Paper **自带动画系统**，不需要自己写计时器。核心是一组 `Animate*` 方法：每帧传入
 **目标值**，它返回一个朝目标平滑推进的**当前值**，你把这个值接到位移 / 透明度 / 尺寸上即可。
@@ -322,7 +410,7 @@ private PaperColor C(byte r, byte g, byte b, byte a = 255) => new(r, g, b, (byte
 
 ---
 
-## 5. 与 ImGui / 世界渲染共存
+## 6. 与 ImGui / 世界渲染共存
 
 本工程 UI 分层，绘制顺序决定叠放：
 
@@ -342,7 +430,7 @@ else
 
 ---
 
-## 6. 在 ECS 里用 Paper
+## 7. 在 ECS 里用 Paper
 
 把 `Paper` 和 `FontFile`（以及需要的纹理）注入 pipeline，在 `IUpdateSystem` 里声明 UI
 （因为 UI 声明属于 `BeginFrame`/`EndFrame` 之间，走 `Update` 阶段）：
@@ -376,7 +464,7 @@ public class MyUiSystem : IUpdateSystem
 
 ---
 
-## 7. 渲染原理（排障时看）
+## 8. 渲染原理（排障时看）
 
 `FosterCanvasRenderer` 把 Quill 的绘制命令翻译成 Foster draw call，shader
 （`QuillCanvas.hlsl`）按 UV 分三条路径：
