@@ -495,4 +495,5 @@ public class MyUiSystem : IUpdateSystem
 - [ ] 文本输入：`WantsCaptureKeyboard`
 - [ ] 容器用 `using (...Enter())`，叶子直接链式收尾
 - [ ] 动画：`Animate*` 必须在**稳定 string id 的容器内部**调用，否则状态被清、无效果
-- [ ] `Shutdown`：`_paperRenderer.Dispose()` + 自建纹理各自 Dispose
+- [ ] 图集：`DrawNineSlice`/`DrawSprite`/`DrawHBar` 在元素 `Enter()` 之后调；换格式加 `ISpriteAtlasSource` 实现
+- [ ] `Shutdown`：`_paperRenderer.Dispose()` + 自建纹理 / `SpriteAtlas` 各自 Dispose
