@@ -40,6 +40,8 @@ public class AppState
     public bool IsEditorMode;
 }
 
+
+
 public class MyGame : GameApp
 {
     // 共享：模式标志 + ImGui 层。两条 pipeline 都注入 _appState，系统内也能读当前模式。
@@ -66,6 +68,7 @@ public class MyGame : GameApp
     private EcsPipeline _pipeline;
     private Batcher _batcher;
     private Camera2D _camera;
+    private SceneRouter<RuntimeScene> _sceneRouter;
 
     public MyGame(in AppConfig config) : base(in config)
     {
@@ -90,6 +93,7 @@ public class MyGame : GameApp
 
         _batcher = new Batcher(this.GraphicsDevice);
         _camera = new Camera2D();
+        _sceneRouter = new SceneRouter<RuntimeScene>(RuntimeScene.Main);
 
         _editorBatcher = new Batcher(this.GraphicsDevice);
         _editorCamera = new Camera2D();
@@ -119,14 +123,17 @@ public class MyGame : GameApp
             .Inject(_eventWorld)
             .Inject(_batcher)
             .Inject(_camera)
+            .Inject(_sceneRouter)
+            .Inject(Input)
             .Inject(_imGui)
             .Inject(_paper)
             .Inject(_paperFont)
             .Inject(_uiAtlas)
             .Inject(this)
             .AddModule(new SimpleModule())
-            .AddModule(new DebugInspectorModule())
+            .AddModule(new SceneModule())
             .AddModule(new GameMenuModule())
+            .AddModule(new DebugInspectorModule())
             .Add(new EcsInspectorSystem(() => { Log.Info("Register Custom Drawer");}))
             .AutoInject()
             .BuildAndInit();
@@ -194,6 +201,8 @@ public class MyGame : GameApp
             Window.StopTextInput();
 
         // 只更新激活的那条 pipeline，另一套完全冻结。
+        if (!_appState.IsEditorMode)
+            _sceneRouter.Update(Time.Delta);
         ActivePipeline.Update();
 
         _imGui.EndLayout();
@@ -201,7 +210,12 @@ public class MyGame : GameApp
 
     protected override void Render()
     {
-        Window.Clear(_appState.IsEditorMode ? new Color(0x22, 0x26, 0x2b, 0xff) : Color.AliceBlue);
+        var clearColor = _appState.IsEditorMode
+            ? new Color(0x22, 0x26, 0x2b, 0xff)
+            : _sceneRouter.Current == RuntimeScene.DreamBlockShader
+                ? new Color(0x08, 0x0c, 0x14, 0xff)
+                : Color.AliceBlue;
+        Window.Clear(clearColor);
 
         var camera = ActiveCamera;
         camera.Viewport = new Point2(Window.WidthInPixels, Window.HeightInPixels);
@@ -253,6 +267,7 @@ public class GameMenuSystem : IUpdateSystem
     [DI] private FontFile _font = null!;
     [DI] private MyGame _game = null!;   // 读 Window / Input / Exit
     [DI] private SpriteAtlas _atlas = null!;
+    [DI] private SceneRouter<RuntimeScene> _sceneRouter = null!;
 
     private GraphicsDevice Gpu => _game.GraphicsDevice;
 
@@ -286,6 +301,9 @@ public class GameMenuSystem : IUpdateSystem
 
     public void Update()
     {
+        if (_sceneRouter.Current != RuntimeScene.Main)
+            return;
+
         HandleToggle();
 
         // 关键：AnimateBool 把动画状态存在“当前元素”上，而根元素每帧重建、其存储会被
@@ -651,13 +669,20 @@ public class SimpleSystem : IUpdateSystem, IRenderSystem
     [DI] private EcsEventWorld _ecsEventWorld;
     [DI] private Batcher _batcher;
     [DI] private Camera2D _camera;
+    [DI] private SceneRouter<RuntimeScene> _sceneRouter;
     public void Update()
     {
+        if (_sceneRouter.Current != RuntimeScene.Main)
+            return;
+
         Log.Info($"Udpate {_world.Name} {_ecsEventWorld.Name}");
     }
 
     public void Render()
     {
+        if (_sceneRouter.Current != RuntimeScene.Main)
+            return;
+
         _batcher.Quad(new Quad(new Rect(-1, -1, 2, 2)), Color.Black);
     }
 }

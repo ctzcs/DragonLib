@@ -18,6 +18,13 @@
       <Folder Include="Resources\Fonts\" />
       <Folder Include="Resources\Levels\" />
       <Folder Include="Resources\Prefabs\" />
+      <Folder Include="Shaders\Compiled\" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <EmbeddedResource Include="$(ProjectDir)Shaders/Compiled/**" Visible="false">
+        <LogicalName>Game0/Shaders/%(Filename)%(Extension)</LogicalName>
+      </EmbeddedResource>
     </ItemGroup>
 
 </Project>
