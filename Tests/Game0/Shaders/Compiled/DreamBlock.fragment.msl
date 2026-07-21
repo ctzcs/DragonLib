@@ -3,7 +3,7 @@
 
 using namespace metal;
 
-struct type_DreamBlockUniformBlock
+struct type_DreamBlockFragmentBlock
 {
     float4 DeepColor;
     float4 MidColor;
@@ -28,162 +28,162 @@ struct fragment_main_in
     float4 in_var_TEXCOORD1 [[user(locn1)]];
 };
 
-fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], constant type_DreamBlockUniformBlock& DreamBlockUniformBlock [[buffer(0)]])
+fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], constant type_DreamBlockFragmentBlock& DreamBlockFragmentBlock [[buffer(0)]])
 {
     fragment_main_out out = {};
-    float _98 = precise::max(DreamBlockUniformBlock.Animation.w, 0.001000000047497451305389404296875);
-    float _109 = precise::min(DreamBlockUniformBlock.Effect.x, precise::min(DreamBlockUniformBlock.Shape.z, DreamBlockUniformBlock.Shape.w) - 0.001000000047497451305389404296875);
-    float2 _117 = (in.in_var_TEXCOORD0 - float2(0.5)) * DreamBlockUniformBlock.Shape.xy;
-    float2 _121 = (abs(_117) - DreamBlockUniformBlock.Shape.zw) + float2(_109);
-    float _129 = (precise::min(precise::max(_121.x, _121.y), 0.0) + length(precise::max(_121, float2(0.0)))) - _109;
-    float _133 = _117.x;
-    float _139 = _117.y;
-    float _189;
+    float _100 = precise::max(DreamBlockFragmentBlock.Animation.w, 0.001000000047497451305389404296875);
+    float _111 = precise::min(DreamBlockFragmentBlock.Effect.x, precise::min(DreamBlockFragmentBlock.Shape.z, DreamBlockFragmentBlock.Shape.w) - 0.001000000047497451305389404296875);
+    float2 _119 = (in.in_var_TEXCOORD0 - float2(0.5)) * DreamBlockFragmentBlock.Shape.xy;
+    float2 _123 = (abs(_119) - DreamBlockFragmentBlock.Shape.zw) + float2(_111);
+    float _131 = (precise::min(precise::max(_123.x, _123.y), 0.0) + length(precise::max(_123, float2(0.0)))) - _111;
+    float _135 = _119.x;
+    float _141 = _119.y;
+    float _197;
     do
     {
-        bool _164;
-        if (!(DreamBlockUniformBlock.Impact0.w <= 0.0))
+        bool _172;
+        if (!(DreamBlockFragmentBlock.Impact0.w <= 0.0))
         {
-            _164 = DreamBlockUniformBlock.Impact0.z < 0.0;
+            _172 = DreamBlockFragmentBlock.Impact0.z < 0.0;
         }
         else
         {
-            _164 = true;
+            _172 = true;
         }
-        bool _170;
-        if (!_164)
+        bool _178;
+        if (!_172)
         {
-            _170 = DreamBlockUniformBlock.Impact0.z > DreamBlockUniformBlock.Effect.w;
+            _178 = DreamBlockFragmentBlock.Impact0.z > DreamBlockFragmentBlock.Effect.w;
         }
         else
         {
-            _170 = true;
+            _178 = true;
         }
-        if (_170)
+        if (_178)
         {
-            _189 = 0.0;
+            _197 = 0.0;
             break;
         }
-        float _174 = distance(_117, DreamBlockUniformBlock.Impact0.xy);
-        float _178 = fast::clamp(1.0 - (DreamBlockUniformBlock.Impact0.z / DreamBlockUniformBlock.Effect.w), 0.0, 1.0);
-        _189 = (((sin((_174 * 8.5) - (DreamBlockUniformBlock.Impact0.z * 17.0)) * _178) * _178) * exp(_174 * (-0.550000011920928955078125))) * DreamBlockUniformBlock.Impact0.w;
+        float _182 = distance(_119, DreamBlockFragmentBlock.Impact0.xy);
+        float _186 = fast::clamp(1.0 - (DreamBlockFragmentBlock.Impact0.z / DreamBlockFragmentBlock.Effect.w), 0.0, 1.0);
+        _197 = (((sin((_182 * 8.5) - (DreamBlockFragmentBlock.Impact0.z * 17.0)) * _186) * _186) * exp(_182 * (-0.550000011920928955078125))) * DreamBlockFragmentBlock.Impact0.w;
         break;
     } while(false);
-    float _226;
+    float _232;
     do
     {
-        bool _201;
-        if (!(DreamBlockUniformBlock.Impact1.w <= 0.0))
-        {
-            _201 = DreamBlockUniformBlock.Impact1.z < 0.0;
-        }
-        else
-        {
-            _201 = true;
-        }
         bool _207;
-        if (!_201)
+        if (!(DreamBlockFragmentBlock.Impact1.w <= 0.0))
         {
-            _207 = DreamBlockUniformBlock.Impact1.z > DreamBlockUniformBlock.Effect.w;
+            _207 = DreamBlockFragmentBlock.Impact1.z < 0.0;
         }
         else
         {
             _207 = true;
         }
-        if (_207)
+        bool _213;
+        if (!_207)
         {
-            _226 = 0.0;
+            _213 = DreamBlockFragmentBlock.Impact1.z > DreamBlockFragmentBlock.Effect.w;
+        }
+        else
+        {
+            _213 = true;
+        }
+        if (_213)
+        {
+            _232 = 0.0;
             break;
         }
-        float _211 = distance(_117, DreamBlockUniformBlock.Impact1.xy);
-        float _215 = fast::clamp(1.0 - (DreamBlockUniformBlock.Impact1.z / DreamBlockUniformBlock.Effect.w), 0.0, 1.0);
-        _226 = (((sin((_211 * 8.5) - (DreamBlockUniformBlock.Impact1.z * 17.0)) * _215) * _215) * exp(_211 * (-0.550000011920928955078125))) * DreamBlockUniformBlock.Impact1.w;
+        float _217 = distance(_119, DreamBlockFragmentBlock.Impact1.xy);
+        float _221 = fast::clamp(1.0 - (DreamBlockFragmentBlock.Impact1.z / DreamBlockFragmentBlock.Effect.w), 0.0, 1.0);
+        _232 = (((sin((_217 * 8.5) - (DreamBlockFragmentBlock.Impact1.z * 17.0)) * _221) * _221) * exp(_217 * (-0.550000011920928955078125))) * DreamBlockFragmentBlock.Impact1.w;
         break;
     } while(false);
-    float _264;
+    float _268;
     do
     {
-        bool _239;
-        if (!(DreamBlockUniformBlock.Impact2.w <= 0.0))
+        bool _243;
+        if (!(DreamBlockFragmentBlock.Impact2.w <= 0.0))
         {
-            _239 = DreamBlockUniformBlock.Impact2.z < 0.0;
+            _243 = DreamBlockFragmentBlock.Impact2.z < 0.0;
         }
         else
         {
-            _239 = true;
+            _243 = true;
         }
-        bool _245;
-        if (!_239)
+        bool _249;
+        if (!_243)
         {
-            _245 = DreamBlockUniformBlock.Impact2.z > DreamBlockUniformBlock.Effect.w;
+            _249 = DreamBlockFragmentBlock.Impact2.z > DreamBlockFragmentBlock.Effect.w;
         }
         else
         {
-            _245 = true;
+            _249 = true;
         }
-        if (_245)
+        if (_249)
         {
-            _264 = 0.0;
+            _268 = 0.0;
             break;
         }
-        float _249 = distance(_117, DreamBlockUniformBlock.Impact2.xy);
-        float _253 = fast::clamp(1.0 - (DreamBlockUniformBlock.Impact2.z / DreamBlockUniformBlock.Effect.w), 0.0, 1.0);
-        _264 = (((sin((_249 * 8.5) - (DreamBlockUniformBlock.Impact2.z * 17.0)) * _253) * _253) * exp(_249 * (-0.550000011920928955078125))) * DreamBlockUniformBlock.Impact2.w;
+        float _253 = distance(_119, DreamBlockFragmentBlock.Impact2.xy);
+        float _257 = fast::clamp(1.0 - (DreamBlockFragmentBlock.Impact2.z / DreamBlockFragmentBlock.Effect.w), 0.0, 1.0);
+        _268 = (((sin((_253 * 8.5) - (DreamBlockFragmentBlock.Impact2.z * 17.0)) * _257) * _257) * exp(_253 * (-0.550000011920928955078125))) * DreamBlockFragmentBlock.Impact2.w;
         break;
     } while(false);
-    float _302;
+    float _304;
     do
     {
-        bool _277;
-        if (!(DreamBlockUniformBlock.Impact3.w <= 0.0))
+        bool _279;
+        if (!(DreamBlockFragmentBlock.Impact3.w <= 0.0))
         {
-            _277 = DreamBlockUniformBlock.Impact3.z < 0.0;
+            _279 = DreamBlockFragmentBlock.Impact3.z < 0.0;
         }
         else
         {
-            _277 = true;
+            _279 = true;
         }
-        bool _283;
-        if (!_277)
+        bool _285;
+        if (!_279)
         {
-            _283 = DreamBlockUniformBlock.Impact3.z > DreamBlockUniformBlock.Effect.w;
+            _285 = DreamBlockFragmentBlock.Impact3.z > DreamBlockFragmentBlock.Effect.w;
         }
         else
         {
-            _283 = true;
+            _285 = true;
         }
-        if (_283)
+        if (_285)
         {
-            _302 = 0.0;
+            _304 = 0.0;
             break;
         }
-        float _287 = distance(_117, DreamBlockUniformBlock.Impact3.xy);
-        float _291 = fast::clamp(1.0 - (DreamBlockUniformBlock.Impact3.z / DreamBlockUniformBlock.Effect.w), 0.0, 1.0);
-        _302 = (((sin((_287 * 8.5) - (DreamBlockUniformBlock.Impact3.z * 17.0)) * _291) * _291) * exp(_287 * (-0.550000011920928955078125))) * DreamBlockUniformBlock.Impact3.w;
+        float _289 = distance(_119, DreamBlockFragmentBlock.Impact3.xy);
+        float _293 = fast::clamp(1.0 - (DreamBlockFragmentBlock.Impact3.z / DreamBlockFragmentBlock.Effect.w), 0.0, 1.0);
+        _304 = (((sin((_289 * 8.5) - (DreamBlockFragmentBlock.Impact3.z * 17.0)) * _293) * _293) * exp(_289 * (-0.550000011920928955078125))) * DreamBlockFragmentBlock.Impact3.w;
         break;
     } while(false);
-    float _308 = _129 - (exp(abs(_129) * (-2.0)) * (((((sin((_133 * 2.099999904632568359375) + (DreamBlockUniformBlock.Animation.x * 2.2999999523162841796875)) * 0.550000011920928955078125) + (sin((_139 * 2.7000000476837158203125) - (DreamBlockUniformBlock.Animation.x * 1.7000000476837158203125)) * 0.300000011920928955078125)) + (sin(((_133 + _139) * 1.14999997615814208984375) + (DreamBlockUniformBlock.Animation.x * 1.10000002384185791015625)) * 0.1500000059604644775390625)) * DreamBlockUniformBlock.Animation.z) + ((((_189 + _226) + _264) + _302) * DreamBlockUniformBlock.Effect.z)));
-    float _310 = precise::max(fwidth(_308), 0.001000000047497451305389404296875);
-    float _312 = smoothstep(-_310, _310, _308);
-    float _313 = 1.0 - _312;
-    float2 _318 = _117 * 0.7200000286102294921875;
-    float2 _324 = _318 + float2((DreamBlockUniformBlock.Animation.x * 0.2199999988079071044921875) * DreamBlockUniformBlock.Animation.y, (DreamBlockUniformBlock.Animation.x * (-0.1599999964237213134765625)) * DreamBlockUniformBlock.Animation.y);
-    float2 _325 = floor(_324);
-    float2 _326 = fract(_324);
-    float2 _330 = (_326 * _326) * (float2(3.0) - (_326 * 2.0));
-    float _350 = _330.x;
-    float2 _361 = (_318 * 1.89999997615814208984375) + float2((DreamBlockUniformBlock.Animation.x * (-0.310000002384185791015625)) * DreamBlockUniformBlock.Animation.y, (DreamBlockUniformBlock.Animation.x * 0.20000000298023223876953125) * DreamBlockUniformBlock.Animation.y);
-    float2 _362 = floor(_361);
-    float2 _363 = fract(_361);
-    float2 _367 = (_363 * _363) * (float2(3.0) - (_363 * 2.0));
-    float _387 = _367.x;
-    float _406 = fast::clamp((mix(mix(fract(sin(dot(_325, float2(127.09999847412109375, 311.70001220703125))) * 43758.546875), fract(sin(dot(_325 + float2(1.0, 0.0), float2(127.09999847412109375, 311.70001220703125))) * 43758.546875), _350), mix(fract(sin(dot(_325 + float2(0.0, 1.0), float2(127.09999847412109375, 311.70001220703125))) * 43758.546875), fract(sin(dot(_325 + float2(1.0), float2(127.09999847412109375, 311.70001220703125))) * 43758.546875), _350), _330.y) * 0.550000011920928955078125) + ((0.5 + (0.5 * sin((((_139 * 1.25) + (_133 * 0.4199999868869781494140625)) + ((DreamBlockUniformBlock.Animation.x * 1.60000002384185791015625) * DreamBlockUniformBlock.Animation.y)) + (mix(mix(fract(sin(dot(_362, float2(127.09999847412109375, 311.70001220703125))) * 43758.546875), fract(sin(dot(_362 + float2(1.0, 0.0), float2(127.09999847412109375, 311.70001220703125))) * 43758.546875), _387), mix(fract(sin(dot(_362 + float2(0.0, 1.0), float2(127.09999847412109375, 311.70001220703125))) * 43758.546875), fract(sin(dot(_362 + float2(1.0), float2(127.09999847412109375, 311.70001220703125))) * 43758.546875), _387), _367.y) * 2.2000000476837158203125)))) * 0.449999988079071044921875), 0.0, 1.0);
-    float2 _415 = _117 * 2.2000000476837158203125;
-    float2 _416 = floor(_415);
-    float _434 = fract(sin(dot(_416 + float2(7.309999942779541015625), float2(127.09999847412109375, 311.70001220703125))) * 43758.546875);
-    float _463 = ((exp(precise::max(_308, 0.0) * (-3.2000000476837158203125)) * _312) * DreamBlockUniformBlock.Effect.y) * 0.4199999868869781494140625;
-    float3 _468 = (mix(mix(DreamBlockUniformBlock.DeepColor.xyz, DreamBlockUniformBlock.MidColor.xyz, float3(_406)) + ((DreamBlockUniformBlock.EdgeColor.xyz * precise::max((step(0.910000026226043701171875, _434) * (1.0 - smoothstep(0.02500000037252902984619140625, 0.119999997317790985107421875, length(fract(_415) - float2(fract(sin(dot(_416, float2(127.09999847412109375, 311.70001220703125))) * 43758.546875), fract(sin(dot(_416 + float2(19.1700000762939453125), float2(127.09999847412109375, 311.70001220703125))) * 43758.546875)))))) * (0.550000011920928955078125 + (0.449999988079071044921875 * sin((DreamBlockUniformBlock.Animation.x * (1.7999999523162841796875 + (_434 * 2.0))) + (_434 * 13.0)))), 0.0)) * 0.85000002384185791015625), DreamBlockUniformBlock.EdgeColor.xyz, float3((1.0 - smoothstep(_98 * 0.20000000298023223876953125, _98, abs(_308))) * 0.819999992847442626953125)) * _313) + (DreamBlockUniformBlock.EdgeColor.xyz * _463);
-    out.out_var_SV_Target0 = float4(_468, fast::clamp(_313 + _463, 0.0, 1.0)) * in.in_var_TEXCOORD1;
+    float _312 = _131 - (exp(abs(_131) * (-2.0)) * ((((((sin((_135 * 2.099999904632568359375) + (DreamBlockFragmentBlock.Animation.x * 2.2999999523162841796875)) * 0.550000011920928955078125) + (sin((_141 * 2.7000000476837158203125) - (DreamBlockFragmentBlock.Animation.x * 1.7000000476837158203125)) * 0.300000011920928955078125)) + (sin(((_135 + _141) * 1.14999997615814208984375) + (DreamBlockFragmentBlock.Animation.x * 1.10000002384185791015625)) * 0.1500000059604644775390625)) * DreamBlockFragmentBlock.Animation.z) * 0.25) + (((((_197 + _232) + _268) + _304) * DreamBlockFragmentBlock.Effect.z) * 0.180000007152557373046875)));
+    float _314 = precise::max(fwidth(_312), 0.001000000047497451305389404296875);
+    float _316 = smoothstep(-_314, _314, _312);
+    float _317 = 1.0 - _316;
+    float2 _322 = _119 * 0.7200000286102294921875;
+    float2 _328 = _322 + float2((DreamBlockFragmentBlock.Animation.x * 0.2199999988079071044921875) * DreamBlockFragmentBlock.Animation.y, (DreamBlockFragmentBlock.Animation.x * (-0.1599999964237213134765625)) * DreamBlockFragmentBlock.Animation.y);
+    float2 _329 = floor(_328);
+    float2 _330 = fract(_328);
+    float2 _334 = (_330 * _330) * (float2(3.0) - (_330 * 2.0));
+    float _354 = _334.x;
+    float2 _365 = (_322 * 1.89999997615814208984375) + float2((DreamBlockFragmentBlock.Animation.x * (-0.310000002384185791015625)) * DreamBlockFragmentBlock.Animation.y, (DreamBlockFragmentBlock.Animation.x * 0.20000000298023223876953125) * DreamBlockFragmentBlock.Animation.y);
+    float2 _366 = floor(_365);
+    float2 _367 = fract(_365);
+    float2 _371 = (_367 * _367) * (float2(3.0) - (_367 * 2.0));
+    float _391 = _371.x;
+    float _410 = fast::clamp((mix(mix(fract(sin(dot(_329, float2(127.09999847412109375, 311.70001220703125))) * 43758.546875), fract(sin(dot(_329 + float2(1.0, 0.0), float2(127.09999847412109375, 311.70001220703125))) * 43758.546875), _354), mix(fract(sin(dot(_329 + float2(0.0, 1.0), float2(127.09999847412109375, 311.70001220703125))) * 43758.546875), fract(sin(dot(_329 + float2(1.0), float2(127.09999847412109375, 311.70001220703125))) * 43758.546875), _354), _334.y) * 0.550000011920928955078125) + ((0.5 + (0.5 * sin((((_141 * 1.25) + (_135 * 0.4199999868869781494140625)) + ((DreamBlockFragmentBlock.Animation.x * 1.60000002384185791015625) * DreamBlockFragmentBlock.Animation.y)) + (mix(mix(fract(sin(dot(_366, float2(127.09999847412109375, 311.70001220703125))) * 43758.546875), fract(sin(dot(_366 + float2(1.0, 0.0), float2(127.09999847412109375, 311.70001220703125))) * 43758.546875), _391), mix(fract(sin(dot(_366 + float2(0.0, 1.0), float2(127.09999847412109375, 311.70001220703125))) * 43758.546875), fract(sin(dot(_366 + float2(1.0), float2(127.09999847412109375, 311.70001220703125))) * 43758.546875), _391), _371.y) * 2.2000000476837158203125)))) * 0.449999988079071044921875), 0.0, 1.0);
+    float2 _419 = _119 * 2.2000000476837158203125;
+    float2 _420 = floor(_419);
+    float _438 = fract(sin(dot(_420 + float2(7.309999942779541015625), float2(127.09999847412109375, 311.70001220703125))) * 43758.546875);
+    float _467 = ((exp(precise::max(_312, 0.0) * (-3.2000000476837158203125)) * _316) * DreamBlockFragmentBlock.Effect.y) * 0.4199999868869781494140625;
+    float4 _477 = float4((mix(mix(DreamBlockFragmentBlock.DeepColor.xyz, DreamBlockFragmentBlock.MidColor.xyz, float3(_410)) + ((DreamBlockFragmentBlock.EdgeColor.xyz * precise::max((step(0.910000026226043701171875, _438) * (1.0 - smoothstep(0.02500000037252902984619140625, 0.119999997317790985107421875, length(fract(_419) - float2(fract(sin(dot(_420, float2(127.09999847412109375, 311.70001220703125))) * 43758.546875), fract(sin(dot(_420 + float2(19.1700000762939453125), float2(127.09999847412109375, 311.70001220703125))) * 43758.546875)))))) * (0.550000011920928955078125 + (0.449999988079071044921875 * sin((DreamBlockFragmentBlock.Animation.x * (1.7999999523162841796875 + (_438 * 2.0))) + (_438 * 13.0)))), 0.0)) * 0.85000002384185791015625), DreamBlockFragmentBlock.EdgeColor.xyz, float3((1.0 - smoothstep(_100 * 0.20000000298023223876953125, _100, abs(_312))) * 0.819999992847442626953125)) * _317) + (DreamBlockFragmentBlock.EdgeColor.xyz * _467), fast::clamp(_317 + _467, 0.0, 1.0)) * in.in_var_TEXCOORD1;
+    out.out_var_SV_Target0 = _477;
     return out;
 }
 

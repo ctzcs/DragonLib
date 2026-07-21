@@ -32,6 +32,19 @@ public sealed class DreamBlockDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem,
         public Vector4 Impact3;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct DreamBlockVertexUniformData
+    {
+        public Matrix4x4 CameraMatrix;
+        public Vector4 Animation;
+        public Vector4 Shape;
+        public Vector4 Effect;
+        public Vector4 Impact0;
+        public Vector4 Impact1;
+        public Vector4 Impact2;
+        public Vector4 Impact3;
+    }
+
     private struct Impact
     {
         public Vector2 LocalPosition;
@@ -81,6 +94,7 @@ public sealed class DreamBlockDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem,
     private float _rippleStrength = 0.32f;
     private float _edgeWidth = 0.16f;
     private float _glowIntensity = 0.9f;
+    private int _gridDensity = 2;
     private Vector3 _deepColor = new(0.025f, 0.11f, 0.20f);
     private Vector3 _midColor = new(0.05f, 0.58f, 0.72f);
     private Vector3 _edgeColor = new(0.55f, 0.96f, 1f);
@@ -91,7 +105,8 @@ public sealed class DreamBlockDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem,
             _game.GraphicsDevice,
             typeof(DreamBlockDemoSystem).Assembly,
             ShaderResourceBase,
-            fragment: new ShaderStageSpec(0, 1, "fragment_main"));
+            fragment: new ShaderStageSpec(0, 1, "fragment_main"),
+            vertex: new ShaderStageSpec(0, 2, "vertex_main"));
     }
 
     public void Destroy()
@@ -166,6 +181,7 @@ public sealed class DreamBlockDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem,
         ImGui.SliderFloat("Ripple Strength", ref _rippleStrength, 0f, 0.7f);
         ImGui.SliderFloat("Edge Width", ref _edgeWidth, 0.03f, 0.4f);
         ImGui.SliderFloat("Glow", ref _glowIntensity, 0f, 2f);
+        ImGui.SliderInt("Grid Density", ref _gridDensity, 1, 4);
         ImGui.ColorEdit3("Deep Color", ref _deepColor);
         ImGui.ColorEdit3("Flow Color", ref _midColor);
         ImGui.ColorEdit3("Edge Color", ref _edgeColor);
@@ -182,6 +198,7 @@ public sealed class DreamBlockDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem,
         _rippleStrength = 0.32f;
         _edgeWidth = 0.16f;
         _glowIntensity = 0.9f;
+        _gridDensity = 2;
         _deepColor = new Vector3(0.025f, 0.11f, 0.20f);
         _midColor = new Vector3(0.05f, 0.58f, 0.72f);
         _edgeColor = new Vector3(0.55f, 0.96f, 1f);
@@ -261,9 +278,6 @@ public sealed class DreamBlockDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem,
         var outerSize = block.Size + new Vector2(DrawMargin * 2f);
         var halfOuter = outerSize * 0.5f;
         var topLeft = block.Center - halfOuter;
-        var topRight = new Vector2(block.Center.X + halfOuter.X, block.Center.Y - halfOuter.Y);
-        var bottomRight = block.Center + halfOuter;
-        var bottomLeft = new Vector2(block.Center.X - halfOuter.X, block.Center.Y + halfOuter.Y);
 
         var uniforms = new DreamBlockUniformData
         {
@@ -279,21 +293,66 @@ public sealed class DreamBlockDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem,
             Impact3 = GetImpact(block.Impacts[3]),
         };
 
+        var vertexUniforms = new DreamBlockVertexUniformData
+        {
+            CameraMatrix = ToMatrix4x4(_camera.Matrix),
+            Animation = uniforms.Animation,
+            Shape = uniforms.Shape,
+            Effect = uniforms.Effect,
+            Impact0 = uniforms.Impact0,
+            Impact1 = uniforms.Impact1,
+            Impact2 = uniforms.Impact2,
+            Impact3 = uniforms.Impact3,
+        };
+
         _shader!.Material.Fragment.SetUniformBuffer(uniforms);
+        _shader.Material.Vertex.SetUniformBuffer(vertexUniforms, slot: 1);
         _batcher.PushMaterial(_shader.Material);
-        _batcher.Quad(
-            null,
-            topLeft,
-            topRight,
-            bottomRight,
-            bottomLeft,
-            Vector2.Zero,
-            Vector2.UnitX,
-            Vector2.One,
-            Vector2.UnitY,
-            Color.White);
+        _batcher.PushMatrix(Matrix3x2.Identity, relative: false);
+        DrawSubdividedGrid(topLeft, outerSize);
+        _batcher.PopMatrix();
         _batcher.PopMaterial();
     }
+
+    private void DrawSubdividedGrid(Vector2 topLeft, Vector2 size)
+    {
+        var columns = Math.Clamp((int)MathF.Ceiling(size.X * _gridDensity), 4, 32);
+        var rows = Math.Clamp((int)MathF.Ceiling(size.Y * _gridDensity), 4, 32);
+
+        for (var y = 0; y < rows; y++)
+        {
+            var v0 = y / (float)rows;
+            var v1 = (y + 1) / (float)rows;
+            for (var x = 0; x < columns; x++)
+            {
+                var u0 = x / (float)columns;
+                var u1 = (x + 1) / (float)columns;
+
+                var topLeftVertex = topLeft + new Vector2(size.X * u0, size.Y * v0);
+                var topRightVertex = topLeft + new Vector2(size.X * u1, size.Y * v0);
+                var bottomRightVertex = topLeft + new Vector2(size.X * u1, size.Y * v1);
+                var bottomLeftVertex = topLeft + new Vector2(size.X * u0, size.Y * v1);
+
+                _batcher.Quad(
+                    null,
+                    topLeftVertex,
+                    topRightVertex,
+                    bottomRightVertex,
+                    bottomLeftVertex,
+                    new Vector2(u0, v0),
+                    new Vector2(u1, v0),
+                    new Vector2(u1, v1),
+                    new Vector2(u0, v1),
+                    Color.White);
+            }
+        }
+    }
+
+    private static Matrix4x4 ToMatrix4x4(in Matrix3x2 matrix) => new(
+        matrix.M11, matrix.M12, 0f, 0f,
+        matrix.M21, matrix.M22, 0f, 0f,
+        0f, 0f, 1f, 0f,
+        matrix.M31, matrix.M32, 0f, 1f);
 
     private Vector4 GetImpact(in Impact impact)
     {

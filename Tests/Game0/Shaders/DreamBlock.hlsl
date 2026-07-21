@@ -1,4 +1,21 @@
-cbuffer DreamBlockUniformBlock : register(b0, space3)
+cbuffer VertexMatrixBlock : register(b0, space1)
+{
+    float4x4 Matrix;
+};
+
+cbuffer DreamBlockVertexBlock : register(b1, space1)
+{
+    float4x4 VertexCameraMatrix;
+    float4 VertexAnimation;
+    float4 VertexShape;
+    float4 VertexEffect;
+    float4 VertexImpact0;
+    float4 VertexImpact1;
+    float4 VertexImpact2;
+    float4 VertexImpact3;
+};
+
+cbuffer DreamBlockFragmentBlock : register(b0, space3)
 {
     float4 DeepColor;
     float4 MidColor;
@@ -18,6 +35,14 @@ struct VsOutput
     float4 Color : TEXCOORD1;
     float4 Type : TEXCOORD4;
     float4 Position : SV_Position;
+};
+
+struct VsInput
+{
+    float2 Position : TEXCOORD0;
+    float2 TexCoord : TEXCOORD1;
+    float4 Color : TEXCOORD2;
+    float4 Type : TEXCOORD4;
 };
 
 float hash21(float2 p)
@@ -56,6 +81,74 @@ float impactWave(float2 p, float4 impact, float duration)
     return wave * life * life * spatialFalloff * impact.w;
 }
 
+float combinedImpactWave(
+    float2 p,
+    float duration,
+    float4 impact0,
+    float4 impact1,
+    float4 impact2,
+    float4 impact3)
+{
+    return
+        impactWave(p, impact0, duration) +
+        impactWave(p, impact1, duration) +
+        impactWave(p, impact2, duration) +
+        impactWave(p, impact3, duration);
+}
+
+float edgeWobble(float2 p, float time)
+{
+    return
+        sin(p.x * 2.1 + time * 2.3) * 0.55 +
+        sin(p.y * 2.7 - time * 1.7) * 0.30 +
+        sin((p.x + p.y) * 1.15 + time * 1.1) * 0.15;
+}
+
+float2 roundedBoxNormal(float2 p, float2 halfSize, float radius)
+{
+    const float epsilon = 0.01;
+    float2 gradient = float2(
+        roundedBoxSdf(p + float2(epsilon, 0.0), halfSize, radius) -
+            roundedBoxSdf(p - float2(epsilon, 0.0), halfSize, radius),
+        roundedBoxSdf(p + float2(0.0, epsilon), halfSize, radius) -
+            roundedBoxSdf(p - float2(0.0, epsilon), halfSize, radius));
+    return gradient / max(length(gradient), 0.0001);
+}
+
+VsOutput vertex_main(VsInput input)
+{
+    float time = VertexAnimation.x;
+    float warpAmount = VertexAnimation.z;
+    float2 outerSize = VertexShape.xy;
+    float2 halfSize = VertexShape.zw;
+    float cornerRadius = min(VertexEffect.x, min(halfSize.x, halfSize.y) - 0.001);
+    float rippleStrength = VertexEffect.z;
+    float impactDuration = VertexEffect.w;
+
+    float2 local = (input.TexCoord - 0.5) * outerSize;
+    float baseDistance = roundedBoxSdf(local, halfSize, cornerRadius);
+    float edgeInfluence = exp(-abs(baseDistance) * 1.8);
+    float ripples = combinedImpactWave(
+        local,
+        impactDuration,
+        VertexImpact0,
+        VertexImpact1,
+        VertexImpact2,
+        VertexImpact3);
+    float deformation = edgeWobble(local, time) * warpAmount + ripples * rippleStrength;
+    float2 normal = roundedBoxNormal(local, halfSize, cornerRadius);
+
+    float2 worldPosition = input.Position + normal * deformation * edgeInfluence;
+    float4 screenPosition = mul(VertexCameraMatrix, float4(worldPosition, 0.0, 1.0));
+
+    VsOutput output;
+    output.TexCoord = input.TexCoord;
+    output.Color = input.Color;
+    output.Type = input.Type;
+    output.Position = mul(Matrix, screenPosition);
+    return output;
+}
+
 float4 fragment_main(VsOutput input) : SV_Target0
 {
     float time = Animation.x;
@@ -73,18 +166,17 @@ float4 fragment_main(VsOutput input) : SV_Target0
     float baseDistance = roundedBoxSdf(local, halfSize, cornerRadius);
 
     float edgeMask = exp(-abs(baseDistance) * 2.0);
-    float wobble =
-        sin(local.x * 2.1 + time * 2.3) * 0.55 +
-        sin(local.y * 2.7 - time * 1.7) * 0.30 +
-        sin((local.x + local.y) * 1.15 + time * 1.1) * 0.15;
+    float wobble = edgeWobble(local, time);
+    float ripples = combinedImpactWave(
+        local,
+        impactDuration,
+        Impact0,
+        Impact1,
+        Impact2,
+        Impact3);
 
-    float ripples =
-        impactWave(local, Impact0, impactDuration) +
-        impactWave(local, Impact1, impactDuration) +
-        impactWave(local, Impact2, impactDuration) +
-        impactWave(local, Impact3, impactDuration);
-
-    float distanceField = baseDistance - edgeMask * (wobble * warpAmount + ripples * rippleStrength);
+    float distanceField = baseDistance - edgeMask *
+        (wobble * warpAmount * 0.25 + ripples * rippleStrength * 0.18);
     float antialias = max(fwidth(distanceField), 0.001);
     float fillCoverage = 1.0 - smoothstep(-antialias, antialias, distanceField);
     float border = 1.0 - smoothstep(edgeWidth * 0.2, edgeWidth, abs(distanceField));

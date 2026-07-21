@@ -1,0 +1,184 @@
+#include <metal_stdlib>
+#include <simd/simd.h>
+
+using namespace metal;
+
+struct type_VertexMatrixBlock
+{
+    float4x4 Matrix;
+};
+
+struct type_DreamBlockVertexBlock
+{
+    float4x4 VertexCameraMatrix;
+    float4 VertexAnimation;
+    float4 VertexShape;
+    float4 VertexEffect;
+    float4 VertexImpact0;
+    float4 VertexImpact1;
+    float4 VertexImpact2;
+    float4 VertexImpact3;
+};
+
+struct vertex_main_out
+{
+    float2 out_var_TEXCOORD0 [[user(locn0)]];
+    float4 out_var_TEXCOORD1 [[user(locn1)]];
+    float4 out_var_TEXCOORD4 [[user(locn2)]];
+    float4 gl_Position [[position]];
+};
+
+struct vertex_main_in
+{
+    float2 in_var_TEXCOORD0 [[attribute(0)]];
+    float2 in_var_TEXCOORD1 [[attribute(1)]];
+    float4 in_var_TEXCOORD2 [[attribute(2)]];
+    float4 in_var_TEXCOORD4 [[attribute(3)]];
+};
+
+vertex vertex_main_out vertex_main(vertex_main_in in [[stage_in]], constant type_VertexMatrixBlock& VertexMatrixBlock [[buffer(0)]], constant type_DreamBlockVertexBlock& DreamBlockVertexBlock [[buffer(1)]])
+{
+    vertex_main_out out = {};
+    float _85 = precise::min(DreamBlockVertexBlock.VertexEffect.x, precise::min(DreamBlockVertexBlock.VertexShape.z, DreamBlockVertexBlock.VertexShape.w) - 0.001000000047497451305389404296875);
+    float2 _91 = (in.in_var_TEXCOORD1 - float2(0.5)) * DreamBlockVertexBlock.VertexShape.xy;
+    float2 _94 = float2(_85);
+    float2 _95 = (abs(_91) - DreamBlockVertexBlock.VertexShape.zw) + _94;
+    float _149;
+    do
+    {
+        bool _124;
+        if (!(DreamBlockVertexBlock.VertexImpact0.w <= 0.0))
+        {
+            _124 = DreamBlockVertexBlock.VertexImpact0.z < 0.0;
+        }
+        else
+        {
+            _124 = true;
+        }
+        bool _130;
+        if (!_124)
+        {
+            _130 = DreamBlockVertexBlock.VertexImpact0.z > DreamBlockVertexBlock.VertexEffect.w;
+        }
+        else
+        {
+            _130 = true;
+        }
+        if (_130)
+        {
+            _149 = 0.0;
+            break;
+        }
+        float _134 = distance(_91, DreamBlockVertexBlock.VertexImpact0.xy);
+        float _138 = fast::clamp(1.0 - (DreamBlockVertexBlock.VertexImpact0.z / DreamBlockVertexBlock.VertexEffect.w), 0.0, 1.0);
+        _149 = (((sin((_134 * 8.5) - (DreamBlockVertexBlock.VertexImpact0.z * 17.0)) * _138) * _138) * exp(_134 * (-0.550000011920928955078125))) * DreamBlockVertexBlock.VertexImpact0.w;
+        break;
+    } while(false);
+    float _184;
+    do
+    {
+        bool _159;
+        if (!(DreamBlockVertexBlock.VertexImpact1.w <= 0.0))
+        {
+            _159 = DreamBlockVertexBlock.VertexImpact1.z < 0.0;
+        }
+        else
+        {
+            _159 = true;
+        }
+        bool _165;
+        if (!_159)
+        {
+            _165 = DreamBlockVertexBlock.VertexImpact1.z > DreamBlockVertexBlock.VertexEffect.w;
+        }
+        else
+        {
+            _165 = true;
+        }
+        if (_165)
+        {
+            _184 = 0.0;
+            break;
+        }
+        float _169 = distance(_91, DreamBlockVertexBlock.VertexImpact1.xy);
+        float _173 = fast::clamp(1.0 - (DreamBlockVertexBlock.VertexImpact1.z / DreamBlockVertexBlock.VertexEffect.w), 0.0, 1.0);
+        _184 = (((sin((_169 * 8.5) - (DreamBlockVertexBlock.VertexImpact1.z * 17.0)) * _173) * _173) * exp(_169 * (-0.550000011920928955078125))) * DreamBlockVertexBlock.VertexImpact1.w;
+        break;
+    } while(false);
+    float _220;
+    do
+    {
+        bool _195;
+        if (!(DreamBlockVertexBlock.VertexImpact2.w <= 0.0))
+        {
+            _195 = DreamBlockVertexBlock.VertexImpact2.z < 0.0;
+        }
+        else
+        {
+            _195 = true;
+        }
+        bool _201;
+        if (!_195)
+        {
+            _201 = DreamBlockVertexBlock.VertexImpact2.z > DreamBlockVertexBlock.VertexEffect.w;
+        }
+        else
+        {
+            _201 = true;
+        }
+        if (_201)
+        {
+            _220 = 0.0;
+            break;
+        }
+        float _205 = distance(_91, DreamBlockVertexBlock.VertexImpact2.xy);
+        float _209 = fast::clamp(1.0 - (DreamBlockVertexBlock.VertexImpact2.z / DreamBlockVertexBlock.VertexEffect.w), 0.0, 1.0);
+        _220 = (((sin((_205 * 8.5) - (DreamBlockVertexBlock.VertexImpact2.z * 17.0)) * _209) * _209) * exp(_205 * (-0.550000011920928955078125))) * DreamBlockVertexBlock.VertexImpact2.w;
+        break;
+    } while(false);
+    float _256;
+    do
+    {
+        bool _231;
+        if (!(DreamBlockVertexBlock.VertexImpact3.w <= 0.0))
+        {
+            _231 = DreamBlockVertexBlock.VertexImpact3.z < 0.0;
+        }
+        else
+        {
+            _231 = true;
+        }
+        bool _237;
+        if (!_231)
+        {
+            _237 = DreamBlockVertexBlock.VertexImpact3.z > DreamBlockVertexBlock.VertexEffect.w;
+        }
+        else
+        {
+            _237 = true;
+        }
+        if (_237)
+        {
+            _256 = 0.0;
+            break;
+        }
+        float _241 = distance(_91, DreamBlockVertexBlock.VertexImpact3.xy);
+        float _245 = fast::clamp(1.0 - (DreamBlockVertexBlock.VertexImpact3.z / DreamBlockVertexBlock.VertexEffect.w), 0.0, 1.0);
+        _256 = (((sin((_241 * 8.5) - (DreamBlockVertexBlock.VertexImpact3.z * 17.0)) * _245) * _245) * exp(_241 * (-0.550000011920928955078125))) * DreamBlockVertexBlock.VertexImpact3.w;
+        break;
+    } while(false);
+    float _258 = _91.x;
+    float _264 = _91.y;
+    float2 _284 = (abs(_91 + float2(0.00999999977648258209228515625, 0.0)) - DreamBlockVertexBlock.VertexShape.zw) + _94;
+    float2 _296 = (abs(_91 - float2(0.00999999977648258209228515625, 0.0)) - DreamBlockVertexBlock.VertexShape.zw) + _94;
+    float2 _309 = (abs(_91 + float2(0.0, 0.00999999977648258209228515625)) - DreamBlockVertexBlock.VertexShape.zw) + _94;
+    float2 _321 = (abs(_91 - float2(0.0, 0.00999999977648258209228515625)) - DreamBlockVertexBlock.VertexShape.zw) + _94;
+    float2 _331 = float2(((precise::min(precise::max(_284.x, _284.y), 0.0) + length(precise::max(_284, float2(0.0)))) - _85) - ((precise::min(precise::max(_296.x, _296.y), 0.0) + length(precise::max(_296, float2(0.0)))) - _85), ((precise::min(precise::max(_309.x, _309.y), 0.0) + length(precise::max(_309, float2(0.0)))) - _85) - ((precise::min(precise::max(_321.x, _321.y), 0.0) + length(precise::max(_321, float2(0.0)))) - _85));
+    float2 _338 = in.in_var_TEXCOORD0 + (((_331 / float2(precise::max(length(_331), 9.9999997473787516355514526367188e-05))) * (((((sin((_258 * 2.099999904632568359375) + (DreamBlockVertexBlock.VertexAnimation.x * 2.2999999523162841796875)) * 0.550000011920928955078125) + (sin((_264 * 2.7000000476837158203125) - (DreamBlockVertexBlock.VertexAnimation.x * 1.7000000476837158203125)) * 0.300000011920928955078125)) + (sin(((_258 + _264) * 1.14999997615814208984375) + (DreamBlockVertexBlock.VertexAnimation.x * 1.10000002384185791015625)) * 0.1500000059604644775390625)) * DreamBlockVertexBlock.VertexAnimation.z) + ((((_149 + _184) + _220) + _256) * DreamBlockVertexBlock.VertexEffect.z))) * exp(abs((precise::min(precise::max(_95.x, _95.y), 0.0) + length(precise::max(_95, float2(0.0)))) - _85) * (-1.7999999523162841796875)));
+    out.out_var_TEXCOORD0 = in.in_var_TEXCOORD1;
+    out.out_var_TEXCOORD1 = in.in_var_TEXCOORD2;
+    out.out_var_TEXCOORD4 = in.in_var_TEXCOORD4;
+    out.gl_Position = VertexMatrixBlock.Matrix * (DreamBlockVertexBlock.VertexCameraMatrix * float4(_338, 0.0, 1.0));
+    return out;
+}
+
