@@ -22,6 +22,10 @@
     </ItemGroup>
 
     <ItemGroup>
+      <Compile Remove="Benchmarks\**\*.cs" />
+    </ItemGroup>
+
+    <ItemGroup>
       <EmbeddedResource Include="$(ProjectDir)Shaders/Compiled/**" Visible="false">
         <LogicalName>Game0/Shaders/%(Filename)%(Extension)</LogicalName>
       </EmbeddedResource>

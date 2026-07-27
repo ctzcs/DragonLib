@@ -1,6 +1,7 @@
 using System.Numerics;
 using DCFApixels.DragonECS;
 using Engine.ECS;
+using Game0.Content.Demos;
 using ImGuiNET;
 
 namespace Game0;
@@ -12,6 +13,7 @@ public class SceneModule : EcsModule<SceneModule>
     {
         b.Add(new SceneLauncherSystem());
         b.Add(new DreamBlockDemoSystem());
+        b.Add(new EntitiesDemo());
     }
 }
 

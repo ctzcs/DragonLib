@@ -1,3 +1,4 @@
+using System;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using DCFApixels.DragonECS;
@@ -7,7 +8,7 @@ using Engine.World;
 using Foster.Framework;
 using ImGuiNET;
 
-namespace Game0;
+namespace Game0.Content.Demos;
 
 public sealed class DreamBlockDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, IRenderSystem
 {
