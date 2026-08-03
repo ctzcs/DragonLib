@@ -117,8 +117,6 @@ public class EntitiesIterationBenchmarks
     {
         var entities = new Entities(capacity);
         entities.Register<BenchmarkEntity>(capacity);
-        entities.RegisterComponent<BenchmarkEntity, BenchmarkPosition>(
-            static (ref BenchmarkEntity entity) => ref entity.Position);
         return entities;
     }
 
@@ -182,12 +180,14 @@ public struct BenchmarkEntity
     public BenchmarkVelocity Velocity;
 }
 
+[EntitiesComponent]
 public struct BenchmarkPosition
 {
     public float X;
     public float Y;
 }
 
+[EntitiesComponent]
 public struct BenchmarkVelocity
 {
     public float X;

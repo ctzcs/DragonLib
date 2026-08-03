@@ -296,8 +296,6 @@ public sealed class EntitiesDemo : IEcsInit, IEcsDestroy, IUpdateSystem, IRender
     {
         var entities = new Entities(capacity);
         entities.Register<PerfEntity>(capacity);
-        entities.RegisterComponent<PerfEntity, PositionComponent>(
-            static (ref PerfEntity entity) => ref entity.Position);
         return entities;
     }
 
@@ -370,12 +368,14 @@ public struct PerfEntity
     public VelocityComponent Velocity;
 }
 
+[EntitiesComponent]
 public struct PositionComponent
 {
     public float X;
     public float Y;
 }
 
+[EntitiesComponent]
 public struct VelocityComponent
 {
     public float X;

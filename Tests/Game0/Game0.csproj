@@ -23,6 +23,7 @@
 
     <ItemGroup>
       <Compile Remove="Benchmarks\**\*.cs" />
+      <Compile Remove="Tests\**\*.cs" />
     </ItemGroup>
 
     <ItemGroup>

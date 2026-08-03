@@ -1,5 +1,9 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Reflection;
+using System.Reflection.Emit;
+using System.Runtime.CompilerServices;
 
 // Managed single-file C# port of Ravn's entities.odin.
 // Requires C# 7.3 or newer because component accessors use ref returns.
@@ -33,10 +37,9 @@ using System.Collections.Generic;
 // entities.Register<Bar>(64);
 // entities.Register<Baz>(64);
 //
-// entities.RegisterComponent<Foo, Named>(
-//     (ref Foo value) => ref value.Named);
-// entities.RegisterComponent<Bar, Named>(
-//     (ref Bar value) => ref value.Named);
+// Marking Named with [EntitiesComponent] makes Register<Foo> and Register<Bar>
+// discover and register those fields automatically. Components without the
+// attribute can still be registered manually.
 //
 // EntityHandle foo = entities.Create(new Foo {
 //     Named = new Named { Name = "First" },
@@ -50,6 +53,11 @@ using System.Collections.Generic;
 // entities.ForEachComponent<Named>((EntityHandle handle, ref Named named) => {
 //     named.Name += "!";
 // });
+
+[AttributeUsage(AttributeTargets.Struct, Inherited = false, AllowMultiple = false)]
+public sealed class EntitiesComponentAttribute : Attribute
+{
+}
 
 public readonly struct EntityHandle : IEquatable<EntityHandle>
 {
@@ -129,6 +137,17 @@ public delegate ref TComponent EntityComponentAccessor<TEntity, TComponent>(
 /// </summary>
 public sealed class Entities
 {
+    private static readonly ConcurrentDictionary<Type, Action<Entities>[]>
+        AutomaticComponentRegistrations =
+            new ConcurrentDictionary<Type, Action<Entities>[]>();
+
+    private static readonly MethodInfo CreateAutomaticRegistrationMethod =
+        typeof(Entities).GetMethod(
+            nameof(CreateAutomaticRegistration),
+            BindingFlags.NonPublic | BindingFlags.Static)
+        ?? throw new InvalidOperationException(
+            "Could not find the automatic component registration factory.");
+
     private interface IEntityPool
     {
         int Variant { get; }
@@ -419,10 +438,18 @@ public sealed class Entities
         if (_variants.ContainsKey(typeof(T)))
             throw new InvalidOperationException(typeof(T).Name + " is already registered.");
 
+        // Build and validate accessors before mutating this container. The
+        // generated delegates are cached globally for every entity type.
+        Action<Entities>[] automaticRegistrations =
+            GetAutomaticComponentRegistrations(typeof(T));
+
         int variant = _pools.Count;
         var pool = new EntityPool<T>(variant, capacity);
         _variants.Add(typeof(T), variant);
         _pools.Add(pool);
+
+        for (int i = 0; i < automaticRegistrations.Length; i++)
+            automaticRegistrations[i](this);
     }
 
     public void Register<T>()
@@ -720,6 +747,113 @@ public sealed class Entities
         }
     }
 
+    private static Action<Entities>[] GetAutomaticComponentRegistrations(
+        Type entityType)
+    {
+        return AutomaticComponentRegistrations.GetOrAdd(
+            entityType,
+            BuildAutomaticComponentRegistrations);
+    }
+
+    private static Action<Entities>[] BuildAutomaticComponentRegistrations(
+        Type entityType)
+    {
+        FieldInfo[] fields = entityType.GetFields(
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        var registrations = new List<Action<Entities>>();
+        var componentFields = new Dictionary<Type, FieldInfo>();
+
+        for (int i = 0; i < fields.Length; i++)
+        {
+            FieldInfo field = fields[i];
+            Type componentType = field.FieldType;
+
+            if (!componentType.IsDefined(
+                    typeof(EntitiesComponentAttribute),
+                    inherit: false))
+            {
+                continue;
+            }
+
+            if (field.IsInitOnly)
+            {
+                throw new InvalidOperationException(
+                    entityType.Name + "." + field.Name
+                    + " cannot be registered as " + componentType.Name
+                    + " because readonly component fields cannot return a writable reference.");
+            }
+
+            FieldInfo? existingField;
+            if (componentFields.TryGetValue(componentType, out existingField))
+            {
+                throw new InvalidOperationException(
+                    entityType.Name + " contains multiple " + componentType.Name
+                    + " component fields (" + existingField!.Name + " and "
+                    + field.Name + ").");
+            }
+
+            componentFields.Add(componentType, field);
+        }
+
+        if (componentFields.Count == 0)
+            return Array.Empty<Action<Entities>>();
+
+        if (!RuntimeFeature.IsDynamicCodeSupported)
+        {
+            throw new PlatformNotSupportedException(
+                "Automatic [EntitiesComponent] registration requires dynamic code. "
+                + "Register component accessors manually on AOT platforms.");
+        }
+
+        foreach (KeyValuePair<Type, FieldInfo> pair in componentFields)
+        {
+            MethodInfo factory = CreateAutomaticRegistrationMethod.MakeGenericMethod(
+                entityType,
+                pair.Key);
+            object? result = factory.Invoke(
+                null,
+                new object[] { pair.Value });
+            if (result is not Action<Entities> registration)
+            {
+                throw new InvalidOperationException(
+                    "Could not create an automatic component registration for "
+                    + entityType.Name + "." + pair.Value.Name + ".");
+            }
+
+            registrations.Add(registration);
+        }
+
+        return registrations.ToArray();
+    }
+
+    private static Action<Entities> CreateAutomaticRegistration<
+        TEntity,
+        TComponent>(FieldInfo field)
+    {
+        var accessorMethod = new DynamicMethod(
+            "Get_" + typeof(TEntity).Name + "_" + field.Name,
+            typeof(TComponent).MakeByRefType(),
+            new[] { typeof(TEntity).MakeByRefType() },
+            typeof(Entities).Module,
+            skipVisibility: true);
+
+        ILGenerator il = accessorMethod.GetILGenerator();
+        il.Emit(OpCodes.Ldarg_0);
+
+        if (!typeof(TEntity).IsValueType)
+            il.Emit(OpCodes.Ldind_Ref);
+
+        il.Emit(OpCodes.Ldflda, field);
+        il.Emit(OpCodes.Ret);
+
+        var accessor = (EntityComponentAccessor<TEntity, TComponent>)
+            accessorMethod.CreateDelegate(
+                typeof(EntityComponentAccessor<TEntity, TComponent>));
+
+        return entities =>
+            entities.RegisterComponent<TEntity, TComponent>(accessor);
+    }
+
     private static uint NextGeneration(uint generation)
     {
         unchecked
@@ -730,4 +864,3 @@ public sealed class Entities
         return generation == 0 ? 1u : generation;
     }
 }
-

@@ -18,6 +18,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Game0", "Game0.csproj", "{3
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Entities.Benchmarks", "Benchmarks\Entities.Benchmarks.csproj", "{A3E1C9C0-6E89-4F7C-A5C2-8D7B32F7E91A}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Entities.Tests", "Tests\Entities.Tests.csproj", "{4DB58E51-83DD-49E7-9E64-54F463210A63}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -56,6 +58,10 @@ Global
 		{A3E1C9C0-6E89-4F7C-A5C2-8D7B32F7E91A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A3E1C9C0-6E89-4F7C-A5C2-8D7B32F7E91A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A3E1C9C0-6E89-4F7C-A5C2-8D7B32F7E91A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4DB58E51-83DD-49E7-9E64-54F463210A63}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4DB58E51-83DD-49E7-9E64-54F463210A63}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4DB58E51-83DD-49E7-9E64-54F463210A63}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4DB58E51-83DD-49E7-9E64-54F463210A63}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{4E588C41-4BC5-4349-92F8-11AE08DC79C1} = {A458DF4F-25DC-4A28-8DC7-E76F9BA3C22E}
