@@ -7,7 +7,7 @@
         <Nullable>enable</Nullable>
     </PropertyGroup>
     <ItemGroup>
-        <ProjectReference Include="..\DragonECS\DragonECS.csproj"/>
+        <ProjectReference Include="..\DragonECS-main\DragonECS.csproj"/>
     </ItemGroup>
 
 </Project>

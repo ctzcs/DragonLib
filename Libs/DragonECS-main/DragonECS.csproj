@@ -1,0 +1,27 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>disable</ImplicitUsings>
+        <Nullable>disable</Nullable>
+        <InvariantGlobalization>true</InvariantGlobalization>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <RootNamespace>DCFApixels.DragonECS</RootNamespace>
+
+        <Title>DragonECS</Title>
+        <Version>1.1.8</Version>
+        <Authors>DCFApixels</Authors>
+        <Description>ECS Framework for Game Engines with C# and .Net Platform</Description>
+        <Copyright>DCFApixels</Copyright>
+        <RepositoryUrl>https://github.com/DCFApixels/DragonECS</RepositoryUrl>
+        <PackageLicenseUrl>https://github.com/DCFApixels/DragonECS/blob/main/LICENSE.meta</PackageLicenseUrl>
+        <PackageTags>ecs; gamedev; unity; dragonecs</PackageTags>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <None Remove="**/*.meta" />
+      <None Remove="package.json" />
+      <None Remove="DragonECS.asmdef" />
+    </ItemGroup>
+    
+</Project>
