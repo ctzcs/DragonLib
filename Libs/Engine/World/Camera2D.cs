@@ -20,4 +20,27 @@ public class Camera2D
         Matrix3x2.CreateScale(PPU * Zoom) *
         //相机空间到屏幕空间 View->Screen
         Matrix3x2.CreateTranslation(Viewport.X / 2f, Viewport.Y / 2f);
+
+    public Vector2 WorldToScreen(Vector2 worldPosition)
+        => Vector2.Transform(worldPosition, Matrix);
+
+    public Vector2 ScreenToWorld(Vector2 screenPosition)
+    {
+        if (!TryScreenToWorld(screenPosition, out var worldPosition))
+            throw new InvalidOperationException("The camera transform is not invertible.");
+
+        return worldPosition;
+    }
+
+    public bool TryScreenToWorld(Vector2 screenPosition, out Vector2 worldPosition)
+    {
+        if (!Matrix3x2.Invert(Matrix, out var inverse))
+        {
+            worldPosition = default;
+            return false;
+        }
+
+        worldPosition = Vector2.Transform(screenPosition, inverse);
+        return true;
+    }
 }

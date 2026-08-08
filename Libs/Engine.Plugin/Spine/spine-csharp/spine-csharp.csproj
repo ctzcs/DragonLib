@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Spine</RootNamespace>
+    <AssemblyName>spine-csharp</AssemblyName>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="src\**\*.cs" Exclude="src\ColorUnity.cs;src\ColorMono.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Remove="src\ColorUnity.cs" />
+    <None Remove="src\ColorMono.cs" />
+    <None Remove="**\*.meta" />
+    <None Remove="**\*.asmdef" />
+    <None Remove="**\package.json" />
+  </ItemGroup>
+</Project>

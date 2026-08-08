@@ -11,6 +11,7 @@
 
     <ItemGroup>
       <ProjectReference Include="..\..\Libs\Engine\Engine.csproj" />
+      <ProjectReference Include="..\..\Libs\Engine.Plugin\Spine\Engine.Spine.csproj" />
     </ItemGroup>
 
     <ItemGroup>
@@ -18,6 +19,7 @@
       <Folder Include="Resources\Fonts\" />
       <Folder Include="Resources\Levels\" />
       <Folder Include="Resources\Prefabs\" />
+      <Folder Include="Resources\Spine\SpineBoy\" />
       <Folder Include="Shaders\Compiled\" />
     </ItemGroup>
 

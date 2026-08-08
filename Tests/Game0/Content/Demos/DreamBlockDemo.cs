@@ -229,10 +229,9 @@ public sealed class DreamBlockDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem,
         if (!_input.Mouse.LeftPressed || ImGui.GetIO().WantCaptureMouse)
             return;
 
-        if (!Matrix3x2.Invert(_camera.Matrix, out var inverseCamera))
+        if (!_camera.TryScreenToWorld(_input.Mouse.Position, out var worldPosition))
             return;
 
-        var worldPosition = Vector2.Transform(_input.Mouse.Position, inverseCamera);
         foreach (var block in _blocks)
         {
             var local = worldPosition - block.Center;

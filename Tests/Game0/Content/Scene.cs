@@ -13,6 +13,7 @@ public class SceneModule : EcsModule<SceneModule>
     {
         b.Add(new SceneLauncherSystem());
         b.Add(new DreamBlockDemoSystem());
+        b.Add(new SpineDemoSystem());
         b.Add(new EntitiesDemo());
     }
 }
@@ -21,6 +22,7 @@ public enum RuntimeScene
 {
     Main,
     DreamBlockShader,
+    SpineBoy,
 }
 
 public sealed class SceneLauncherSystem : IUpdateSystem
@@ -37,6 +39,9 @@ public sealed class SceneLauncherSystem : IUpdateSystem
         {
             if (ImGui.Button("Dream Block Shader"))
                 _sceneRouter.SwitchTo(RuntimeScene.DreamBlockShader);
+
+            if (ImGui.Button("Spine Boy"))
+                _sceneRouter.SwitchTo(RuntimeScene.SpineBoy);
         }
         else if (ImGui.Button("Back to Main"))
         {

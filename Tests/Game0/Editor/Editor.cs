@@ -131,7 +131,7 @@ public sealed class LevelEditorSystem : IUpdateSystem, IRenderSystem
         // 笔刷是 Tile → 按住拖动连续刷（一格一个）；是自由实体 → 每次点击落一个。
         if (!overUi && mouse.LeftDown)
         {
-            var world = ScreenToWorld(mouse.Position);
+            var world = _camera.ScreenToWorld(mouse.Position);
             if (_brushPrefab != null)
                 PaintAt(world, mouse.LeftPressed);
             else if (mouse.LeftPressed)
@@ -144,16 +144,10 @@ public sealed class LevelEditorSystem : IUpdateSystem, IRenderSystem
 
         // 右键：擦除光标下的实体。
         if (!overUi && mouse.RightPressed)
-            EraseAt(ScreenToWorld(mouse.Position));
+            EraseAt(_camera.ScreenToWorld(mouse.Position));
     }
 
     /// <summary>像素坐标 → 世界坐标：相机矩阵求逆后变换。</summary>
-    private Vector2 ScreenToWorld(Vector2 pixel)
-    {
-        var m = _camera.Matrix;
-        return Matrix3x2.Invert(m, out var inv) ? Vector2.Transform(pixel, inv) : pixel;
-    }
-
     /// <summary>世界坐标 → 网格格号（floor 到格）。</summary>
     private Vector2Int WorldToCell(Vector2 world) =>
         new((int)MathF.Floor(world.X / _gridSize), (int)MathF.Floor(world.Y / _gridSize));
@@ -351,7 +345,7 @@ public sealed class LevelEditorSystem : IUpdateSystem, IRenderSystem
         var prefab = _assets.Get<Prefab>(_brushPrefab);
         if (prefab == null) return;
 
-        var world = ScreenToWorld(_input.Mouse.Position);
+        var world = _camera.ScreenToWorld(_input.Mouse.Position);
         var (color, shape, size) = PreviewLook(prefab);
         var ghost = color; ghost.A = 100;
 
