@@ -1,4 +1,4 @@
-﻿// SPDX-FileCopyrightText: 2023 Erin Catto
+// SPDX-FileCopyrightText: 2023 Erin Catto
 // SPDX-FileCopyrightText: 2025 Ikpil Choi(ikpil@naver.com)
 // SPDX-License-Identifier: MIT
 
@@ -38,11 +38,7 @@ namespace Box2D.NET
         }
 
         /// Compute the contact manifold between two circles
-        // point = qA * localAnchorA + pA
-        // localAnchorB = qBc * (point - pB)
-        // anchorB = point - pB = qA * localAnchorA + pA - pB
-        //         = anchorA + (pA - pB)
-        public static B2Manifold b2CollideCircles(ref B2Circle circleA, in B2Transform xfA, ref B2Circle circleB, in B2Transform xfB)
+        public static B2Manifold b2CollideCircles(in B2Circle circleA, in B2Transform xfA, in B2Circle circleB, in B2Transform xfB)
         {
             B2Manifold manifold = new B2Manifold();
 
@@ -71,7 +67,7 @@ namespace Box2D.NET
             ref B2ManifoldPoint mp = ref manifold.points[0];
             mp.anchorA = b2RotateVector(xfA.q, contactPointA);
             mp.anchorB = b2Add(mp.anchorA, b2Sub(xfA.p, xfB.p));
-            mp.point = b2Add(mp.anchorA, xfA.p);
+            mp.clipPoint = b2Add(mp.anchorA, xfA.p);
             mp.separation = separation;
             mp.id = 0;
             manifold.pointCount = 1;
@@ -79,8 +75,7 @@ namespace Box2D.NET
         }
 
         /// Compute the contact manifold between a capsule and circle
-        /// Compute the collision manifold between a capsule and circle
-        public static B2Manifold b2CollideCapsuleAndCircle(in B2Capsule capsuleA, in B2Transform xfA, ref B2Circle circleB, in B2Transform xfB)
+        public static B2Manifold b2CollideCapsuleAndCircle(in B2Capsule capsuleA, in B2Transform xfA, in B2Circle circleB, in B2Transform xfB)
         {
             B2Manifold manifold = new B2Manifold();
 
@@ -137,7 +132,7 @@ namespace Box2D.NET
             ref B2ManifoldPoint mp = ref manifold.points[0];
             mp.anchorA = b2RotateVector(xfA.q, contactPointA);
             mp.anchorB = b2Add(mp.anchorA, b2Sub(xfA.p, xfB.p));
-            mp.point = b2Add(xfA.p, mp.anchorA);
+            mp.clipPoint = b2Add(xfA.p, mp.anchorA);
             mp.separation = separation;
             mp.id = 0;
             manifold.pointCount = 1;
@@ -145,7 +140,7 @@ namespace Box2D.NET
         }
 
         /// Compute the contact manifold between a polygon and a circle
-        public static B2Manifold b2CollidePolygonAndCircle(ref B2Polygon polygonA, in B2Transform xfA, ref B2Circle circleB, in B2Transform xfB)
+        public static B2Manifold b2CollidePolygonAndCircle(in B2Polygon polygonA, in B2Transform xfA, in B2Circle circleB, in B2Transform xfB)
         {
             B2Manifold manifold = new B2Manifold();
             float speculativeDistance = B2_SPECULATIVE_DISTANCE;
@@ -162,8 +157,8 @@ namespace Box2D.NET
             int normalIndex = 0;
             float separation = -float.MaxValue;
             int vertexCount = polygonA.count;
-            ReadOnlySpan<B2Vec2> vertices = polygonA.vertices.AsSpan();
-            ReadOnlySpan<B2Vec2> normals = polygonA.normals.AsSpan();
+            ReadOnlySpan<B2Vec2> vertices = polygonA.vertices.AsReadOnlySpan();
+            ReadOnlySpan<B2Vec2> normals = polygonA.normals.AsReadOnlySpan();
 
             for (int i = 0; i < vertexCount; ++i)
             {
@@ -208,7 +203,7 @@ namespace Box2D.NET
                 ref B2ManifoldPoint mp = ref manifold.points[0];
                 mp.anchorA = b2RotateVector(xfA.q, contactPointA);
                 mp.anchorB = b2Add(mp.anchorA, b2Sub(xfA.p, xfB.p));
-                mp.point = b2Add(xfA.p, mp.anchorA);
+                mp.clipPoint = b2Add(xfA.p, mp.anchorA);
                 mp.separation = b2Dot(b2Sub(cB, cA), normal);
                 mp.id = 0;
                 manifold.pointCount = 1;
@@ -231,7 +226,7 @@ namespace Box2D.NET
                 ref B2ManifoldPoint mp = ref manifold.points[0];
                 mp.anchorA = b2RotateVector(xfA.q, contactPointA);
                 mp.anchorB = b2Add(mp.anchorA, b2Sub(xfA.p, xfB.p));
-                mp.point = b2Add(xfA.p, mp.anchorA);
+                mp.clipPoint = b2Add(xfA.p, mp.anchorA);
                 mp.separation = b2Dot(b2Sub(cB, cA), normal);
                 mp.id = 0;
                 manifold.pointCount = 1;
@@ -254,7 +249,7 @@ namespace Box2D.NET
                 ref B2ManifoldPoint mp = ref manifold.points[0];
                 mp.anchorA = b2RotateVector(xfA.q, contactPointA);
                 mp.anchorB = b2Add(mp.anchorA, b2Sub(xfA.p, xfB.p));
-                mp.point = b2Add(xfA.p, mp.anchorA);
+                mp.clipPoint = b2Add(xfA.p, mp.anchorA);
                 mp.separation = separation - radius;
                 mp.id = 0;
                 manifold.pointCount = 1;
@@ -264,8 +259,6 @@ namespace Box2D.NET
         }
 
         /// Compute the contact manifold between a capsule and circle
-        // Follows Ericson 5.1.9 Closest Points of Two Line Segments
-        // Adds some logic to support clipping to get two contact points
         public static B2Manifold b2CollideCapsules(in B2Capsule capsuleA, in B2Transform xfA, in B2Capsule capsuleB, in B2Transform xfB)
         {
             B2Vec2 origin = capsuleA.center1;
@@ -530,7 +523,7 @@ namespace Box2D.NET
                 // anchor points relative to shape origin in world space
                 mp.anchorA = b2RotateVector(xfA.q, b2Add(mp.anchorA, origin));
                 mp.anchorB = b2Add(mp.anchorA, b2Sub(xfA.p, xfB.p));
-                mp.point = b2Add(xfA.p, mp.anchorA);
+                mp.clipPoint = b2Add(xfA.p, mp.anchorA);
             }
 
             return manifold;
@@ -544,10 +537,10 @@ namespace Box2D.NET
         }
 
         /// Compute the contact manifold between a polygon and capsule
-        public static B2Manifold b2CollidePolygonAndCapsule(ref B2Polygon polygonA, in B2Transform xfA, in B2Capsule capsuleB, in B2Transform xfB)
+        public static B2Manifold b2CollidePolygonAndCapsule(in B2Polygon polygonA, in B2Transform xfA, in B2Capsule capsuleB, in B2Transform xfB)
         {
             B2Polygon polyB = b2MakeCapsule(capsuleB.center1, capsuleB.center2, capsuleB.radius);
-            return b2CollidePolygons(ref polygonA, xfA, ref polyB, xfB);
+            return b2CollidePolygons(polygonA, xfA, polyB, xfB);
         }
 
         // Polygon clipper used to compute contact points when there are potentially two contact points.
@@ -742,7 +735,7 @@ namespace Box2D.NET
         // else
         //   clip edges
         // end
-        public static B2Manifold b2CollidePolygons(ref B2Polygon polygonA, in B2Transform xfA, ref B2Polygon polygonB, in B2Transform xfB)
+        public static B2Manifold b2CollidePolygons(in B2Polygon polygonA, in B2Transform xfA, in B2Polygon polygonB, in B2Transform xfB)
         {
             B2Vec2 origin = polygonA.vertices[0];
             float linearSlop = B2_LINEAR_SLOP;
@@ -1080,7 +1073,7 @@ namespace Box2D.NET
                     // anchor points relative to shape origin in world space
                     mp.anchorA = b2RotateVector(xfA.q, b2Add(mp.anchorA, origin));
                     mp.anchorB = b2Add(mp.anchorA, b2Sub(xfA.p, xfB.p));
-                    mp.point = b2Add(xfA.p, mp.anchorA);
+                    mp.clipPoint = b2Add(xfA.p, mp.anchorA);
                 }
             }
 
@@ -1088,21 +1081,21 @@ namespace Box2D.NET
         }
 
         /// Compute the contact manifold between an segment and a circle
-        public static B2Manifold b2CollideSegmentAndCircle(in B2Segment segmentA, in B2Transform xfA, ref B2Circle circleB, in B2Transform xfB)
+        public static B2Manifold b2CollideSegmentAndCircle(in B2Segment segmentA, in B2Transform xfA, in B2Circle circleB, in B2Transform xfB)
         {
             B2Capsule capsuleA = new B2Capsule(segmentA.point1, segmentA.point2, 0.0f);
-            return b2CollideCapsuleAndCircle(capsuleA, xfA, ref circleB, xfB);
+            return b2CollideCapsuleAndCircle(capsuleA, xfA, circleB, xfB);
         }
 
         /// Compute the contact manifold between an segment and a polygon
-        public static B2Manifold b2CollideSegmentAndPolygon(in B2Segment segmentA, in B2Transform xfA, ref B2Polygon polygonB, in B2Transform xfB)
+        public static B2Manifold b2CollideSegmentAndPolygon(in B2Segment segmentA, in B2Transform xfA, in B2Polygon polygonB, in B2Transform xfB)
         {
             B2Polygon polygonA = b2MakeCapsule(segmentA.point1, segmentA.point2, 0.0f);
-            return b2CollidePolygons(ref polygonA, xfA, ref polygonB, xfB);
+            return b2CollidePolygons(polygonA, xfA, polygonB, xfB);
         }
 
         /// Compute the contact manifold between a chain segment and a circle
-        public static B2Manifold b2CollideChainSegmentAndCircle(in B2ChainSegment segmentA, in B2Transform xfA, ref B2Circle circleB, in B2Transform xfB)
+        public static B2Manifold b2CollideChainSegmentAndCircle(in B2ChainSegment segmentA, in B2Transform xfA, in B2Circle circleB, in B2Transform xfB)
         {
             B2Manifold manifold = new B2Manifold();
 
@@ -1182,7 +1175,7 @@ namespace Box2D.NET
             ref B2ManifoldPoint mp = ref manifold.points[0];
             mp.anchorA = b2RotateVector(xfA.q, contactPointA);
             mp.anchorB = b2Add(mp.anchorA, b2Sub(xfA.p, xfB.p));
-            mp.point = b2Add(xfA.p, mp.anchorA);
+            mp.clipPoint = b2Add(xfA.p, mp.anchorA);
             mp.separation = separation;
             mp.id = 0;
             manifold.pointCount = 1;
@@ -1193,7 +1186,7 @@ namespace Box2D.NET
         public static B2Manifold b2CollideChainSegmentAndCapsule(in B2ChainSegment segmentA, in B2Transform xfA, in B2Capsule capsuleB, in B2Transform xfB, ref B2SimplexCache cache)
         {
             B2Polygon polyB = b2MakeCapsule(capsuleB.center1, capsuleB.center2, capsuleB.radius);
-            return b2CollideChainSegmentAndPolygon(segmentA, xfA, ref polyB, xfB, ref cache);
+            return b2CollideChainSegmentAndPolygon(segmentA, xfA, polyB, xfB, ref cache);
         }
 
         internal static B2Manifold b2ClipSegments(B2Vec2 a1, B2Vec2 a2, B2Vec2 b1, B2Vec2 b2, B2Vec2 normal, float ra, float rb, ushort id1, ushort id2)
@@ -1311,7 +1304,7 @@ namespace Box2D.NET
         }
 
         /// Compute the contact manifold between a chain segment and a rounded polygon
-        public static B2Manifold b2CollideChainSegmentAndPolygon(in B2ChainSegment segmentA, in B2Transform xfA, ref B2Polygon polygonB,
+        public static B2Manifold b2CollideChainSegmentAndPolygon(in B2ChainSegment segmentA, in B2Transform xfA, in B2Polygon polygonB,
             B2Transform xfB, ref B2SimplexCache cache)
         {
             B2Manifold manifold = new B2Manifold();
@@ -1417,7 +1410,7 @@ namespace Box2D.NET
                         ref B2ManifoldPoint cp = ref manifold.points[0];
                         cp.anchorA = b2RotateVector(xfA.q, pA);
                         cp.anchorB = b2Add(cp.anchorA, b2Sub(xfA.p, xfB.p));
-                        cp.point = b2Add(xfA.p, cp.anchorA);
+                        cp.clipPoint = b2Add(xfA.p, cp.anchorA);
                         cp.separation = output.distance - radiusB;
                         cp.id = B2_MAKE_ID(cache.indexA[0], cache.indexB[0]);
                         manifold.pointCount = 1;
@@ -1500,8 +1493,8 @@ namespace Box2D.NET
                                 B2Vec2 pxfAB = b2Sub(xfA.p, xfB.p);
                                 manifold.points[0].anchorB = b2Add(manifold.points[0].anchorA, pxfAB);
                                 manifold.points[1].anchorB = b2Add(manifold.points[1].anchorA, pxfAB);
-                                manifold.points[0].point = b2Add(xfA.p, manifold.points[0].anchorA);
-                                manifold.points[1].point = b2Add(xfA.p, manifold.points[1].anchorA);
+                                manifold.points[0].clipPoint = b2Add(xfA.p, manifold.points[0].anchorA);
+                                manifold.points[1].clipPoint = b2Add(xfA.p, manifold.points[1].anchorA);
                             }
 
                             return manifold;
@@ -1649,8 +1642,8 @@ namespace Box2D.NET
                         B2Vec2 pxfAB = b2Sub(xfA.p, xfB.p);
                         manifold.points[0].anchorB = b2Add(manifold.points[0].anchorA, pxfAB);
                         manifold.points[1].anchorB = b2Add(manifold.points[1].anchorA, pxfAB);
-                        manifold.points[0].point = b2Add(xfA.p, manifold.points[0].anchorA);
-                        manifold.points[1].point = b2Add(xfA.p, manifold.points[1].anchorA);
+                        manifold.points[0].clipPoint = b2Add(xfA.p, manifold.points[0].anchorA);
+                        manifold.points[1].clipPoint = b2Add(xfA.p, manifold.points[1].anchorA);
                     }
 
                     return manifold;
@@ -1712,8 +1705,8 @@ namespace Box2D.NET
                 B2Vec2 pAB = b2Sub(xfA.p, xfB.p);
                 manifold.points[0].anchorB = b2Add(manifold.points[0].anchorA, pAB);
                 manifold.points[1].anchorB = b2Add(manifold.points[1].anchorA, pAB);
-                manifold.points[0].point = b2Add(xfA.p, manifold.points[0].anchorA);
-                manifold.points[1].point = b2Add(xfA.p, manifold.points[1].anchorA);
+                manifold.points[0].clipPoint = b2Add(xfA.p, manifold.points[0].anchorA);
+                manifold.points[1].clipPoint = b2Add(xfA.p, manifold.points[1].anchorA);
             }
 
             return manifold;

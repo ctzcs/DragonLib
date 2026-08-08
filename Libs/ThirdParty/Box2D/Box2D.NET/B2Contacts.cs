@@ -1,4 +1,4 @@
-﻿// SPDX-FileCopyrightText: 2023 Erin Catto
+// SPDX-FileCopyrightText: 2023 Erin Catto
 // SPDX-FileCopyrightText: 2025 Ikpil Choi(ikpil@naver.com)
 // SPDX-License-Identifier: MIT
 
@@ -38,20 +38,19 @@ namespace Box2D.NET
         // - The state changes are ordered using a bit array that encompasses all contacts
         // - As long as contacts are created in deterministic order, island link order is deterministic.
         // - This keeps the order of contacts in islands deterministic
-
         private static readonly B2ContactRegister[,] s_registers = new B2ContactRegister[(int)B2ShapeType.b2_shapeTypeCount, (int)B2ShapeType.b2_shapeTypeCount];
         private static bool s_initialized = false;
 
         internal static B2Manifold b2CircleManifold(B2Shape shapeA, in B2Transform xfA, B2Shape shapeB, in B2Transform xfB, ref B2SimplexCache cache)
         {
             B2_UNUSED(cache);
-            return b2CollideCircles(ref shapeA.us.circle, xfA, ref shapeB.us.circle, xfB);
+            return b2CollideCircles(shapeA.us.circle, xfA, shapeB.us.circle, xfB);
         }
 
         internal static B2Manifold b2CapsuleAndCircleManifold(B2Shape shapeA, in B2Transform xfA, B2Shape shapeB, in B2Transform xfB, ref B2SimplexCache cache)
         {
             B2_UNUSED(cache);
-            return b2CollideCapsuleAndCircle(shapeA.us.capsule, xfA, ref shapeB.us.circle, xfB);
+            return b2CollideCapsuleAndCircle(shapeA.us.capsule, xfA, shapeB.us.circle, xfB);
         }
 
         internal static B2Manifold b2CapsuleManifold(B2Shape shapeA, in B2Transform xfA, B2Shape shapeB, in B2Transform xfB, ref B2SimplexCache cache)
@@ -63,25 +62,25 @@ namespace Box2D.NET
         internal static B2Manifold b2PolygonAndCircleManifold(B2Shape shapeA, in B2Transform xfA, B2Shape shapeB, in B2Transform xfB, ref B2SimplexCache cache)
         {
             B2_UNUSED(cache);
-            return b2CollidePolygonAndCircle(ref shapeA.us.polygon, xfA, ref shapeB.us.circle, xfB);
+            return b2CollidePolygonAndCircle(shapeA.us.polygon, xfA, shapeB.us.circle, xfB);
         }
 
         internal static B2Manifold b2PolygonAndCapsuleManifold(B2Shape shapeA, in B2Transform xfA, B2Shape shapeB, in B2Transform xfB, ref B2SimplexCache cache)
         {
             B2_UNUSED(cache);
-            return b2CollidePolygonAndCapsule(ref shapeA.us.polygon, xfA, shapeB.us.capsule, xfB);
+            return b2CollidePolygonAndCapsule(shapeA.us.polygon, xfA, shapeB.us.capsule, xfB);
         }
 
         internal static B2Manifold b2PolygonManifold(B2Shape shapeA, in B2Transform xfA, B2Shape shapeB, in B2Transform xfB, ref B2SimplexCache cache)
         {
             B2_UNUSED(cache);
-            return b2CollidePolygons(ref shapeA.us.polygon, xfA, ref shapeB.us.polygon, xfB);
+            return b2CollidePolygons(shapeA.us.polygon, xfA, shapeB.us.polygon, xfB);
         }
 
         internal static B2Manifold b2SegmentAndCircleManifold(B2Shape shapeA, in B2Transform xfA, B2Shape shapeB, in B2Transform xfB, ref B2SimplexCache cache)
         {
             B2_UNUSED(cache);
-            return b2CollideSegmentAndCircle(shapeA.us.segment, xfA, ref shapeB.us.circle, xfB);
+            return b2CollideSegmentAndCircle(shapeA.us.segment, xfA, shapeB.us.circle, xfB);
         }
 
         internal static B2Manifold b2SegmentAndCapsuleManifold(B2Shape shapeA, in B2Transform xfA, B2Shape shapeB, in B2Transform xfB, ref B2SimplexCache cache)
@@ -93,13 +92,13 @@ namespace Box2D.NET
         internal static B2Manifold b2SegmentAndPolygonManifold(B2Shape shapeA, in B2Transform xfA, B2Shape shapeB, in B2Transform xfB, ref B2SimplexCache cache)
         {
             B2_UNUSED(cache);
-            return b2CollideSegmentAndPolygon(shapeA.us.segment, xfA, ref shapeB.us.polygon, xfB);
+            return b2CollideSegmentAndPolygon(shapeA.us.segment, xfA, shapeB.us.polygon, xfB);
         }
 
         internal static B2Manifold b2ChainSegmentAndCircleManifold(B2Shape shapeA, in B2Transform xfA, B2Shape shapeB, in B2Transform xfB, ref B2SimplexCache cache)
         {
             B2_UNUSED(cache);
-            return b2CollideChainSegmentAndCircle(shapeA.us.chainSegment, xfA, ref shapeB.us.circle, xfB);
+            return b2CollideChainSegmentAndCircle(shapeA.us.chainSegment, xfA, shapeB.us.circle, xfB);
         }
 
         internal static B2Manifold b2ChainSegmentAndCapsuleManifold(B2Shape shapeA, in B2Transform xfA, B2Shape shapeB, in B2Transform xfB, ref B2SimplexCache cache)
@@ -109,7 +108,7 @@ namespace Box2D.NET
 
         internal static B2Manifold b2ChainSegmentAndPolygonManifold(B2Shape shapeA, in B2Transform xfA, B2Shape shapeB, in B2Transform xfB, ref B2SimplexCache cache)
         {
-            return b2CollideChainSegmentAndPolygon(shapeA.us.chainSegment, xfA, ref shapeB.us.polygon, xfB, ref cache);
+            return b2CollideChainSegmentAndPolygon(shapeA.us.chainSegment, xfA, shapeB.us.polygon, xfB, ref cache);
         }
 
         internal static void b2AddType(b2ManifoldFcn fcn, B2ShapeType type1, B2ShapeType type2)
@@ -147,6 +146,11 @@ namespace Box2D.NET
             }
         }
 
+        internal static bool b2CanCollide(B2ShapeType typeA, B2ShapeType typeB)
+        {
+            return s_registers[(int)typeA, (int)typeB].fcn != null;
+        }
+        // WARNING: this should never fail to create a contact because the pair already exists in the pairSet.
         public static void b2CreateContact(B2World world, B2Shape shapeA, B2Shape shapeB)
         {
             B2ShapeType type1 = shapeA.type;
@@ -206,8 +210,7 @@ namespace Box2D.NET
             contact.colorIndex = B2_NULL_INDEX;
             contact.localIndex = set.contactSims.count;
             contact.islandId = B2_NULL_INDEX;
-            contact.islandPrev = B2_NULL_INDEX;
-            contact.islandNext = B2_NULL_INDEX;
+            contact.islandIndex = B2_NULL_INDEX;
             contact.shapeIdA = shapeIdA;
             contact.shapeIdB = shapeIdB;
             //contact.isMarked = false;
@@ -256,7 +259,7 @@ namespace Box2D.NET
                 bodyB.contactCount += 1;
             }
 
-            // Add to pair set for fast lookup
+            // Add to pair set for fast lookup.
             ulong pairKey = B2_SHAPE_PAIR_KEY(shapeIdA, shapeIdB);
             b2AddKey(ref world.broadPhase.pairSet, pairKey);
 
@@ -281,7 +284,7 @@ namespace Box2D.NET
             contactSim.cache = b2_emptySimplexCache;
             contactSim.manifold = new B2Manifold();
 
-            // These also get updated in the narrow phase
+            // These get updated in the narrow phase, but these are needed for first touch
             contactSim.friction = world.frictionCallback(shapeA.material.friction, shapeA.material.userMaterialId,
                 shapeB.material.friction, shapeB.material.userMaterialId);
             contactSim.restitution = world.restitutionCallback(shapeA.material.restitution, shapeA.material.userMaterialId,
@@ -491,7 +494,7 @@ namespace Box2D.NET
 
                 ref B2Manifold manifold = ref contactSim.manifold;
                 float bestSeparation = manifold.points[0].separation;
-                B2Vec2 bestPoint = manifold.points[0].point;
+                B2Vec2 bestPoint = manifold.points[0].clipPoint;
 
                 // Get deepest point
                 for (int i = 1; i < manifold.pointCount; ++i)
@@ -500,7 +503,7 @@ namespace Box2D.NET
                     if (separation < bestSeparation)
                     {
                         bestSeparation = separation;
-                        bestPoint = manifold.points[i].point;
+                        bestPoint = manifold.points[i].clipPoint;
                     }
                 }
 
@@ -629,8 +632,25 @@ namespace Box2D.NET
 
             return touching;
         }
-
-        internal static B2Contact b2GetContactFullId(B2World world, in B2ContactId contactId)
+        // Contacts and determinism
+        // A deterministic simulation requires contacts to exist in the same order in b2Island no matter the thread count.
+        // The order must reproduce from run to run. This is necessary because the Gauss-Seidel constraint solver is order dependent.
+        //
+        // Creation:
+        // - Contacts are created using results from b2UpdateBroadPhasePairs
+        // - These results are ordered according to the order of the broad-phase move array
+        // - The move array is ordered according to the shape creation order using a bitset.
+        // - The island/shape/body order is determined by creation order
+        // - Logically contacts are only created for awake bodies, so they are immediately added to the awake contact array (serially)
+        //
+        // Island linking:
+        // - The awake contact array is built from the body-contact graph for all awake bodies in awake islands.
+        // - Awake contacts are solved in parallel and they generate contact state changes.
+        // - These state changes may link islands together using union find.
+        // - The state changes are ordered using a bit array that encompasses all contacts
+        // - As long as contacts are created in deterministic order, island link order is deterministic.
+        // - This keeps the order of contacts in islands deterministic
+        internal static B2Contact b2GetContactFullId(B2World world, B2ContactId contactId)
         {
             int id = contactId.index1 - 1;
             B2Contact contact = b2Array_Get(ref world.contacts, id);
@@ -640,7 +660,7 @@ namespace Box2D.NET
 
 
         /// Get the data for a contact. The manifold may have no points if the contact is not touching.
-        public static B2ContactData b2Contact_GetData(in B2ContactId contactId)
+        public static B2ContactData b2Contact_GetData(B2ContactId contactId)
         {
             B2World world = b2GetWorld(contactId.world0);
             B2Contact contact = b2GetContactFullId(world, contactId);

@@ -62,6 +62,15 @@ namespace Box2D.NET
             throw new InvalidOperationException($"{message} {memberName}() {fileName}:{lineNumber}");
         }
 
+        [Conditional("DEBUG")]
+        public static void B2_VALIDATE(bool condition, string message = "", [CallerFilePath] string fileName = "", [CallerLineNumber] int lineNumber = 0, [CallerMemberName] string memberName = "")
+        {
+            if (condition)
+                return;
+
+            throw new InvalidOperationException($"{message} {memberName}() {fileName}:{lineNumber}");
+        }
+
         public static int b2DefaultAssertFcn(string condition, string fileName, int lineNumber)
         {
             Console.Write($"BOX2D ASSERTION: {condition}, {fileName}, line {lineNumber}\n");
@@ -80,7 +89,7 @@ namespace Box2D.NET
             b2AssertHandler = assertFcn;
         }
 
-        internal static int b2InternalAssertFcn(string condition, string fileName, int lineNumber)
+        internal static int b2InternalAssert(string condition, string fileName, int lineNumber)
         {
             return b2AssertHandler(condition, fileName, lineNumber);
         }

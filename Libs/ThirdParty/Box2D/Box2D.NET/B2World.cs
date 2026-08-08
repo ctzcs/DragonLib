@@ -50,7 +50,7 @@ namespace Box2D.NET
         // Used to create stable ids for islands
         public B2IdPool islandIdPool;
 
-        // This is a sparse array that maps island ids to the island data stored in the solver sets.
+        // Persistent islands
         public B2Array<B2Island> islands;
 
         public B2IdPool shapeIdPool;
@@ -88,7 +88,14 @@ namespace Box2D.NET
         //b2BitSet bodyWakeSet;
         //b2ImpulseArray deferredImpulses;
 
-        // Used to track debug draw
+        // todo consider deferred waking and impulses to make it possible
+        // to apply forces and impulses from multiple threads
+        // impulses must be deferred because sleeping bodies have no velocity state
+        // Problems:
+        // - multiple forces applied to the same body from multiple threads
+        // Deferred wake
+        // b2BitSet bodyWakeSet;
+        // b2ImpulseArray deferredImpulses;
         public B2BitSet debugBodySet;
         public B2BitSet debugJointSet;
         public B2BitSet debugContactSet;
@@ -113,6 +120,7 @@ namespace Box2D.NET
         public float contactSpeed;
         public float contactHertz;
         public float contactDampingRatio;
+        public float contactRecycleDistance;
 
         public b2FrictionCallback frictionCallback;
         public b2RestitutionCallback restitutionCallback;
@@ -132,6 +140,8 @@ namespace Box2D.NET
         public b2FinishTaskCallback finishTaskFcn;
         public object userTaskContext;
         public object userTreeTask;
+        
+        public B2Scheduler scheduler;
 
         public B2UserData userData;
 
@@ -213,7 +223,7 @@ namespace Box2D.NET
 
             stepIndex = 0;
 
-            splitIslandId = 0;
+            splitIslandId = B2_NULL_INDEX;
 
             gravity = new B2Vec2();
             hitEventThreshold = 0.0f;
@@ -222,6 +232,7 @@ namespace Box2D.NET
             contactSpeed = 0.0f;
             contactHertz = 0.0f;
             contactDampingRatio = 0.0f;
+            contactRecycleDistance = 0.0f; 
 
             frictionCallback = null;
             restitutionCallback = null;
@@ -241,6 +252,7 @@ namespace Box2D.NET
             finishTaskFcn = null;
             userTaskContext = null;
             userTreeTask = null;
+            scheduler = null;
 
             userData = B2UserData.Empty;
 

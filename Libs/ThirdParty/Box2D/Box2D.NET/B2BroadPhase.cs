@@ -23,15 +23,14 @@ namespace Box2D.NET
         public B2Array<int> moveArray;
 
         // These are the results from the pair query and are used to create new contacts
-        // in deterministic order.
-        // todo these could be in the step context
+        // in deterministic order. There is a move result linked list for each moving shape and
+        // these follow the dynamic tree query order for determinism.
         public ArraySegment<B2MoveResult> moveResults;
         public ArraySegment<B2MovePair> movePairs;
         public int movePairCapacity;
         public B2AtomicInt movePairIndex;
 
         // Tracks shape pairs that have a b2Contact
-        // todo pairSet can grow quite large on the first time step and remain large
         public B2HashSet pairSet;
 
         public void Clear()

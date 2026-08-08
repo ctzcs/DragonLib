@@ -56,14 +56,22 @@ namespace Box2D.NET
         public static B2DynamicTree b2DynamicTree_Create()
         {
             B2DynamicTree tree = new B2DynamicTree();
+            tree.Clear();
+            
+            // memset needed for deterministic serialization
+            // memset( &tree, 0, sizeof( b2DynamicTree ) );
+
             tree.root = B2_NULL_INDEX;
 
             tree.nodeCapacity = 16;
             tree.nodeCount = 0;
             tree.nodes = b2Alloc<B2TreeNode>(tree.nodeCapacity);
+            
+            // todo eliminate this memset
             //memset( tree.nodes, 0, tree.nodeCapacity * sizeof( b2TreeNode ) );
 
             // Build a linked list for the free list.
+            // todo use a bump allocation scheme to avoid this work
             for (int i = 0; i < tree.nodeCapacity - 1; ++i)
             {
                 tree.nodes[i].pn.next = i + 1;
@@ -113,12 +121,13 @@ namespace Box2D.NET
                 //memcpy( tree.nodes, oldNodes, tree.nodeCount * sizeof( b2TreeNode ) );
                 Array.Copy(oldNodes, 0, tree.nodes, 0, oldCapacity);
 
+                // todo eliminate this memset
                 //memset( tree.nodes + tree.nodeCount, 0, ( tree.nodeCapacity - tree.nodeCount ) * sizeof( b2TreeNode ) );
 
                 b2Free(oldNodes, oldCapacity);
 
                 // Build a linked list for the free list. The parent pointer becomes the "next" pointer.
-                // todo avoid building freelist?
+                // todo avoid building freelist using bump allocator
                 for (int i = tree.nodeCount; i < tree.nodeCapacity - 1; ++i)
                 {
                     tree.nodes[i].pn.next = i + 1;
@@ -162,9 +171,16 @@ namespace Box2D.NET
         // The cost for cases 1, 2a, and 3a can be computed using the sibling cost formula.
         // cost of sibling H = area(union(H, D)) + increased area of ancestors
 
-        // Suppose B (or C) is an internal node, then the lowest cost would be one of two cases:
-        // case1: D becomes a sibling of B
-        // case2: D becomes a descendant of B along with a new internal node of area(D).
+        // Greedy algorithm for sibling selection using the SAH
+        // We have three nodes A-(B,C) and want to add a leaf D, there are three choices.
+        // 1: make a new parent for A and D : E-(A-(B,C), D)
+        // 2: associate D with B
+        //   a: B is a leaf : A-(E-(B,D), C)
+        //   b: B is an internal node: A-(B{D},C)
+        // 3: associate D with C
+        //   a: C is a leaf : A-(B, E-(C,D))
+        //   b: C is an internal node: A-(B, C{D})
+        // All of these have a clear cost except when B or C is an internal node. Hence we need to be greedy.
         internal static int b2FindBestSibling(B2DynamicTree tree, in B2AABB boxD)
         {
             B2Vec2 centerD = b2AABB_Center(boxD);
@@ -737,8 +753,6 @@ namespace Box2D.NET
         }
 
         /// Create a proxy. Provide an AABB and a userData value.
-        // Create a proxy in the tree as a leaf node. We return the index of the node instead of a pointer so that we can grow
-        // the node pool.
         public static int b2DynamicTree_CreateProxy(B2DynamicTree tree, in B2AABB aabb, ulong categoryBits, ulong userData)
         {
             B2_ASSERT(-B2_HUGE < aabb.lowerBound.X && aabb.lowerBound.X < B2_HUGE);
@@ -786,9 +800,9 @@ namespace Box2D.NET
         /// Move a proxy to a new AABB by removing and reinserting into the tree.
         public static void b2DynamicTree_MoveProxy(B2DynamicTree tree, int proxyId, in B2AABB aabb)
         {
-            B2_ASSERT(b2IsValidAABB(aabb));
-            B2_ASSERT(aabb.upperBound.X - aabb.lowerBound.X < B2_HUGE);
-            B2_ASSERT(aabb.upperBound.Y - aabb.lowerBound.Y < B2_HUGE);
+            B2_VALIDATE(b2IsValidAABB(aabb));
+            B2_VALIDATE(aabb.upperBound.X - aabb.lowerBound.X < B2_HUGE);
+            B2_VALIDATE(aabb.upperBound.Y - aabb.lowerBound.Y < B2_HUGE);
             B2_ASSERT(0 <= proxyId && proxyId < tree.nodeCapacity);
             B2_ASSERT(b2IsLeaf(tree.nodes[proxyId]));
 
@@ -805,14 +819,14 @@ namespace Box2D.NET
         {
             B2TreeNode[] nodes = tree.nodes;
 
-            B2_ASSERT(b2IsValidAABB(aabb));
-            B2_ASSERT(aabb.upperBound.X - aabb.lowerBound.X < B2_HUGE);
-            B2_ASSERT(aabb.upperBound.Y - aabb.lowerBound.Y < B2_HUGE);
+            B2_VALIDATE(b2IsValidAABB(aabb));
+            B2_VALIDATE(aabb.upperBound.X - aabb.lowerBound.X < B2_HUGE);
+            B2_VALIDATE(aabb.upperBound.Y - aabb.lowerBound.Y < B2_HUGE);
             B2_ASSERT(0 <= proxyId && proxyId < tree.nodeCapacity);
             B2_ASSERT(b2IsLeaf(tree.nodes[proxyId]));
 
             // Caller must ensure this
-            B2_ASSERT(b2AABB_Contains(nodes[proxyId].aabb, aabb) == false);
+            B2_VALIDATE(b2AABB_Contains(nodes[proxyId].aabb, aabb) == false);
 
             nodes[proxyId].aabb = aabb;
 
@@ -1080,10 +1094,10 @@ namespace Box2D.NET
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int b2DynamicTree_GetByteCount(B2DynamicTree tree)
         {
-            // int size = Marshal.SizeOf<B2DynamicTree>() + Marshal.SizeOf<B2TreeNode>() * tree.nodeCapacity +
-            //            tree.rebuildCapacity * (sizeof(int) + Marshal.SizeOf<B2AABB>() + Marshal.SizeOf<B2Vec2>() + sizeof(int));
-            int size = sizeof(int) * 6 + sizeof(ulong) * 4 + Marshal.SizeOf<B2TreeNode>() * tree.nodeCapacity +
-                       tree.rebuildCapacity * (sizeof(int) + Marshal.SizeOf<B2AABB>() + Marshal.SizeOf<B2Vec2>() + sizeof(int));
+            // int size = B2SizeOf<B2DynamicTree>.Size + B2SizeOf<B2TreeNode>.Size * tree.nodeCapacity +
+            //            tree.rebuildCapacity * (B2SizeOf<int>.Size + B2SizeOf<B2AABB>.Size + B2SizeOf<B2Vec2>.Size + B2SizeOf<int>.Size);
+            int size = B2SizeOf<int>.Size * 6 + B2SizeOf<ulong>.Size * 4 + B2SizeOf<B2TreeNode>.Size * tree.nodeCapacity +
+                       tree.rebuildCapacity * (B2SizeOf<int>.Size + B2SizeOf<B2AABB>.Size + B2SizeOf<B2Vec2>.Size + B2SizeOf<int>.Size);
             return (int)size;
         }
 
@@ -1617,7 +1631,6 @@ namespace Box2D.NET
         }
 
         //#else
-
         public const int B2_BIN_COUNT = 8;
 
 
@@ -1936,7 +1949,6 @@ namespace Box2D.NET
         }
 
         /// Rebuild the tree while retaining subtrees that haven't changed. Returns the number of boxes sorted.
-        // Not safe to access tree during this operation because it may grow
         public static int b2DynamicTree_Rebuild(B2DynamicTree tree, bool fullBuild)
         {
             int proxyCount = tree.proxyCount;

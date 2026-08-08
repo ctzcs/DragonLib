@@ -4,10 +4,13 @@
 
 namespace Box2D.NET
 {
-    // Persistent island for awake bodies, joints, and contacts
-    // https://en.wikipedia.org/wiki/Component_(graph_theory)
-    // https://en.wikipedia.org/wiki/Dynamic_connectivity
-    // map from int to solver set and index
+    // Deterministic solver
+    //
+    // Collide all awake contacts
+    // Use bit array to emit start/stop touching events in defined order, per thread. Try using contact index, assuming contacts are
+    // created in a deterministic order. bit-wise OR together bit arrays and issue changes:
+    // - start touching: merge islands - temporary linked list - mark root island dirty - wake all - largest island is root
+    // - stop touching: increment constraintRemoveCount
     public class B2Island
     {
         // index of solver set stored in b2World
@@ -20,20 +23,19 @@ namespace Box2D.NET
 
         public int islandId;
 
-        public int headBody;
-        public int tailBody;
-        public int bodyCount;
-
-        public int headContact;
-        public int tailContact;
-        public int contactCount;
-
-        public int headJoint;
-        public int tailJoint;
-        public int jointCount;
-
         // Keeps track of how many contacts have been removed from this island.
         // This is used to determine if an island is a candidate for splitting.
         public int constraintRemoveCount;
+
+        // I tried using a stack array for this but the data pointer goes out of
+        // sync when the world island array grows.
+        public B2Array<int> bodies;
+
+        // Contacts and joints that belong to this island. May connect to static
+        // bodies not in the island.
+        // Each link has the two body ids so that b2SplitIsland's union-find pass
+        // never needs to touch b2Contact/b2Joint.
+        public B2Array<B2ContactLink> contacts;
+        public B2Array<B2JointLink> joints;
     }
 }

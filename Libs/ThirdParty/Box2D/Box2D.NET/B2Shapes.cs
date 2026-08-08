@@ -17,7 +17,7 @@ using static Box2D.NET.B2Bodies;
 using static Box2D.NET.B2Worlds;
 using static Box2D.NET.B2IdPools;
 using static Box2D.NET.B2Geometries;
-using static Box2D.NET.B2BoardPhases;
+using static Box2D.NET.B2BroadPhases;
 using static Box2D.NET.B2Distances;
 
 namespace Box2D.NET
@@ -58,7 +58,7 @@ namespace Box2D.NET
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static B2Shape b2GetShape(B2World world, in B2ShapeId shapeId)
+        internal static B2Shape b2GetShape(B2World world, B2ShapeId shapeId)
         {
             int id = shapeId.index1 - 1;
             B2Shape shape = b2Array_Get(ref world.shapes, id);
@@ -74,11 +74,65 @@ namespace Box2D.NET
             return chain;
         }
 
+        internal static float b2ComputeShapeMargin(B2Shape shape)
+        {
+            float margin = 0.0f;
+
+            switch (shape.type)
+            {
+                case B2ShapeType.b2_capsuleShape:
+                {
+                    margin = 0.5f * b2Distance(shape.us.capsule.center2, shape.us.capsule.center1) + shape.us.capsule.radius;
+                }
+                    break;
+
+                case B2ShapeType.b2_circleShape:
+                {
+                    margin = shape.us.circle.radius;
+                }
+                    break;
+
+                case B2ShapeType.b2_polygonShape:
+                {
+                    ref readonly B2Polygon poly = ref shape.us.polygon;
+                    float maxExtentSqr = 0.0f;
+                    int count = poly.count;
+                    for (int i = 0; i < count; ++i)
+                    {
+                        float distanceSqr = b2DistanceSquared(poly.vertices[i], poly.centroid);
+                        maxExtentSqr = b2MaxFloat(maxExtentSqr, distanceSqr);
+                    }
+
+                    margin = MathF.Sqrt(maxExtentSqr);
+                }
+                    break;
+
+                case B2ShapeType.b2_segmentShape:
+                {
+                    margin = 0.5f * b2Distance(shape.us.segment.point1, shape.us.segment.point2);
+                }
+                    break;
+
+                case B2ShapeType.b2_chainSegmentShape:
+                {
+                    margin = 0.5f * b2Distance(shape.us.chainSegment.segment.point1, shape.us.chainSegment.segment.point2);
+                }
+                    break;
+
+                default:
+                    B2_VALIDATE(false);
+                    return B2_MAX_AABB_MARGIN;
+            }
+
+            return b2MinFloat(B2_MAX_AABB_MARGIN, B2_AABB_MARGIN_FRACTION * margin);
+        }
+
+
         internal static void b2UpdateShapeAABBs(B2Shape shape, in B2Transform transform, B2BodyType proxyType)
         {
             // Compute a bounding box with a speculative margin
             float speculativeDistance = B2_SPECULATIVE_DISTANCE;
-            float aabbMargin = B2_AABB_MARGIN;
+            float aabbMargin = shape.aabbMargin;
 
             B2AABB aabb = b2ComputeShapeAABB(shape, transform);
             aabb.lowerBound.X -= speculativeDistance;
@@ -154,6 +208,7 @@ namespace Box2D.NET
             shape.enablePreSolveEvents = def.enablePreSolveEvents;
             shape.proxyKey = B2_NULL_INDEX;
             shape.localCentroid = b2GetShapeCentroid(shape);
+            shape.aabbMargin = b2ComputeShapeMargin(shape);
             shape.aabb = new B2AABB(b2Vec2_zero, b2Vec2_zero);
             shape.fatAABB = new B2AABB(b2Vec2_zero, b2Vec2_zero);
             shape.generation += 1;
@@ -359,8 +414,10 @@ namespace Box2D.NET
 
             b2ValidateSolverSets(world);
         }
-
-        public static void b2DestroyShape(in B2ShapeId shapeId, bool updateBodyMass)
+        /// Destroy a shape. You may defer the body mass update which can improve performance if several shapes on a
+        /// body are destroyed at once.
+        /// @see b2Body_ApplyMassFromShapes
+        public static void b2DestroyShape(B2ShapeId shapeId, bool updateBodyMass)
         {
             B2World world = b2GetWorldLocked(shapeId.world0);
             if (world == null)
@@ -380,7 +437,8 @@ namespace Box2D.NET
                 b2UpdateBodyMassData(world, body);
             }
         }
-
+        /// Create a chain shape
+        /// @see b2ChainDef for details
         public static B2ChainId b2CreateChain(B2BodyId bodyId, in B2ChainDef def)
         {
             B2_CHECK_DEF(def);
@@ -529,7 +587,7 @@ namespace Box2D.NET
             b2Free(chain.materials, chain.materialCount);
             chain.materials = null;
         }
-
+        /// Destroy a chain shape
         public static void b2DestroyChain(B2ChainId chainId)
         {
             B2World world = b2GetWorldLocked(chainId.world0);
@@ -582,13 +640,13 @@ namespace Box2D.NET
 
             b2ValidateSolverSets(world);
         }
-
+        /// Get the world that owns this chain shape
         public static B2WorldId b2Chain_GetWorld(B2ChainId chainId)
         {
             B2World world = b2GetWorld(chainId.world0);
             return new B2WorldId((ushort)(chainId.world0 + 1), world.generation);
         }
-
+        /// Get the number of segments on this chain
         public static int b2Chain_GetSegmentCount(B2ChainId chainId)
         {
             B2World world = b2GetWorldLocked(chainId.world0);
@@ -600,7 +658,8 @@ namespace Box2D.NET
             B2ChainShape chain = b2GetChainShape(world, chainId);
             return chain.count;
         }
-
+        /// Fill a user array with chain segment shape ids up to the specified capacity. Returns
+        /// the actual number of segments returned.
         public static int b2Chain_GetSegments(B2ChainId chainId, Span<B2ShapeId> segments, int capacity)
         {
             B2World world = b2GetWorldLocked(chainId.world0);
@@ -1015,28 +1074,29 @@ namespace Box2D.NET
                 }
             }
         }
-
-        public static B2BodyId b2Shape_GetBody(in B2ShapeId shapeId)
+        /// Get the id of the body that a shape is attached to
+        public static B2BodyId b2Shape_GetBody(B2ShapeId shapeId)
         {
             B2World world = b2GetWorld(shapeId.world0);
             B2Shape shape = b2GetShape(world, shapeId);
             return b2MakeBodyId(world, shape.bodyId);
         }
-
-        public static B2WorldId b2Shape_GetWorld(in B2ShapeId shapeId)
+        /// Get the world that owns this shape
+        public static B2WorldId b2Shape_GetWorld(B2ShapeId shapeId)
         {
             B2World world = b2GetWorld(shapeId.world0);
             return new B2WorldId((ushort)(shapeId.world0 + 1), world.generation);
         }
-
-        public static void b2Shape_SetUserData(in B2ShapeId shapeId, B2UserData userData)
+        /// Set the user data for a shape
+        public static void b2Shape_SetUserData(B2ShapeId shapeId, B2UserData userData)
         {
             B2World world = b2GetWorld(shapeId.world0);
             B2Shape shape = b2GetShape(world, shapeId);
             shape.userData = userData;
         }
-
-        public static B2UserData b2Shape_GetUserData(in B2ShapeId shapeId)
+        /// Get the user data for a shape. This is useful when you get a shape id
+        /// from an event or query.
+        public static B2UserData b2Shape_GetUserData(B2ShapeId shapeId)
         {
             B2World world = b2GetWorld(shapeId.world0);
             B2Shape shape = b2GetShape(world, shapeId);
@@ -1046,14 +1106,14 @@ namespace Box2D.NET
         /// Returns true if the shape is a sensor. It is not possible to change a shape
         /// from sensor to solid dynamically because this breaks the contract for
         /// sensor events.
-        public static bool b2Shape_IsSensor(in B2ShapeId shapeId)
+        public static bool b2Shape_IsSensor(B2ShapeId shapeId)
         {
             B2World world = b2GetWorld(shapeId.world0);
             B2Shape shape = b2GetShape(world, shapeId);
             return shape.sensorIndex != B2_NULL_INDEX;
         }
-
-        public static bool b2Shape_TestPoint(in B2ShapeId shapeId, B2Vec2 point)
+        /// Test a point for overlap with a shape
+        public static bool b2Shape_TestPoint(B2ShapeId shapeId, B2Vec2 point)
         {
             B2World world = b2GetWorld(shapeId.world0);
             B2Shape shape = b2GetShape(world, shapeId);
@@ -1078,7 +1138,8 @@ namespace Box2D.NET
         }
 
         // todo_erin untested
-        internal static B2CastOutput b2Shape_RayCast(in B2ShapeId shapeId, in B2RayCastInput input)
+        /// Ray cast a shape directly
+        internal static B2CastOutput b2Shape_RayCast(B2ShapeId shapeId, in B2RayCastInput input)
         {
             B2World world = b2GetWorld(shapeId.world0);
             B2Shape shape = b2GetShape(world, shapeId);
@@ -1128,8 +1189,10 @@ namespace Box2D.NET
 
             return output;
         }
-
-        public static void b2Shape_SetDensity(in B2ShapeId shapeId, float density, bool updateBodyMass)
+        /// Set the mass density of a shape, usually in kg/m^2.
+        /// This will optionally update the mass properties on the parent body.
+        /// @see b2ShapeDef::density, b2Body_ApplyMassFromShapes
+        public static void b2Shape_SetDensity(B2ShapeId shapeId, float density, bool updateBodyMass)
         {
             B2_ASSERT(b2IsValidFloat(density) && density >= 0.0f);
 
@@ -1154,8 +1217,8 @@ namespace Box2D.NET
                 b2UpdateBodyMassData(world, body);
             }
         }
-
-        public static float b2Shape_GetDensity(in B2ShapeId shapeId)
+        /// Get the density of a shape, usually in kg/m^2
+        public static float b2Shape_GetDensity(B2ShapeId shapeId)
         {
             B2World world = b2GetWorld(shapeId.world0);
             B2Shape shape = b2GetShape(world, shapeId);
@@ -1163,7 +1226,7 @@ namespace Box2D.NET
         }
 
         /// Set the friction on a shape
-        public static void b2Shape_SetFriction(in B2ShapeId shapeId, float friction)
+        public static void b2Shape_SetFriction(B2ShapeId shapeId, float friction)
         {
             B2_ASSERT(b2IsValidFloat(friction) && friction >= 0.0f);
 
@@ -1177,15 +1240,15 @@ namespace Box2D.NET
             B2Shape shape = b2GetShape(world, shapeId);
             shape.material.friction = friction;
         }
-
-        public static float b2Shape_GetFriction(in B2ShapeId shapeId)
+        /// Get the friction of a shape
+        public static float b2Shape_GetFriction(B2ShapeId shapeId)
         {
             B2World world = b2GetWorld(shapeId.world0);
             B2Shape shape = b2GetShape(world, shapeId);
             return shape.material.friction;
         }
-
-        public static void b2Shape_SetRestitution(in B2ShapeId shapeId, float restitution)
+        /// Set the shape restitution (bounciness)
+        public static void b2Shape_SetRestitution(B2ShapeId shapeId, float restitution)
         {
             B2_ASSERT(b2IsValidFloat(restitution) && restitution >= 0.0f);
 
@@ -1199,8 +1262,8 @@ namespace Box2D.NET
             B2Shape shape = b2GetShape(world, shapeId);
             shape.material.restitution = restitution;
         }
-
-        public static float b2Shape_GetRestitution(in B2ShapeId shapeId)
+        /// Get the shape restitution
+        public static float b2Shape_GetRestitution(B2ShapeId shapeId)
         {
             B2World world = b2GetWorld(shapeId.world0);
             B2Shape shape = b2GetShape(world, shapeId);
@@ -1208,7 +1271,7 @@ namespace Box2D.NET
         }
 
         /// Set the user material identifier
-        public static void b2Shape_SetUserMaterial(in B2ShapeId shapeId, ulong material)
+        public static void b2Shape_SetUserMaterial(B2ShapeId shapeId, ulong material)
         {
             B2World world = b2GetWorld(shapeId.world0);
             B2_ASSERT(world.locked == false);
@@ -1222,7 +1285,7 @@ namespace Box2D.NET
         }
 
         /// Get the user material identifier
-        public static ulong b2Shape_GetUserMaterial(in B2ShapeId shapeId)
+        public static ulong b2Shape_GetUserMaterial(B2ShapeId shapeId)
         {
             B2World world = b2GetWorld(shapeId.world0);
             B2Shape shape = b2GetShape(world, shapeId);
@@ -1230,7 +1293,7 @@ namespace Box2D.NET
         }
 
         /// Get the shape surface material
-        public static B2SurfaceMaterial b2Shape_GetSurfaceMaterial(in B2ShapeId shapeId)
+        public static B2SurfaceMaterial b2Shape_GetSurfaceMaterial(B2ShapeId shapeId)
         {
             B2World world = b2GetWorld(shapeId.world0);
             B2Shape shape = b2GetShape(world, shapeId);
@@ -1238,14 +1301,14 @@ namespace Box2D.NET
         }
 
         /// Set the shape surface material
-        public static void b2Shape_SetSurfaceMaterial(in B2ShapeId shapeId, in B2SurfaceMaterial surfaceMaterial)
+        public static void b2Shape_SetSurfaceMaterial(B2ShapeId shapeId, in B2SurfaceMaterial surfaceMaterial)
         {
             B2World world = b2GetWorld(shapeId.world0);
             B2Shape shape = b2GetShape(world, shapeId);
             shape.material = surfaceMaterial;
         }
-
-        public static B2Filter b2Shape_GetFilter(in B2ShapeId shapeId)
+        /// Get the shape filter
+        public static B2Filter b2Shape_GetFilter(B2ShapeId shapeId)
         {
             B2World world = b2GetWorld(shapeId.world0);
             B2Shape shape = b2GetShape(world, shapeId);
@@ -1306,7 +1369,7 @@ namespace Box2D.NET
         /// contacts to be immediately destroyed. However contacts are not created until the next world step.
         /// Sensor overlap state is also not updated until the next world step.
         /// @see b2ShapeDef::filter
-        public static void b2Shape_SetFilter(in B2ShapeId shapeId, in B2Filter filter)
+        public static void b2Shape_SetFilter(B2ShapeId shapeId, in B2Filter filter)
         {
             B2World world = b2GetWorldLocked(shapeId.world0);
             if (world == null)
@@ -1336,7 +1399,7 @@ namespace Box2D.NET
 
         /// Enable sensor events for this shape.
         /// @see b2ShapeDef::enableSensorEvents
-        public static void b2Shape_EnableSensorEvents(in B2ShapeId shapeId, bool flag)
+        public static void b2Shape_EnableSensorEvents(B2ShapeId shapeId, bool flag)
         {
             B2World world = b2GetWorldLocked(shapeId.world0);
             if (world == null)
@@ -1349,14 +1412,16 @@ namespace Box2D.NET
         }
 
         /// Returns true if sensor events are enabled.
-        public static bool b2Shape_AreSensorEventsEnabled(in B2ShapeId shapeId)
+        public static bool b2Shape_AreSensorEventsEnabled(B2ShapeId shapeId)
         {
             B2World world = b2GetWorld(shapeId.world0);
             B2Shape shape = b2GetShape(world, shapeId);
             return shape.enableSensorEvents;
         }
-
-        public static void b2Shape_EnableContactEvents(in B2ShapeId shapeId, bool flag)
+        /// Enable contact events for this shape. Only applies to kinematic and dynamic bodies. Ignored for sensors.
+        /// @see b2ShapeDef::enableContactEvents
+        /// @warning changing this at run-time may lead to lost begin/end events
+        public static void b2Shape_EnableContactEvents(B2ShapeId shapeId, bool flag)
         {
             B2World world = b2GetWorldLocked(shapeId.world0);
             if (world == null)
@@ -1367,15 +1432,17 @@ namespace Box2D.NET
             B2Shape shape = b2GetShape(world, shapeId);
             shape.enableContactEvents = flag;
         }
-
-        internal static bool b2Shape_AreContactEventsEnabled(in B2ShapeId shapeId)
+        /// Returns true if contact events are enabled
+        internal static bool b2Shape_AreContactEventsEnabled(B2ShapeId shapeId)
         {
             B2World world = b2GetWorld(shapeId.world0);
             B2Shape shape = b2GetShape(world, shapeId);
             return shape.enableContactEvents;
         }
-
-        public static void b2Shape_EnablePreSolveEvents(in B2ShapeId shapeId, bool flag)
+        /// Enable pre-solve contact events for this shape. Only applies to dynamic bodies. These are expensive
+        /// and must be carefully handled due to multithreading. Ignored for sensors.
+        /// @see b2PreSolveFcn
+        public static void b2Shape_EnablePreSolveEvents(B2ShapeId shapeId, bool flag)
         {
             B2World world = b2GetWorldLocked(shapeId.world0);
             if (world == null)
@@ -1386,15 +1453,16 @@ namespace Box2D.NET
             B2Shape shape = b2GetShape(world, shapeId);
             shape.enablePreSolveEvents = flag;
         }
-
-        internal static bool b2Shape_ArePreSolveEventsEnabled(in B2ShapeId shapeId)
+        /// Returns true if pre-solve events are enabled
+        internal static bool b2Shape_ArePreSolveEventsEnabled(B2ShapeId shapeId)
         {
             B2World world = b2GetWorld(shapeId.world0);
             B2Shape shape = b2GetShape(world, shapeId);
             return shape.enablePreSolveEvents;
         }
-
-        public static void b2Shape_EnableHitEvents(in B2ShapeId shapeId, bool flag)
+        /// Enable contact hit events for this shape. Ignored for sensors.
+        /// @see b2WorldDef.hitEventThreshold
+        public static void b2Shape_EnableHitEvents(B2ShapeId shapeId, bool flag)
         {
             B2World world = b2GetWorldLocked(shapeId.world0);
             if (world == null)
@@ -1405,62 +1473,65 @@ namespace Box2D.NET
             B2Shape shape = b2GetShape(world, shapeId);
             shape.enableHitEvents = flag;
         }
-
-        internal static bool b2Shape_AreHitEventsEnabled(in B2ShapeId shapeId)
+        /// Returns true if hit events are enabled
+        internal static bool b2Shape_AreHitEventsEnabled(B2ShapeId shapeId)
         {
             B2World world = b2GetWorld(shapeId.world0);
             B2Shape shape = b2GetShape(world, shapeId);
             return shape.enableHitEvents;
         }
-
-        public static B2ShapeType b2Shape_GetType(in B2ShapeId shapeId)
+        /// Get the type of a shape
+        public static B2ShapeType b2Shape_GetType(B2ShapeId shapeId)
         {
             B2World world = b2GetWorld(shapeId.world0);
             B2Shape shape = b2GetShape(world, shapeId);
             return shape.type;
         }
-
-        public static B2Circle b2Shape_GetCircle(in B2ShapeId shapeId)
+        /// Get a copy of the shape's circle. Asserts the type is correct.
+        public static B2Circle b2Shape_GetCircle(B2ShapeId shapeId)
         {
             B2World world = b2GetWorld(shapeId.world0);
             B2Shape shape = b2GetShape(world, shapeId);
             B2_ASSERT(shape.type == B2ShapeType.b2_circleShape);
             return shape.us.circle;
         }
-
-        public static B2Segment b2Shape_GetSegment(in B2ShapeId shapeId)
+        /// Get a copy of the shape's line segment. Asserts the type is correct.
+        public static B2Segment b2Shape_GetSegment(B2ShapeId shapeId)
         {
             B2World world = b2GetWorld(shapeId.world0);
             B2Shape shape = b2GetShape(world, shapeId);
             B2_ASSERT(shape.type == B2ShapeType.b2_segmentShape);
             return shape.us.segment;
         }
-
-        public static B2ChainSegment b2Shape_GetChainSegment(in B2ShapeId shapeId)
+        /// Get a copy of the shape's chain segment. These come from chain shapes.
+        /// Asserts the type is correct.
+        public static B2ChainSegment b2Shape_GetChainSegment(B2ShapeId shapeId)
         {
             B2World world = b2GetWorld(shapeId.world0);
             B2Shape shape = b2GetShape(world, shapeId);
             B2_ASSERT(shape.type == B2ShapeType.b2_chainSegmentShape);
             return shape.us.chainSegment;
         }
-
-        public static B2Capsule b2Shape_GetCapsule(in B2ShapeId shapeId)
+        /// Get a copy of the shape's capsule. Asserts the type is correct.
+        public static B2Capsule b2Shape_GetCapsule(B2ShapeId shapeId)
         {
             B2World world = b2GetWorld(shapeId.world0);
             B2Shape shape = b2GetShape(world, shapeId);
             B2_ASSERT(shape.type == B2ShapeType.b2_capsuleShape);
             return shape.us.capsule;
         }
-
-        public static B2Polygon b2Shape_GetPolygon(in B2ShapeId shapeId)
+        /// Get a copy of the shape's convex polygon. Asserts the type is correct.
+        public static B2Polygon b2Shape_GetPolygon(B2ShapeId shapeId)
         {
             B2World world = b2GetWorld(shapeId.world0);
             B2Shape shape = b2GetShape(world, shapeId);
             B2_ASSERT(shape.type == B2ShapeType.b2_polygonShape);
             return shape.us.polygon;
         }
-
-        public static void b2Shape_SetCircle(in B2ShapeId shapeId, ref B2Circle circle)
+        /// Allows you to change a shape to be a circle or update the current circle.
+        /// This does not modify the mass properties.
+        /// @see b2Body_ApplyMassFromShapes
+        public static void b2Shape_SetCircle(B2ShapeId shapeId, in B2Circle circle)
         {
             B2World world = b2GetWorldLocked(shapeId.world0);
             if (world == null)
@@ -1471,14 +1542,17 @@ namespace Box2D.NET
             B2Shape shape = b2GetShape(world, shapeId);
             shape.us.circle = new B2Circle(circle.center, circle.radius);
             shape.type = B2ShapeType.b2_circleShape;
+            shape.aabbMargin = b2ComputeShapeMargin(shape);
 
             // need to wake bodies so they can react to the shape change
             bool wakeBodies = true;
             bool destroyProxy = true;
             b2ResetProxy(world, shape, wakeBodies, destroyProxy);
         }
-
-        public static void b2Shape_SetCapsule(in B2ShapeId shapeId, in B2Capsule capsule)
+        /// Allows you to change a shape to be a capsule or update the current capsule.
+        /// This does not modify the mass properties.
+        /// @see b2Body_ApplyMassFromShapes
+        public static void b2Shape_SetCapsule(B2ShapeId shapeId, in B2Capsule capsule)
         {
             B2World world = b2GetWorldLocked(shapeId.world0);
             if (world == null)
@@ -1495,14 +1569,15 @@ namespace Box2D.NET
             B2Shape shape = b2GetShape(world, shapeId);
             shape.us.capsule = new B2Capsule(capsule.center1, capsule.center2, capsule.radius);
             shape.type = B2ShapeType.b2_capsuleShape;
+            shape.aabbMargin = b2ComputeShapeMargin(shape);
 
             // need to wake bodies so they can react to the shape change
             bool wakeBodies = true;
             bool destroyProxy = true;
             b2ResetProxy(world, shape, wakeBodies, destroyProxy);
         }
-
-        public static void b2Shape_SetSegment(in B2ShapeId shapeId, in B2Segment segment)
+        /// Allows you to change a shape to be a segment or update the current segment.
+        public static void b2Shape_SetSegment(B2ShapeId shapeId, in B2Segment segment)
         {
             B2World world = b2GetWorldLocked(shapeId.world0);
             if (world == null)
@@ -1513,14 +1588,17 @@ namespace Box2D.NET
             B2Shape shape = b2GetShape(world, shapeId);
             shape.us.segment = new B2Segment(segment.point1, segment.point2);
             shape.type = B2ShapeType.b2_segmentShape;
+            shape.aabbMargin = b2ComputeShapeMargin(shape);
 
             // need to wake bodies so they can react to the shape change
             bool wakeBodies = true;
             bool destroyProxy = true;
             b2ResetProxy(world, shape, wakeBodies, destroyProxy);
         }
-
-        public static void b2Shape_SetPolygon(in B2ShapeId shapeId, ref B2Polygon polygon)
+        /// Allows you to change a shape to be a polygon or update the current polygon.
+        /// This does not modify the mass properties.
+        /// @see b2Body_ApplyMassFromShapes
+        public static void b2Shape_SetPolygon(B2ShapeId shapeId, ref B2Polygon polygon)
         {
             B2World world = b2GetWorldLocked(shapeId.world0);
             if (world == null)
@@ -1531,14 +1609,16 @@ namespace Box2D.NET
             B2Shape shape = b2GetShape(world, shapeId);
             shape.us.polygon = polygon;
             shape.type = B2ShapeType.b2_polygonShape;
+            shape.aabbMargin = b2ComputeShapeMargin(shape);
 
             // need to wake bodies so they can react to the shape change
             bool wakeBodies = true;
             bool destroyProxy = true;
             b2ResetProxy(world, shape, wakeBodies, destroyProxy);
         }
-
-        public static B2ChainId b2Shape_GetParentChain(in B2ShapeId shapeId)
+        /// Get the parent chain id if the shape type is a chain segment, otherwise
+        /// returns b2_nullChainId.
+        public static B2ChainId b2Shape_GetParentChain(B2ShapeId shapeId)
         {
             B2World world = b2GetWorld(shapeId.world0);
             B2Shape shape = b2GetShape(world, shapeId);
@@ -1555,8 +1635,7 @@ namespace Box2D.NET
 
             return new B2ChainId();
         }
-
-
+        /// Get the number of materials used on this chain. Must be 1 or the number of segments.
         public static int b2Chain_GetSurfaceMaterialCount(B2ChainId chainId)
         {
             B2World world = b2GetWorld(chainId.world0);
@@ -1606,8 +1685,8 @@ namespace Box2D.NET
             B2_ASSERT(0 <= segmentIndex && segmentIndex < chainShape.count);
             return chainShape.materials[segmentIndex];
         }
-
-        public static int b2Shape_GetContactCapacity(in B2ShapeId shapeId)
+        /// Get the maximum capacity required for retrieving all the touching contacts on a shape
+        public static int b2Shape_GetContactCapacity(B2ShapeId shapeId)
         {
             B2World world = b2GetWorldLocked(shapeId.world0);
             if (world == null)
@@ -1626,8 +1705,11 @@ namespace Box2D.NET
             // Conservative and fast
             return body.contactCount;
         }
-
-        public static int b2Shape_GetContactData(in B2ShapeId shapeId, Span<B2ContactData> contactData, int capacity)
+        /// Get the touching contact data for a shape. The provided shapeId will be either shapeIdA or shapeIdB on the contact data.
+        /// @note Box2D uses speculative collision so some contact points may be separated.
+        /// @returns the number of elements filled in the provided array
+        /// @warning do not ignore the return value, it specifies the valid number of elements
+        public static int b2Shape_GetContactData(B2ShapeId shapeId, Span<B2ContactData> contactData, int capacity)
         {
             B2World world = b2GetWorldLocked(shapeId.world0);
             if (world == null)
@@ -1675,7 +1757,11 @@ namespace Box2D.NET
             return index;
         }
 
-        public static int b2Shape_GetSensorCapacity(in B2ShapeId shapeId)
+        /// Get the maximum capacity required for retrieving all the overlapped shapes on a sensor shape.
+        /// This returns 0 if the provided shape is not a sensor.
+        /// @param shapeId the id of a sensor shape
+        /// @returns the required capacity to get all the overlaps in b2Shape_GetSensorData
+        public static int b2Shape_GetSensorCapacity(B2ShapeId shapeId)
         {
             B2World world = b2GetWorldLocked(shapeId.world0);
             if (world == null)
@@ -1693,14 +1779,14 @@ namespace Box2D.NET
             return sensor.overlaps2.count;
         }
 
-        /// Get the overlap data for a sensor shape.
+        /// Get the overlap data for a sensor shape computed the previous world step.
         /// @param shapeId the id of a sensor shape
         /// @param visitorIds a user allocated array that is filled with the overlapping shapes (visitors)
         /// @param capacity the capacity of overlappedShapes
         /// @returns the number of elements filled in the provided array
         /// @warning do not ignore the return value, it specifies the valid number of elements
         /// @warning overlaps may contain destroyed shapes so use b2Shape_IsValid to confirm each overlap
-        public static int b2Shape_GetSensorData(in B2ShapeId shapeId, Span<B2ShapeId> visitorIds, int capacity)
+        public static int b2Shape_GetSensorData(B2ShapeId shapeId, Span<B2ShapeId> visitorIds, int capacity)
         {
             B2World world = b2GetWorldLocked(shapeId.world0);
             if (world == null)
@@ -1733,7 +1819,7 @@ namespace Box2D.NET
         }
 
         /// Get the current world AABB
-        public static B2AABB b2Shape_GetAABB(in B2ShapeId shapeId)
+        public static B2AABB b2Shape_GetAABB(B2ShapeId shapeId)
         {
             B2World world = b2GetWorld(shapeId.world0);
             if (world == null)
@@ -1746,7 +1832,7 @@ namespace Box2D.NET
         }
 
         /// Compute the mass data for a shape
-        internal static B2MassData b2Shape_ComputeMassData(in B2ShapeId shapeId)
+        internal static B2MassData b2Shape_ComputeMassData(B2ShapeId shapeId)
         {
             B2World world = b2GetWorld(shapeId.world0);
             if (world == null)
@@ -1757,8 +1843,9 @@ namespace Box2D.NET
             B2Shape shape = b2GetShape(world, shapeId);
             return b2ComputeShapeMass(shape);
         }
-
-        public static B2Vec2 b2Shape_GetClosestPoint(in B2ShapeId shapeId, B2Vec2 target)
+        /// Get the closest point on a shape to a target point. Target and result are in world space.
+        /// todo need sample
+        public static B2Vec2 b2Shape_GetClosestPoint(B2ShapeId shapeId, B2Vec2 target)
         {
             B2World world = b2GetWorld(shapeId.world0);
             if (world == null)
@@ -1796,7 +1883,7 @@ namespace Box2D.NET
         /// @param drag the drag coefficient, the force that opposes the relative velocity
         /// @param lift the lift coefficient, the force that is perpendicular to the relative velocity
         /// @param wake should this wake the body
-        public static void b2Shape_ApplyWind(in B2ShapeId shapeId, B2Vec2 wind, float drag, float lift, bool wake)
+        public static void b2Shape_ApplyWind(B2ShapeId shapeId, B2Vec2 wind, float drag, float lift, bool wake)
         {
             B2World world = b2GetWorld(shapeId.world0);
             if (world == null)
@@ -1837,7 +1924,7 @@ namespace Box2D.NET
             B2BodyState state = b2GetBodyState(world, body);
             B2Transform transform = sim.transform;
 
-            float lengthUnits = b2_lengthUnitsPerMeter;
+            float lengthUnits = b2GetLengthUnitsPerMeter();
             float volumeUnits = lengthUnits * lengthUnits * lengthUnits;
 
             // In 2D I'm assuming unit depth

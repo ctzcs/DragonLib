@@ -23,35 +23,16 @@ namespace Box2D.NET
     public delegate void b2LogFcn(in string message);
     
     /// Task interface
-    /// This is prototype for a Box2D task. Your task system is expected to invoke the Box2D task with these arguments.
-    /// The task spans a range of the parallel-for: [startIndex, endIndex)
-    /// The worker index must correctly identify each worker in the user thread pool, expected in [0, workerCount).
-    /// A worker must only exist on only one thread at a time and is analogous to the thread index.
-    /// The task context is the context pointer sent from Box2D when it is enqueued.
-    /// The startIndex and endIndex are expected in the range [0, itemCount) where itemCount is the argument to b2EnqueueTaskCallback
-    /// below. Box2D expects startIndex < endIndex and will execute a loop like this:
-    ///
-    /// @code{.c}
-    /// for (int i = startIndex; i < endIndex; ++i)
-    /// {
-    /// 	DoWork();
-    /// }
-    /// @endcode
+    /// This is the prototype for a Box2D task. Your task system is expected to run this callback on a worker thread,
+    /// exactly once per enqueue, passing back the same taskContext pointer supplied to b2EnqueueTaskCallback.
     /// @ingroup world
-    public delegate void b2TaskCallback(int startIndex, int endIndex, uint workerIndex, object taskContext);
+    public delegate void b2TaskCallback(object taskContext);
 
-    /// These functions can be provided to Box2D to invoke a task system. These are designed to work well with enkiTS.
+    /// These functions can be provided to Box2D to invoke a task system.
     /// Returns a pointer to the user's task object. May be nullptr. A nullptr indicates to Box2D that the work was executed
     /// serially within the callback and there is no need to call b2FinishTaskCallback.
-    /// The itemCount is the number of Box2D work items that are to be partitioned among workers by the user's task system.
-    /// This is essentially a parallel-for. The minRange parameter is a suggestion of the minimum number of items to assign
-    /// per worker to reduce overhead. For example, suppose the task is small and that itemCount is 16. A minRange of 8 suggests
-    /// that your task system should split the work items among just two workers, even if you have more available.
-    /// In general the range [startIndex, endIndex) send to b2TaskCallback should obey:
-    /// endIndex - startIndex >= minRange
-    /// The exception of course is when itemCount < minRange.
     /// @ingroup world
-    public delegate object b2EnqueueTaskCallback(b2TaskCallback task, int itemCount, int minRange, object taskContext, object userContext);
+    public delegate object b2EnqueueTaskCallback(b2TaskCallback task, object taskContext, object userContext);
 
     /// Finishes a user task object that wraps a Box2D task.
     /// @ingroup world
@@ -81,7 +62,7 @@ namespace Box2D.NET
     /// @see b2ShapeDef
     /// @warning Do not attempt to modify the world inside this callback
     /// @ingroup world
-    public delegate bool b2CustomFilterFcn(in B2ShapeId shapeIdA, in B2ShapeId shapeIdB, object context);
+    public delegate bool b2CustomFilterFcn(B2ShapeId shapeIdA, B2ShapeId shapeIdB, object context);
 
     /// Prototype for a pre-solve callback.
     /// This is called after a contact is updated. This allows you to inspect a
@@ -96,14 +77,14 @@ namespace Box2D.NET
     /// Return false if you want to disable the contact this step
     /// @warning Do not attempt to modify the world inside this callback
     /// @ingroup world
-    public delegate bool b2PreSolveFcn(in B2ShapeId shapeIdA, in B2ShapeId shapeIdB, B2Vec2 point, B2Vec2 normal, object context);
+    public delegate bool b2PreSolveFcn(B2ShapeId shapeIdA, B2ShapeId shapeIdB, B2Vec2 point, B2Vec2 normal, object context);
 
     /// Prototype callback for overlap queries.
     /// Called for each shape found in the query.
     /// @see b2World_OverlapABB
     /// @return false to terminate the query.
     /// @ingroup world
-    public delegate bool b2OverlapResultFcn(in B2ShapeId shapeId, object context);
+    public delegate bool b2OverlapResultFcn(B2ShapeId shapeId, object context);
 
     /// Prototype callback for ray and shape casts.
     /// Called for each shape found in the query. You control how the ray cast
@@ -121,11 +102,11 @@ namespace Box2D.NET
     /// @return -1 to filter, 0 to terminate, fraction to clip the ray for closest hit, 1 to continue
     /// @see b2World_CastRay
     /// @ingroup world
-    public delegate float b2CastResultFcn(in B2ShapeId shapeId, B2Vec2 point, B2Vec2 normal, float fraction, object context);
+    public delegate float b2CastResultFcn(B2ShapeId shapeId, B2Vec2 point, B2Vec2 normal, float fraction, object context);
 
     // Used to collect collision planes for character movers.
     // Return true to continue gathering planes.
-    public delegate bool b2PlaneResultFcn(in B2ShapeId shapeId, ref B2PlaneResult plane, object context);
+    public delegate bool b2PlaneResultFcn(B2ShapeId shapeId, ref B2PlaneResult plane, object context);
 
     // Manifold functions should compute important results in local space to improve precision. However, this
     // interface function takes two world transforms instead of a relative transform for these reasons:

@@ -44,7 +44,6 @@ namespace Box2D.NET
         }
 
         /// Compute the distance between two line segments, clamping at the end points if needed.
-        /// Follows Ericson 5.1.9 Closest Points of Two Line Segments
         public static B2SegmentDistanceResult b2SegmentDistance(B2Vec2 p1, B2Vec2 q1, B2Vec2 p2, B2Vec2 q2)
         {
             B2SegmentDistanceResult result = new B2SegmentDistanceResult();
@@ -121,9 +120,6 @@ namespace Box2D.NET
         }
 
         /// Make a proxy for use in overlap, shape cast, and related functions. This is a deep copy of the points.
-        /// Make a proxy for use in GJK and related functions.
-        // GJK using Voronoi regions (Christer Ericson) and Barycentric coordinates.
-        // todo try not copying
         public static B2ShapeProxy b2MakeProxy(ReadOnlySpan<B2Vec2> points, int count, float radius)
         {
             count = b2MinInt(count, B2_MAX_POLYGON_VERTICES);
@@ -157,6 +153,7 @@ namespace Box2D.NET
 
 
         // for single
+        /// Make a proxy for use in overlap, shape cast, and related functions. This is a deep copy of the points.
         public static B2ShapeProxy b2MakeProxy(B2Vec2 v1, int count, float radius)
         {
             B2_ASSERT(count == 1);
@@ -165,7 +162,7 @@ namespace Box2D.NET
             vertices[0] = v1;
             return b2MakeProxy(vertices, count, radius);
         }
-
+        /// Make a proxy for use in overlap, shape cast, and related functions. This is a deep copy of the points.
         public static B2ShapeProxy b2MakeProxy(B2Vec2 v1, B2Vec2 v2, int count, float radius)
         {
             B2_ASSERT(count == 2);
@@ -248,15 +245,21 @@ namespace Box2D.NET
             return s;
         }
 
-        public static void b2MakeSimplexCache(ref B2SimplexCache cache, ref B2Simplex simplex)
+        public static B2SimplexCache b2MakeSimplexCache(in B2Simplex simplex)
         {
+            B2SimplexCache cache = new B2SimplexCache();
             cache.count = (ushort)simplex.count;
-            Span<B2SimplexVertex> vertices = simplex.AsSpan();
+            var vertices = new B2FixedArray3<B2SimplexVertex>();
+            vertices[0] = simplex.v1;
+            vertices[1] = simplex.v2;
+            vertices[2] = simplex.v3;
             for (int i = 0; i < simplex.count; ++i)
             {
                 cache.indexA[i] = (byte)vertices[i].indexA;
                 cache.indexB[i] = (byte)vertices[i].indexB;
             }
+
+            return cache;
         }
 
         internal static void b2ComputeWitnessPoints(in B2Simplex s, ref B2Vec2 a, ref B2Vec2 b)
@@ -463,9 +466,6 @@ namespace Box2D.NET
         /// Compute the closest points between two shapes represented as point clouds.
         /// b2SimplexCache cache is input/output. On the first call set b2SimplexCache.count to zero.
         /// The underlying GJK algorithm may be debugged by passing in debug simplexes and capacity. You may pass in NULL and 0 for these.
-        // Uses GJK for computing the distance between convex shapes.
-        // https://box2d.org/files/ErinCatto_GJK_GDC2010.pdf
-        // I spent time optimizing this and could find no further significant gains 3/30/2025
         public static B2DistanceOutput b2ShapeDistance(ref B2DistanceInput input, ref B2SimplexCache cache, Span<B2Simplex> simplexes, int simplexCapacity)
         {
             B2_UNUSED(simplexes, simplexCapacity);
@@ -641,7 +641,7 @@ namespace Box2D.NET
             }
 
             // Cache the simplex
-            b2MakeSimplexCache(ref cache, ref simplex);
+            cache = b2MakeSimplexCache(simplex);
 
             // Apply radii if requested
             if (input.useRadii)
@@ -660,7 +660,6 @@ namespace Box2D.NET
 
         /// Perform a linear shape cast of shape B moving and shape A fixed. Determines the hit point, normal, and translation fraction.
         /// Initially touching shapes are treated as a miss.
-        // Shape cast using conservative advancement
         public static B2CastOutput b2ShapeCast(in B2ShapeCastPairInput input)
         {
             // Compute tolerance
@@ -967,7 +966,7 @@ namespace Box2D.NET
         }
 #endif
 
-        public static B2SeparationFunction b2MakeSeparationFunction(ref B2SimplexCache cache, in B2ShapeProxy proxyA, in B2Sweep sweepA, in B2ShapeProxy proxyB, in B2Sweep sweepB, float t1)
+        public static B2SeparationFunction b2MakeSeparationFunction(in B2SimplexCache cache, in B2ShapeProxy proxyA, in B2Sweep sweepA, in B2ShapeProxy proxyB, in B2Sweep sweepB, float t1)
         {
             B2SeparationFunction f = new B2SeparationFunction();
 
@@ -1168,8 +1167,6 @@ namespace Box2D.NET
         /// a fraction between [0,tMax]. This uses a swept separating axis and may miss some intermediate,
         /// non-tunneling collisions. If you change the time interval, you should call this function
         /// again.
-        // CCD via the local separating axis method. This seeks progression
-        // by computing the largest time at which separation is maintained.
         public static B2TOIOutput b2TimeOfImpact(in B2TOIInput input)
         {
 #if B2_SNOOP_TOI_COUNTERS
@@ -1195,6 +1192,7 @@ namespace Box2D.NET
 
             float tMax = input.maxFraction;
 
+            // Setup target distance and tolerance
             float totalRadius = proxyA.radius + proxyB.radius;
             float target = b2MaxFloat(B2_LINEAR_SLOP, totalRadius - B2_LINEAR_SLOP);
             float tolerance = 0.25f * B2_LINEAR_SLOP;
@@ -1215,13 +1213,9 @@ namespace Box2D.NET
             // This loop terminates when an axis is repeated (no progress is made).
             for (;;)
             {
-                B2Transform xfA = b2GetSweepTransform(sweepA, t1);
-                B2Transform xfB = b2GetSweepTransform(sweepB, t1);
-
-                // Get the distance between shapes. We can also use the results
-                // to get a separating axis.
-                distanceInput.transformA = xfA;
-                distanceInput.transformB = xfB;
+                // Get the distance between shapes. We can also use the results to get a separating axis.
+                distanceInput.transformA = b2GetSweepTransform(sweepA, t1);
+                distanceInput.transformB = b2GetSweepTransform(sweepB, t1);
                 B2DistanceOutput distanceOutput = b2ShapeDistance(ref distanceInput, ref cache, null, 0);
 
                 // Progressive time of impact. This handles slender geometry well but introduces
@@ -1258,7 +1252,7 @@ namespace Box2D.NET
 
                 if (distanceOutput.distance <= target + tolerance)
                 {
-                    // Victory!
+                    // Success!
                     output.state = B2TOIState.b2_toiStateHit;
 #if B2_SNOOP_TOI_COUNTERS
                     b2_toiHitCount += 1;
@@ -1273,7 +1267,7 @@ namespace Box2D.NET
                 }
 
                 // Initialize the separating axis.
-                B2SeparationFunction fcn = b2MakeSeparationFunction(ref cache, proxyA, sweepA, proxyB, sweepB, t1);
+                B2SeparationFunction fcn = b2MakeSeparationFunction(cache, proxyA, sweepA, proxyB, sweepB, t1);
 #if FALSE
                     // Dump the curve seen by the root finder
                     {
@@ -1335,8 +1329,7 @@ namespace Box2D.NET
                     // Compute the initial separation of the witness points.
                     float s1 = b2EvaluateSeparation(fcn, indexA, indexB, t1);
 
-                    // Check for initial overlap. This might happen if the root finder
-                    // runs out of iterations.
+                    // Check for initial overlap. This might happen if the root finder runs out of iterations.
                     if (s1 < target - tolerance)
                     {
                         output.state = B2TOIState.b2_toiStateFailed;
@@ -1351,7 +1344,7 @@ namespace Box2D.NET
                     // Check for touching
                     if (s1 <= target + tolerance)
                     {
-                        // Victory! t1 should hold the TOI (could be 0.0).
+                        // Success! t1 should hold the TOI (could be 0.0).
                         output.state = B2TOIState.b2_toiStateHit;
 #if B2_SNOOP_TOI_COUNTERS
                         b2_toiHitCount += 1;
@@ -1371,11 +1364,11 @@ namespace Box2D.NET
                     float a1 = t1, a2 = t2;
                     for (;;)
                     {
-                        // Use a mix of the secant rule and bisection.
+                        // Use a mix of false position and bisection.
                         float t;
                         if (0 != (rootIterationCount & 1))
                         {
-                            // Secant rule to improve convergence.
+                            // False position to improve convergence.
                             t = a1 + (target - s1) * (a2 - a1) / (s2 - s1);
                         }
                         else
@@ -1392,6 +1385,7 @@ namespace Box2D.NET
 
                         float s = b2EvaluateSeparation(fcn, indexA, indexB, t);
 
+                        // Has the separation reached tolerance?
                         if (b2AbsFloat(s - target) < tolerance)
                         {
                             // t2 holds a tentative value for t1

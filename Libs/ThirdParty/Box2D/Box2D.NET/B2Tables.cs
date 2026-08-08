@@ -42,7 +42,7 @@ namespace Box2D.NET
 
             set.count = 0;
             set.items = b2Alloc<B2SetItem>(set.capacity);
-            //memset(set.items, 0, set.capacity * sizeof(b2SetItem));
+            //memset(set.items, 0, set.capacity * B2SizeOf<b2SetItem>.Size);
             for (int i = 0; i < set.capacity; ++i)
             {
                 set.items[i].Clear();
@@ -95,6 +95,9 @@ namespace Box2D.NET
             return key;
         }
 #elif TRUE
+        // Fast-hash
+        // https://jonkagstrom.com/bit-mixer-construction
+        // https://code.google.com/archive/p/fast-hash
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static ulong b2KeyHash(ulong key)
         {
@@ -150,7 +153,7 @@ namespace Box2D.NET
             // Capacity must be a power of 2
             set.capacity = 2 * oldCapacity;
             set.items = b2Alloc<B2SetItem>(set.capacity);
-            //memset(set.items, 0, set.capacity * sizeof(b2SetItem));
+            //memset(set.items, 0, set.capacity * B2SizeOf<b2SetItem>.Size);
             for (int i = 0; i < set.capacity; ++i)
             {
                 set.items[i].Clear();
@@ -214,7 +217,7 @@ namespace Box2D.NET
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int b2GetHashSetBytes(ref B2HashSet set)
         {
-            return set.capacity * Marshal.SizeOf<B2SetItem>();
+            return set.capacity * B2SizeOf<B2SetItem>.Size;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -230,7 +233,6 @@ namespace Box2D.NET
         }
 
         // Returns true if the key was found
-        // See https://en.wikipedia.org/wiki/Open_addressing
         public static bool b2RemoveKey(ref B2HashSet set, ulong key)
         {
             ulong hash = b2KeyHash(key);
