@@ -8,7 +8,6 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\Box2D.NET\Box2D.NET.csproj" />
       <ProjectReference Include="..\DragonECS-AutoInjections\DragonECS-AutoInjections.csproj" />
       <ProjectReference Include="..\DragonECS-main\DragonECS.csproj" />
       <ProjectReference Include="..\Foster.Audio\Foster.Audio\Foster.Audio.csproj" />

@@ -4,7 +4,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Libs", "Libs", "{A458DF4F-2
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foster.Framework", "..\..\Libs\Foster\Framework\Foster.Framework.csproj", "{4E588C41-4BC5-4349-92F8-11AE08DC79C1}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Box2D.NET", "..\..\Libs\Box2D.NET\Box2D.NET.csproj", "{69D08EDE-7E98-487A-B268-69FB13B37F3E}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Box2D.NET", "..\..\Libs\ThirdParty\Box2D\Box2D.NET\Box2D.NET.csproj", "{69D08EDE-7E98-487A-B268-69FB13B37F3E}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foster.Audio", "..\..\Libs\Foster.Audio\Foster.Audio\Foster.Audio.csproj", "{7B6BA99F-AE2D-4823-A148-F8BF8C49B212}"
 EndProject
@@ -20,7 +20,9 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Entities.Tests", "Tests\Ent
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DragonECS", "..\..\Libs\DragonECS-main\DragonECS.csproj", "{13BA1912-93DC-4745-BAAE-84D3E321A900}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Engine.Spine", "..\..\Libs\Engine.Plugin\Spine\Engine.Spine.csproj", "{73D20350-151D-4A48-BC2C-2AE6293E5012}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DragonLib.Spine", "..\..\Libs\ThirdParty\Spine\DragonLib.Spine.csproj", "{73D20350-151D-4A48-BC2C-2AE6293E5012}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DragonLib.Box2D", "..\..\Libs\ThirdParty\Box2D\DragonLib.Box2D.csproj", "{8CB7E5D8-33A7-45BE-AB40-334604333D33}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -68,6 +70,10 @@ Global
 		{73D20350-151D-4A48-BC2C-2AE6293E5012}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{73D20350-151D-4A48-BC2C-2AE6293E5012}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{73D20350-151D-4A48-BC2C-2AE6293E5012}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8CB7E5D8-33A7-45BE-AB40-334604333D33}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8CB7E5D8-33A7-45BE-AB40-334604333D33}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8CB7E5D8-33A7-45BE-AB40-334604333D33}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8CB7E5D8-33A7-45BE-AB40-334604333D33}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{4E588C41-4BC5-4349-92F8-11AE08DC79C1} = {A458DF4F-25DC-4A28-8DC7-E76F9BA3C22E}
@@ -77,5 +83,6 @@ Global
 		{029C2FE8-84E1-43E5-8E7C-F6FD6BBF63DC} = {A458DF4F-25DC-4A28-8DC7-E76F9BA3C22E}
 		{13BA1912-93DC-4745-BAAE-84D3E321A900} = {A458DF4F-25DC-4A28-8DC7-E76F9BA3C22E}
 		{73D20350-151D-4A48-BC2C-2AE6293E5012} = {A458DF4F-25DC-4A28-8DC7-E76F9BA3C22E}
+		{8CB7E5D8-33A7-45BE-AB40-334604333D33} = {A458DF4F-25DC-4A28-8DC7-E76F9BA3C22E}
 	EndGlobalSection
 EndGlobal

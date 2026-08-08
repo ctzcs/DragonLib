@@ -70,6 +70,11 @@ public class MyGame : GameApp
     private Camera2D _camera;
     private SceneRouter<RuntimeScene> _sceneRouter;
 
+    private const double RenderFpsSampleInterval = 0.5;
+    private TimeSpan _renderFpsSampleStartedAt;
+    private ulong _renderFpsSampleStartedFrame;
+    public float RenderFramesPerSecond { get; private set; }
+
     public MyGame(in AppConfig config) : base(in config)
     {
         _appState = new AppState();
@@ -102,6 +107,9 @@ public class MyGame : GameApp
 
     protected override void Startup()
     {
+        _renderFpsSampleStartedAt = Now;
+        _renderFpsSampleStartedFrame = Time.RenderFrame;
+
         // 启动时扫内容目录，把磁盘上的预制体载回资产库，否则关卡加载会因查不到预制体而跳过实体。
         // 类型由这里指定（Prefab），name = 相对 "Resources" 的路径（如 Prefabs/enemy），
         // 与创作端算出的 AssetId 一致。以后加别的资产就再扫对应目录：ScanInto<LevelData>(...) 等。
@@ -183,6 +191,7 @@ public class MyGame : GameApp
     protected override void Update()
     {
         HandleModeToggle();
+        UpdateRenderFrameRate();
 
         var size = new Point2(Window.WidthInPixels, Window.HeightInPixels);
         if (size != _paperResolution)
@@ -204,8 +213,44 @@ public class MyGame : GameApp
         if (!_appState.IsEditorMode)
             _sceneRouter.Update(Time.Delta);
         ActivePipeline.Update();
+        DrawFrameRateOverlay();
 
         _imGui.EndLayout();
+    }
+
+    private void UpdateRenderFrameRate()
+    {
+        var elapsed = (Now - _renderFpsSampleStartedAt).TotalSeconds;
+        if (elapsed < RenderFpsSampleInterval)
+            return;
+
+        var renderedFrames = Time.RenderFrame - _renderFpsSampleStartedFrame;
+        if (renderedFrames > 0)
+            RenderFramesPerSecond = (float)(renderedFrames / elapsed);
+
+        _renderFpsSampleStartedAt = Now;
+        _renderFpsSampleStartedFrame = Time.RenderFrame;
+    }
+
+    private void DrawFrameRateOverlay()
+    {
+        var viewport = ImGui.GetMainViewport();
+        var flags = ImGuiWindowFlags.NoDecoration |
+                    ImGuiWindowFlags.AlwaysAutoResize |
+                    ImGuiWindowFlags.NoSavedSettings |
+                    ImGuiWindowFlags.NoFocusOnAppearing |
+                    ImGuiWindowFlags.NoNav |
+                    ImGuiWindowFlags.NoMove |
+                    ImGuiWindowFlags.NoInputs;
+
+        ImGui.SetNextWindowPos(
+            viewport.WorkPos + new Vector2(viewport.WorkSize.X - 16f, 16f),
+            ImGuiCond.Always,
+            new Vector2(1f, 0f));
+        ImGui.SetNextWindowBgAlpha(0.72f);
+        ImGui.Begin("##RenderFrameRate", flags);
+        ImGui.Text($"Render FPS: {RenderFramesPerSecond:F1}");
+        ImGui.End();
     }
 
     protected override void Render()

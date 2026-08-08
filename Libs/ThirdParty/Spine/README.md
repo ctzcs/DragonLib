@@ -1,4 +1,4 @@
-# Engine.Spine
+# DragonLib.Spine
 
 Foster rendering and animation integration for the official `spine-csharp` runtime.
 

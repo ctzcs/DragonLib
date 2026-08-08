@@ -11,7 +11,8 @@
 
     <ItemGroup>
       <ProjectReference Include="..\..\Libs\Engine\Engine.csproj" />
-      <ProjectReference Include="..\..\Libs\Engine.Plugin\Spine\Engine.Spine.csproj" />
+      <ProjectReference Include="..\..\Libs\ThirdParty\Box2D\DragonLib.Box2D.csproj" />
+      <ProjectReference Include="..\..\Libs\ThirdParty\Spine\DragonLib.Spine.csproj" />
     </ItemGroup>
 
     <ItemGroup>

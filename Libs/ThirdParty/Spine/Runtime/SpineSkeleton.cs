@@ -2,7 +2,7 @@ using System.Numerics;
 using Foster.Framework;
 using Spine;
 
-namespace Engine.Spine;
+namespace DragonLib.Spine;
 
 /// <summary>Owns a Spine skeleton instance and its animation state.</summary>
 public sealed class SpineSkeleton

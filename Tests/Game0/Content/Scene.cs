@@ -14,6 +14,7 @@ public class SceneModule : EcsModule<SceneModule>
         b.Add(new SceneLauncherSystem());
         b.Add(new DreamBlockDemoSystem());
         b.Add(new SpineDemoSystem());
+        b.Add(new Box2DDemoSystem());
         b.Add(new EntitiesDemo());
     }
 }
@@ -23,6 +24,7 @@ public enum RuntimeScene
     Main,
     DreamBlockShader,
     SpineBoy,
+    Box2D,
 }
 
 public sealed class SceneLauncherSystem : IUpdateSystem
@@ -42,6 +44,9 @@ public sealed class SceneLauncherSystem : IUpdateSystem
 
             if (ImGui.Button("Spine Boy"))
                 _sceneRouter.SwitchTo(RuntimeScene.SpineBoy);
+
+            if (ImGui.Button("Box2D"))
+                _sceneRouter.SwitchTo(RuntimeScene.Box2D);
         }
         else if (ImGui.Button("Back to Main"))
         {

@@ -1,7 +1,7 @@
 using Foster.Framework;
 using Spine;
 
-namespace Engine.Spine;
+namespace DragonLib.Spine;
 
 /// <summary>Loads Spine atlas pages into Foster textures.</summary>
 public sealed class SpineFosterTextureLoader : TextureLoader, IDisposable

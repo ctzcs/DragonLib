@@ -3,7 +3,7 @@ using Foster.Framework;
 using Spine;
 using FosterBlendMode = Foster.Framework.BlendMode;
 
-namespace Engine.Spine;
+namespace DragonLib.Spine;
 
 /// <summary>
 /// Renders Spine region and mesh attachments into a Foster Batcher, including

@@ -1,7 +1,7 @@
 using System.Text;
 using Spine;
 
-namespace Engine.Spine;
+namespace DragonLib.Spine;
 
 /// <summary>Loads JSON or binary Spine data using a Foster atlas.</summary>
 public static class SpineSkeletonLoader
