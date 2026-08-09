@@ -29,5 +29,11 @@
   <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.1'">
     <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.1.2"/>
   </ItemGroup>
+
+  <!-- B2BroadPhases is the active implementation; this legacy duplicate still
+       uses the pre-scheduler task callback signature. -->
+  <ItemGroup>
+    <Compile Remove="B2BoardPhases.cs" />
+  </ItemGroup>
   
 </Project>

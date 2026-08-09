@@ -1,4 +1,5 @@
 using System.Numerics;
+using Engine.Threading;
 using global::Box2D.NET;
 using static global::Box2D.NET.B2Types;
 using static global::Box2D.NET.B2Worlds;
@@ -23,6 +24,11 @@ public sealed class Box2DWorld : IDisposable
 
     public Box2DWorld(Vector2 gravity)
         : this(CreateDefaultDefinition(gravity))
+    {
+    }
+
+    public Box2DWorld(Vector2 gravity, JobScheduler scheduler, int workerCount)
+        : this(CreateThreadedDefinition(gravity, scheduler, workerCount))
     {
     }
 
@@ -60,6 +66,24 @@ public sealed class Box2DWorld : IDisposable
     {
         var definition = b2DefaultWorldDef();
         definition.gravity = gravity.ToBox2D();
+        return definition;
+    }
+
+    private static B2WorldDef CreateThreadedDefinition(Vector2 gravity, JobScheduler scheduler, int workerCount)
+    {
+        ArgumentNullException.ThrowIfNull(scheduler);
+        if (workerCount < 1)
+            throw new ArgumentOutOfRangeException(nameof(workerCount));
+
+        var definition = CreateDefaultDefinition(gravity);
+        definition.workerCount = Math.Min(workerCount, scheduler.WorkerCount);
+        if (definition.workerCount > 1)
+        {
+            definition.enqueueTask = Box2DTaskSchedulerAdapter.Enqueue;
+            definition.finishTask = Box2DTaskSchedulerAdapter.Finish;
+            definition.userTaskContext = scheduler;
+        }
+
         return definition;
     }
 }

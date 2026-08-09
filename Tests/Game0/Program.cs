@@ -7,6 +7,7 @@ using Engine.Assets;
 using Engine.DearImGui;
 using Engine.ECS;
 using Engine.Paper;
+using Engine.Threading;
 using Engine.World;
 using Foster.Framework;
 using Game0;
@@ -69,6 +70,7 @@ public class MyGame : GameApp
     private Batcher _batcher;
     private Camera2D _camera;
     private SceneRouter<RuntimeScene> _sceneRouter;
+    private JobScheduler _jobScheduler = null!;
 
     private const double RenderFpsSampleInterval = 0.5;
     private TimeSpan _renderFpsSampleStartedAt;
@@ -124,6 +126,7 @@ public class MyGame : GameApp
         // Game 世界 + pipeline
         _world = new EcsDefaultWorld();
         _eventWorld = new EcsEventWorld();
+        _jobScheduler = new JobScheduler();
 
         _pipeline = EcsPipeline.New()
             .Inject(_appState)
@@ -138,6 +141,7 @@ public class MyGame : GameApp
             .Inject(_paperFont)
             .Inject(_uiAtlas)
             .Inject(this)
+            .Inject(_jobScheduler)
             .AddModule(new SimpleModule())
             .AddModule(new SceneModule())
             .AddModule(new GameMenuModule())
@@ -157,6 +161,7 @@ public class MyGame : GameApp
             .Inject(_imGui)
             .Inject(_assets)
             .Inject(Input)      // 场景视口需要原始鼠标 / 滚轮输入
+            .Inject(_jobScheduler)
             .AddModule(new EditorModule())
             .AutoInject()
             .BuildAndInit();
@@ -169,6 +174,7 @@ public class MyGame : GameApp
         _eventWorld?.Destroy();
         _editorPipeline?.Destroy();
         _editorWorld?.Destroy();
+        _jobScheduler?.Dispose();
         _uiAtlas?.Dispose();
         _paperRenderer?.Dispose();
     }

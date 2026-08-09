@@ -3,10 +3,12 @@ using Box2D.NET;
 using DCFApixels.DragonECS;
 using DragonLib.Box2D;
 using Engine.ECS;
+using Engine.Threading;
 using Engine.World;
 using Foster.Framework;
 using ImGuiNET;
 using static Box2D.NET.B2Bodies;
+using static Box2D.NET.B2Constants;
 using static Box2D.NET.B2Geometries;
 using static Box2D.NET.B2Shapes;
 using static Box2D.NET.B2Types;
@@ -21,6 +23,7 @@ public sealed class Box2DDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, IRen
     private const float ContainerRight = 8.6f;
     private const float ContainerTop = -1.5f;
     private const float ContainerBottom = 4.5f;
+    private static readonly int FallbackMaxWorkerCount = Math.Min(Environment.ProcessorCount, B2_MAX_WORKERS);
 
     private readonly record struct CameraState(Vector2 Position, float Zoom, float Rotation, float Ppu);
 
@@ -35,6 +38,7 @@ public sealed class Box2DDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, IRen
     [DI] private Batcher _batcher = null!;
     [DI] private Camera2D _camera = null!;
     [DI] private MyGame _game = null!;
+    [DI] private JobScheduler _jobScheduler = null!;
 
     private readonly List<BodyVisual> _bodies = [];
     private Box2DWorld? _world;
@@ -45,6 +49,7 @@ public sealed class Box2DDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, IRen
 
     private int _boxCount = 12;
     private int _circleCount = 8;
+    private int _workerCount = 1;
 
     public void Init()
     {
@@ -131,6 +136,14 @@ public sealed class Box2DDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, IRen
         ImGui.Begin("Box2D");
 
         ImGui.Checkbox("Pause", ref _paused);
+        int maxWorkerCount = Math.Max(1, Math.Min(_jobScheduler?.WorkerCount ?? FallbackMaxWorkerCount, B2_MAX_WORKERS));
+        _workerCount = Math.Clamp(_workerCount, 1, maxWorkerCount);
+        ImGui.SliderInt("Workers", ref _workerCount, 1, maxWorkerCount);
+        if (ImGui.IsItemDeactivatedAfterEdit())
+        {
+            CreateWorld();
+        }
+
         ImGui.SliderInt("Box Count", ref _boxCount, 0, 10000);
         ImGui.SliderInt("Circle Count", ref _circleCount, 0, 10000);
         ImGui.Text($"Dynamic bodies: {_boxCount + _circleCount}");
@@ -146,7 +159,9 @@ public sealed class Box2DDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, IRen
     private void CreateWorld()
     {
         DestroyWorld();
-        _world = new Box2DWorld(new Vector2(0f, 9.81f));
+        _world = _workerCount > 1
+            ? new Box2DWorld(new Vector2(0f, 9.81f), _jobScheduler, _workerCount)
+            : new Box2DWorld(new Vector2(0f, 9.81f));
         _bodies.Clear();
         _spawnIndex = 0;
 
