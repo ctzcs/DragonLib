@@ -69,6 +69,7 @@ public class MyGame : GameApp
     private EcsPipeline _pipeline;
     private Batcher _batcher;
     private Camera2D _camera;
+    private Camera3D _camera3D;
     private SceneRouter<RuntimeScene> _sceneRouter;
     private JobScheduler _jobScheduler = null!;
 
@@ -100,6 +101,7 @@ public class MyGame : GameApp
 
         _batcher = new Batcher(this.GraphicsDevice);
         _camera = new Camera2D();
+        _camera3D = new Camera3D();
         _sceneRouter = new SceneRouter<RuntimeScene>(RuntimeScene.Main);
 
         _editorBatcher = new Batcher(this.GraphicsDevice);
@@ -134,6 +136,7 @@ public class MyGame : GameApp
             .Inject(_eventWorld)
             .Inject(_batcher)
             .Inject(_camera)
+            .Inject(_camera3D)
             .Inject(_sceneRouter)
             .Inject(Input)
             .Inject(_imGui)
@@ -263,13 +266,16 @@ public class MyGame : GameApp
     {
         var clearColor = _appState.IsEditorMode
             ? new Color(0x22, 0x26, 0x2b, 0xff)
-            : _sceneRouter.Current == RuntimeScene.DreamBlockShader
+            : _sceneRouter.Current == RuntimeScene.DreamBlockShader ||
+              _sceneRouter.Current == RuntimeScene.FishSdfShader ||
+              _sceneRouter.Current == RuntimeScene.MachineGunSdfShader
                 ? new Color(0x08, 0x0c, 0x14, 0xff)
                 : Color.AliceBlue;
         Window.Clear(clearColor);
 
         var camera = ActiveCamera;
         camera.Viewport = new Point2(Window.WidthInPixels, Window.HeightInPixels);
+        camera.Update();
 
         var batcher = ActiveBatcher;
         batcher.PushMatrix(camera.Matrix);
@@ -745,11 +751,23 @@ public class CameraDebugSystem : IUpdateSystem
     public void Update()
     {
         ImGui.Begin("Camera");
-        ImGui.DragFloat("Pos X", ref _camera.Position.X, 0.1f);
-        ImGui.DragFloat("Pos Y", ref _camera.Position.Y, 0.1f);
-        ImGui.DragFloat("Zoom", ref _camera.Zoom, 0.01f, 0.1f, 10f);
-        ImGui.DragFloat("Rotation", ref _camera.Rotation, 0.01f, -MathF.PI, MathF.PI);
-        ImGui.DragFloat("PPU", ref _camera.PPU, 0.5f, 1f, 128f);
+        var position = _camera.Position;
+        var posX = position.X;
+        var posY = position.Y;
+        var zoom = _camera.Zoom;
+        var rotation = _camera.Rotation;
+        var ppu = _camera.PPU;
+
+        ImGui.DragFloat("Pos X", ref posX, 0.1f);
+        ImGui.DragFloat("Pos Y", ref posY, 0.1f);
+        ImGui.DragFloat("Zoom", ref zoom, 0.01f, 0.1f, 10f);
+        ImGui.DragFloat("Rotation", ref rotation, 0.01f, -MathF.PI, MathF.PI);
+        ImGui.DragFloat("PPU", ref ppu, 0.5f, 1f, 128f);
+
+        _camera.Position = new Vector2(posX, posY);
+        _camera.Zoom = zoom;
+        _camera.Rotation = rotation;
+        _camera.PPU = ppu;
         ImGui.End();
     }
 }

@@ -75,6 +75,31 @@ public sealed class WorldTransformTests
         AssertNear(world, camera.ScreenToWorld(screen));
     }
 
+    [Fact]
+    public void Camera2DRefreshesCachedMatrixAfterStateChanges()
+    {
+        var camera = new Camera2D { Viewport = new Point2(800, 600) };
+        var before = camera.WorldToScreen(Vector2.Zero);
+
+        camera.Position = new Vector2(2f, -1f);
+
+        var after = camera.WorldToScreen(Vector2.Zero);
+        Assert.NotEqual(before, after);
+    }
+
+    [Fact]
+    public void Camera3DRefreshesCachedMatricesAfterStateChanges()
+    {
+        var camera = new Camera3D();
+        camera.Update(1280, 720);
+        var before = camera.ViewProjection;
+
+        camera.Position += Vector3.UnitX;
+
+        var after = camera.ViewProjection;
+        Assert.NotEqual(before, after);
+    }
+
     private static SpineSkeleton CreateSkeleton() => new(new SkeletonData());
 
     private static void AssertNear(Vector2 expected, Vector2 actual)

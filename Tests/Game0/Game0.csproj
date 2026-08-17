@@ -21,7 +21,6 @@
       <Folder Include="Resources\Levels\" />
       <Folder Include="Resources\Prefabs\" />
       <Folder Include="Resources\Spine\SpineBoy\" />
-      <Folder Include="Shaders\Compiled\" />
     </ItemGroup>
 
     <ItemGroup>

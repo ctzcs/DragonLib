@@ -7,19 +7,106 @@ namespace Engine.World;
 /// </summary>
 public class Camera2D
 {
-    public Vector2 Position;
-    public float Zoom = 1f;
-    public float Rotation = 0f;
-    public float PPU = 32f;  // 1 单位 = 32 像素
-    public Point2 Viewport; // 通常是Targetable的宽高
+    private Vector2 _position;
+    private float _zoom = 1f;
+    private float _rotation;
+    private float _ppu = 32f;
+    private Point2 _viewport;
+    private Matrix3x2 _matrix = Matrix3x2.Identity;
+    private Matrix3x2 _inverseMatrix = Matrix3x2.Identity;
+    private bool _dirty = true;
+    private bool _inverseValid = true;
 
-    public Matrix3x2 Matrix =>
-        //世界空间到相机空间 World->View
-        Matrix3x2.CreateTranslation(-Position) *
-        Matrix3x2.CreateRotation(Rotation) *
-        Matrix3x2.CreateScale(PPU * Zoom) *
-        //相机空间到屏幕空间 View->Screen
-        Matrix3x2.CreateTranslation(Viewport.X / 2f, Viewport.Y / 2f);
+    public Vector2 Position
+    {
+        get => _position;
+        set
+        {
+            if (_position == value)
+                return;
+
+            _position = value;
+            _dirty = true;
+        }
+    }
+
+    public float Zoom
+    {
+        get => _zoom;
+        set
+        {
+            if (_zoom == value)
+                return;
+
+            _zoom = value;
+            _dirty = true;
+        }
+    }
+
+    public float Rotation
+    {
+        get => _rotation;
+        set
+        {
+            if (_rotation == value)
+                return;
+
+            _rotation = value;
+            _dirty = true;
+        }
+    }
+
+    public float PPU
+    {
+        get => _ppu;
+        set
+        {
+            if (_ppu == value)
+                return;
+
+            _ppu = value;
+            _dirty = true;
+        }
+    }
+
+    public Point2 Viewport
+    {
+        get => _viewport;
+        set
+        {
+            if (_viewport.X == value.X && _viewport.Y == value.Y)
+                return;
+
+            _viewport = value;
+            _dirty = true;
+        }
+    }
+
+    public Matrix3x2 Matrix
+    {
+        get
+        {
+            Update();
+            return _matrix;
+        }
+    }
+
+    /// <summary>Rebuilds the camera matrices when camera state has changed.</summary>
+    public void Update()
+    {
+        if (!_dirty)
+            return;
+
+        // 世界空间到相机空间 World->View
+        _matrix = Matrix3x2.CreateTranslation(-_position) *
+            Matrix3x2.CreateRotation(_rotation) *
+            Matrix3x2.CreateScale(_ppu * _zoom) *
+            // 相机空间到屏幕空间 View->Screen
+            Matrix3x2.CreateTranslation(_viewport.X / 2f, _viewport.Y / 2f);
+
+        _inverseValid = Matrix3x2.Invert(_matrix, out _inverseMatrix);
+        _dirty = false;
+    }
 
     public Vector2 WorldToScreen(Vector2 worldPosition)
         => Vector2.Transform(worldPosition, Matrix);
@@ -34,13 +121,14 @@ public class Camera2D
 
     public bool TryScreenToWorld(Vector2 screenPosition, out Vector2 worldPosition)
     {
-        if (!Matrix3x2.Invert(Matrix, out var inverse))
+        Update();
+        if (!_inverseValid)
         {
             worldPosition = default;
             return false;
         }
 
-        worldPosition = Vector2.Transform(screenPosition, inverse);
+        worldPosition = Vector2.Transform(screenPosition, _inverseMatrix);
         return true;
     }
 }

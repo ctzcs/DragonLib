@@ -13,8 +13,11 @@ public class SceneModule : EcsModule<SceneModule>
     {
         b.Add(new SceneLauncherSystem());
         b.Add(new DreamBlockDemoSystem());
+        b.Add(new FishSdfDemoSystem());
+        b.Add(new MachineGunSdfDemoSystem());
         b.Add(new SpineDemoSystem());
         b.Add(new Box2DDemoSystem());
+        b.Add(new ThreeDDemoSystem());
         b.Add(new EntitiesDemo());
     }
 }
@@ -23,8 +26,11 @@ public enum RuntimeScene
 {
     Main,
     DreamBlockShader,
+    FishSdfShader,
+    MachineGunSdfShader,
     SpineBoy,
     Box2D,
+    ThreeD,
 }
 
 public sealed class SceneLauncherSystem : IUpdateSystem
@@ -42,11 +48,20 @@ public sealed class SceneLauncherSystem : IUpdateSystem
             if (ImGui.Button("Dream Block Shader"))
                 _sceneRouter.SwitchTo(RuntimeScene.DreamBlockShader);
 
+            if (ImGui.Button("Fish SDF Shader"))
+                _sceneRouter.SwitchTo(RuntimeScene.FishSdfShader);
+
+            if (ImGui.Button("Machine Gun SDF Shader"))
+                _sceneRouter.SwitchTo(RuntimeScene.MachineGunSdfShader);
+
             if (ImGui.Button("Spine Boy"))
                 _sceneRouter.SwitchTo(RuntimeScene.SpineBoy);
 
             if (ImGui.Button("Box2D"))
                 _sceneRouter.SwitchTo(RuntimeScene.Box2D);
+
+            if (ImGui.Button("3D Mountain Demo"))
+                _sceneRouter.SwitchTo(RuntimeScene.ThreeD);
         }
         else if (ImGui.Button("Back to Main"))
         {
