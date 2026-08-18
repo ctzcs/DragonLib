@@ -64,7 +64,7 @@ public sealed class WorldTransformTests
             Zoom = 1.7f,
             Rotation = 0.35f,
             PPU = 48f,
-            Viewport = new Point2(1920, 1080),
+            ViewportSize = new Point2(1920, 1080),
         };
         var world = new Vector2(-12f, 4.25f);
 
@@ -78,7 +78,7 @@ public sealed class WorldTransformTests
     [Fact]
     public void Camera2DRefreshesCachedMatrixAfterStateChanges()
     {
-        var camera = new Camera2D { Viewport = new Point2(800, 600) };
+        var camera = new Camera2D { ViewportSize = new Point2(800, 600) };
         var before = camera.WorldToScreen(Vector2.Zero);
 
         camera.Position = new Vector2(2f, -1f);
@@ -90,14 +90,26 @@ public sealed class WorldTransformTests
     [Fact]
     public void Camera3DRefreshesCachedMatricesAfterStateChanges()
     {
-        var camera = new Camera3D();
-        camera.Update(1280, 720);
+        var camera = new Camera3D { ViewportSize = new Point2(1280, 720) };
         var before = camera.ViewProjection;
 
         camera.Position += Vector3.UnitX;
 
         var after = camera.ViewProjection;
         Assert.NotEqual(before, after);
+    }
+
+    [Fact]
+    public void CamerasExposeViewportSizeThroughCommonContract()
+    {
+        ICamera[] cameras = [new Camera2D(), new Camera3D()];
+        var viewportSize = new Point2(960, 540);
+
+        foreach (var camera in cameras)
+        {
+            camera.ViewportSize = viewportSize;
+            Assert.Equal(viewportSize, camera.ViewportSize);
+        }
     }
 
     private static SpineSkeleton CreateSkeleton() => new(new SkeletonData());

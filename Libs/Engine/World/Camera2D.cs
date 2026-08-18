@@ -5,13 +5,13 @@ namespace Engine.World;
 /// <summary>
 /// 该相机空间和屏幕空间一致，y向下
 /// </summary>
-public class Camera2D
+public class Camera2D : ICamera
 {
     private Vector2 _position;
     private float _zoom = 1f;
     private float _rotation;
     private float _ppu = 32f;
-    private Point2 _viewport;
+    private Point2 _viewportSize;
     private Matrix3x2 _matrix = Matrix3x2.Identity;
     private Matrix3x2 _inverseMatrix = Matrix3x2.Identity;
     private bool _dirty = true;
@@ -69,15 +69,15 @@ public class Camera2D
         }
     }
 
-    public Point2 Viewport
+    public Point2 ViewportSize
     {
-        get => _viewport;
+        get => _viewportSize;
         set
         {
-            if (_viewport.X == value.X && _viewport.Y == value.Y)
+            if (_viewportSize == value)
                 return;
 
-            _viewport = value;
+            _viewportSize = value;
             _dirty = true;
         }
     }
@@ -102,7 +102,7 @@ public class Camera2D
             Matrix3x2.CreateRotation(_rotation) *
             Matrix3x2.CreateScale(_ppu * _zoom) *
             // 相机空间到屏幕空间 View->Screen
-            Matrix3x2.CreateTranslation(_viewport.X / 2f, _viewport.Y / 2f);
+            Matrix3x2.CreateTranslation(_viewportSize.X / 2f, _viewportSize.Y / 2f);
 
         _inverseValid = Matrix3x2.Invert(_matrix, out _inverseMatrix);
         _dirty = false;

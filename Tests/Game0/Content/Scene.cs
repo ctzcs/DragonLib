@@ -17,7 +17,9 @@ public class SceneModule : EcsModule<SceneModule>
         b.Add(new MachineGunSdfDemoSystem());
         b.Add(new SpineDemoSystem());
         b.Add(new Box2DDemoSystem());
+        b.Add(new DualCamera2DDemoSystem());
         b.Add(new ThreeDDemoSystem());
+        b.Add(new LightSandboxDemoSystem());
         b.Add(new EntitiesDemo());
     }
 }
@@ -30,7 +32,9 @@ public enum RuntimeScene
     MachineGunSdfShader,
     SpineBoy,
     Box2D,
+    DualCamera2D,
     ThreeD,
+    LightSandbox,
 }
 
 public sealed class SceneLauncherSystem : IUpdateSystem
@@ -60,8 +64,14 @@ public sealed class SceneLauncherSystem : IUpdateSystem
             if (ImGui.Button("Box2D"))
                 _sceneRouter.SwitchTo(RuntimeScene.Box2D);
 
+            if (ImGui.Button("Dual Camera 2D"))
+                _sceneRouter.SwitchTo(RuntimeScene.DualCamera2D);
+
             if (ImGui.Button("3D Mountain Demo"))
                 _sceneRouter.SwitchTo(RuntimeScene.ThreeD);
+
+            if (ImGui.Button("Lighting Sandbox"))
+                _sceneRouter.SwitchTo(RuntimeScene.LightSandbox);
         }
         else if (ImGui.Button("Back to Main"))
         {

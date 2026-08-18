@@ -1,6 +1,5 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
-using Engine.World;
 using Foster.Framework;
 
 namespace Engine.Rendering;
@@ -32,77 +31,26 @@ public struct PositionNormalColorVertex : IVertex
 }
 
 /// <summary>
-/// Owns a simple indexed mesh and submits it with depth testing enabled.
+/// Owns 3D vertex/index data.
+/// Rendering is performed by <see cref="Renderer3D"/>.
 /// </summary>
 public sealed class Mesh3D : IDisposable
 {
-    [StructLayout(LayoutKind.Sequential, Pack = 4)]
-    private struct VertexUniforms
-    {
-        public Matrix4x4 WorldViewProjection;
-        public Matrix4x4 World;
-    }
-
-    [StructLayout(LayoutKind.Sequential, Pack = 4)]
-    private struct FragmentUniforms
-    {
-        public Vector4 LightDirection;
-        public Vector4 Ambient;
-        public Vector4 Diffuse;
-    }
-
-    private readonly GraphicsDevice _graphicsDevice;
-
     public Mesh<PositionNormalColorVertex, uint> Geometry { get; }
-    public Material Material { get; }
 
     public Mesh3D(
         GraphicsDevice graphicsDevice,
-        Material material,
         ReadOnlySpan<PositionNormalColorVertex> vertices,
         ReadOnlySpan<uint> indices,
         string? name = null)
     {
-        _graphicsDevice = graphicsDevice;
-        Material = material;
         Geometry = new Mesh<PositionNormalColorVertex, uint>(graphicsDevice, name);
         Geometry.SetVertices(vertices);
         Geometry.SetIndices(indices);
     }
 
-    public void Draw(
-        IDrawableTarget target,
-        Camera3D camera,
-        in Matrix4x4 world,
-        in Vector3 lightDirection,
-        in Vector3 ambient,
-        in Vector3 diffuse)
-    {
-        Material.Vertex.SetUniformBuffer(new VertexUniforms
-        {
-            WorldViewProjection = world * camera.ViewProjection,
-            World = world,
-        });
-        Material.Fragment.SetUniformBuffer(new FragmentUniforms
-        {
-            LightDirection = new Vector4(lightDirection, 0f),
-            Ambient = new Vector4(ambient, 1f),
-            Diffuse = new Vector4(diffuse, 1f),
-        });
-
-        _graphicsDevice.Draw(new DrawCommand(target, Geometry, Material)
-        {
-            BlendMode = BlendMode.NonPremultiplied,
-            CullMode = CullMode.Back,
-            DepthCompare = DepthCompare.LessOrEqual,
-            DepthTestEnabled = true,
-            DepthWriteEnabled = true,
-        });
-    }
-
     public static Mesh3D CreateCube(
         GraphicsDevice graphicsDevice,
-        Material material,
         float size = 1f,
         Color? color = null,
         string? name = null)
@@ -131,7 +79,117 @@ public sealed class Mesh3D : IDisposable
             new Vector3(-half, -half, -half), new Vector3(-half, -half, half),
             new Vector3(-half, half, half), new Vector3(-half, half, -half), faceColor);
 
-        return new Mesh3D(graphicsDevice, material, CollectionsMarshal.AsSpan(vertices), CollectionsMarshal.AsSpan(indices), name);
+        return new Mesh3D(graphicsDevice, CollectionsMarshal.AsSpan(vertices), CollectionsMarshal.AsSpan(indices), name);
+    }
+
+    /// <summary>
+    /// Creates a faceted icosphere. Roughness offsets shared points radially before
+    /// the triangle vertices are split, keeping the mesh watertight.
+    /// </summary>
+    public static Mesh3D CreateIcosphere(
+        GraphicsDevice graphicsDevice,
+        float radius = 1f,
+        int subdivisions = 0,
+        float roughness = 0f,
+        Color? color = null,
+        int seed = 0,
+        string? name = null)
+    {
+        if (radius <= 0f)
+            throw new ArgumentOutOfRangeException(nameof(radius));
+        if (subdivisions is < 0 or > 6)
+            throw new ArgumentOutOfRangeException(nameof(subdivisions));
+        if (roughness is < 0f or > 0.95f)
+            throw new ArgumentOutOfRangeException(nameof(roughness));
+
+        var goldenRatio = (1f + MathF.Sqrt(5f)) * 0.5f;
+        var points = new List<Vector3>
+        {
+            new(-1f, goldenRatio, 0f), new(1f, goldenRatio, 0f),
+            new(-1f, -goldenRatio, 0f), new(1f, -goldenRatio, 0f),
+            new(0f, -1f, goldenRatio), new(0f, 1f, goldenRatio),
+            new(0f, -1f, -goldenRatio), new(0f, 1f, -goldenRatio),
+            new(goldenRatio, 0f, -1f), new(goldenRatio, 0f, 1f),
+            new(-goldenRatio, 0f, -1f), new(-goldenRatio, 0f, 1f),
+        };
+
+        var faces = new List<(int A, int B, int C)>
+        {
+            (0, 11, 5), (0, 5, 1), (0, 1, 7), (0, 7, 10), (0, 10, 11),
+            (1, 5, 9), (5, 11, 4), (11, 10, 2), (10, 7, 6), (7, 1, 8),
+            (3, 9, 4), (3, 4, 2), (3, 2, 6), (3, 6, 8), (3, 8, 9),
+            (4, 9, 5), (2, 4, 11), (6, 2, 10), (8, 6, 7), (9, 8, 1),
+        };
+
+        for (var level = 0; level < subdivisions; level++)
+        {
+            var midpointCache = new Dictionary<ulong, int>();
+            var nextFaces = new List<(int A, int B, int C)>(faces.Count * 4);
+
+            foreach (var (a, b, c) in faces)
+            {
+                var ab = GetMidpoint(a, b, points, midpointCache);
+                var bc = GetMidpoint(b, c, points, midpointCache);
+                var ca = GetMidpoint(c, a, points, midpointCache);
+                nextFaces.Add((a, ab, ca));
+                nextFaces.Add((b, bc, ab));
+                nextFaces.Add((c, ca, bc));
+                nextFaces.Add((ab, bc, ca));
+            }
+
+            faces = nextFaces;
+        }
+
+        var random = new Random(seed);
+        for (var i = 0; i < points.Count; i++)
+        {
+            var radialScale = 1f + ((random.NextSingle() * 2f - 1f) * roughness);
+            points[i] = Vector3.Normalize(points[i]) * radius * radialScale;
+        }
+
+        var faceColor = color ?? Color.White;
+        var vertices = new List<PositionNormalColorVertex>(faces.Count * 3);
+        var indices = new List<uint>(faces.Count * 3);
+        foreach (var (aIndex, bIndex, cIndex) in faces)
+        {
+            var a = points[aIndex];
+            var b = points[bIndex];
+            var c = points[cIndex];
+            var normal = Vector3.Normalize(Vector3.Cross(b - a, c - a));
+            if (Vector3.Dot(normal, a + b + c) < 0f)
+            {
+                (b, c) = (c, b);
+                normal = -normal;
+            }
+
+            var start = (uint)vertices.Count;
+            vertices.Add(new(a, normal, faceColor));
+            vertices.Add(new(b, normal, faceColor));
+            vertices.Add(new(c, normal, faceColor));
+            indices.Add(start);
+            indices.Add(start + 1);
+            indices.Add(start + 2);
+        }
+
+        return new Mesh3D(graphicsDevice, CollectionsMarshal.AsSpan(vertices), CollectionsMarshal.AsSpan(indices), name);
+    }
+
+    private static int GetMidpoint(
+        int first,
+        int second,
+        List<Vector3> points,
+        Dictionary<ulong, int> cache)
+    {
+        var low = (uint)Math.Min(first, second);
+        var high = (uint)Math.Max(first, second);
+        var key = ((ulong)low << 32) | high;
+        if (cache.TryGetValue(key, out var existing))
+            return existing;
+
+        var index = points.Count;
+        points.Add(Vector3.Normalize(points[first] + points[second]));
+        cache.Add(key, index);
+        return index;
     }
 
     private static void AddFace(

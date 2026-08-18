@@ -274,7 +274,7 @@ public class MyGame : GameApp
         Window.Clear(clearColor);
 
         var camera = ActiveCamera;
-        camera.Viewport = new Point2(Window.WidthInPixels, Window.HeightInPixels);
+        camera.ViewportSize = new Point2(Window.WidthInPixels, Window.HeightInPixels);
         camera.Update();
 
         var batcher = ActiveBatcher;

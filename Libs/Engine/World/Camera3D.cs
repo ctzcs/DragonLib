@@ -1,4 +1,5 @@
 using System.Numerics;
+using Foster.Framework;
 
 namespace Engine.World;
 
@@ -6,7 +7,7 @@ namespace Engine.World;
 /// A small perspective camera for direct 3D rendering.
 /// Matrices use the same convention as Foster's built-in shaders.
 /// </summary>
-public sealed class Camera3D
+public sealed class Camera3D : ICamera
 {
     private Vector3 _position = new(0f, 2f, 8f);
     private Vector3 _target;
@@ -14,8 +15,7 @@ public sealed class Camera3D
     private float _fieldOfView = MathF.PI / 3f;
     private float _nearClip = 0.05f;
     private float _farClip = 250f;
-    private int _viewportWidth;
-    private int _viewportHeight;
+    private Point2 _viewportSize;
     private bool _dirty = true;
     private Matrix4x4 _view = Matrix4x4.Identity;
     private Matrix4x4 _projection = Matrix4x4.Identity;
@@ -101,6 +101,19 @@ public sealed class Camera3D
 
     public float AspectRatio { get; private set; } = 16f / 9f;
 
+    public Point2 ViewportSize
+    {
+        get => _viewportSize;
+        set
+        {
+            if (_viewportSize == value)
+                return;
+
+            _viewportSize = value;
+            _dirty = true;
+        }
+    }
+
     public Matrix4x4 View
     {
         get
@@ -141,18 +154,15 @@ public sealed class Camera3D
 
     public Vector3 Right => Vector3.Normalize(Vector3.Cross(Forward, Up));
 
-    public void Update(int viewportWidth, int viewportHeight)
+    public void Update()
     {
-        if (viewportWidth <= 0 || viewportHeight <= 0)
+        if (_viewportSize.X <= 0 || _viewportSize.Y <= 0)
             return;
 
-        if (!_dirty && viewportWidth == _viewportWidth && viewportHeight == _viewportHeight)
+        if (!_dirty)
             return;
 
-        _viewportWidth = viewportWidth;
-        _viewportHeight = viewportHeight;
-
-        AspectRatio = viewportWidth / (float)viewportHeight;
+        AspectRatio = _viewportSize.X / (float)_viewportSize.Y;
         var fov = Math.Clamp(_fieldOfView, 0.1f, MathF.PI - 0.1f);
         var nearClip = MathF.Max(0.001f, _nearClip);
         var farClip = MathF.Max(nearClip + 0.001f, _farClip);
@@ -165,7 +175,6 @@ public sealed class Camera3D
 
     private void EnsureUpdated()
     {
-        if (_viewportWidth > 0 && _viewportHeight > 0)
-            Update(_viewportWidth, _viewportHeight);
+        Update();
     }
 }

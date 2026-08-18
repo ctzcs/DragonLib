@@ -395,8 +395,8 @@ public sealed class LevelEditorSystem : IUpdateSystem, IRenderSystem
     {
         // 视野半宽/半高（世界单位）= 屏幕半像素 / (PPU*Zoom)。
         float unitsPerPixel = 1f / (_camera.PPU * _camera.Zoom);
-        float halfW = _camera.Viewport.X * 0.5f * unitsPerPixel;
-        float halfH = _camera.Viewport.Y * 0.5f * unitsPerPixel;
+        float halfW = _camera.ViewportSize.X * 0.5f * unitsPerPixel;
+        float halfH = _camera.ViewportSize.Y * 0.5f * unitsPerPixel;
         var center = _camera.Position;
 
         float s = _gridSize;
