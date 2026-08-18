@@ -167,8 +167,8 @@ public sealed class Mesh3D : IDisposable
             vertices.Add(new(b, normal, faceColor));
             vertices.Add(new(c, normal, faceColor));
             indices.Add(start);
-            indices.Add(start + 1);
             indices.Add(start + 2);
+            indices.Add(start + 1);
         }
 
         return new Mesh3D(graphicsDevice, CollectionsMarshal.AsSpan(vertices), CollectionsMarshal.AsSpan(indices), name);
@@ -208,11 +208,11 @@ public sealed class Mesh3D : IDisposable
         vertices.Add(new(c, normal, color));
         vertices.Add(new(d, normal, color));
         indices.Add(start);
+        indices.Add(start + 2);
         indices.Add(start + 1);
-        indices.Add(start + 2);
         indices.Add(start);
-        indices.Add(start + 2);
         indices.Add(start + 3);
+        indices.Add(start + 2);
     }
 
     public void Dispose()

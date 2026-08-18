@@ -20,6 +20,7 @@ public class SceneModule : EcsModule<SceneModule>
         b.Add(new DualCamera2DDemoSystem());
         b.Add(new ThreeDDemoSystem());
         b.Add(new LightSandboxDemoSystem());
+        b.Add(new RadianceCascadesDemoSystem());
         b.Add(new EntitiesDemo());
     }
 }
@@ -35,6 +36,7 @@ public enum RuntimeScene
     DualCamera2D,
     ThreeD,
     LightSandbox,
+    RadianceCascades2D,
 }
 
 public sealed class SceneLauncherSystem : IUpdateSystem
@@ -72,6 +74,9 @@ public sealed class SceneLauncherSystem : IUpdateSystem
 
             if (ImGui.Button("Lighting Sandbox"))
                 _sceneRouter.SwitchTo(RuntimeScene.LightSandbox);
+
+            if (ImGui.Button("Radiance Cascades 2D"))
+                _sceneRouter.SwitchTo(RuntimeScene.RadianceCascades2D);
         }
         else if (ImGui.Button("Back to Main"))
         {

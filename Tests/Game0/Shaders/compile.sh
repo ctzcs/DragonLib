@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# 将该文件复制到Shaders目录下，修改ShaderCross路径直接使用, 在Shaders目录下使用bash compile.sh
+
 # Default compiler path. Use a WSL path when this script runs inside WSL.
 SHADERCROSS_PATH="/mnt/d/MySpace/Github/DragonLib/Tools/ShaderCross/shadercross.exe"
 

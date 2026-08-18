@@ -268,7 +268,8 @@ public class MyGame : GameApp
             ? new Color(0x22, 0x26, 0x2b, 0xff)
             : _sceneRouter.Current == RuntimeScene.DreamBlockShader ||
               _sceneRouter.Current == RuntimeScene.FishSdfShader ||
-              _sceneRouter.Current == RuntimeScene.MachineGunSdfShader
+              _sceneRouter.Current == RuntimeScene.MachineGunSdfShader ||
+              _sceneRouter.Current == RuntimeScene.RadianceCascades2D
                 ? new Color(0x08, 0x0c, 0x14, 0xff)
                 : Color.AliceBlue;
         Window.Clear(clearColor);

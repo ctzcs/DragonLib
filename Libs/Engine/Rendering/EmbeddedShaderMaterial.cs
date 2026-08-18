@@ -6,7 +6,8 @@ namespace Engine.Rendering;
 public readonly record struct ShaderStageSpec(
     int SamplerCount,
     int UniformBufferCount,
-    string EntryPoint);
+    string EntryPoint,
+    int StorageBufferCount = 0);
 
 /// <summary>
 /// Owns a material whose shaders are loaded from embedded, driver-specific resources.
@@ -87,6 +88,7 @@ public sealed class EmbeddedShaderMaterial : IDisposable
                     vertexCode!,
                     samplerCount: spec.SamplerCount,
                     uniformBufferCount: spec.UniformBufferCount,
+                    storageBufferCount: spec.StorageBufferCount,
                     entryPoint: spec.EntryPoint,
                     name: vertexResource);
             }
@@ -97,6 +99,7 @@ public sealed class EmbeddedShaderMaterial : IDisposable
                 fragmentCode,
                 samplerCount: fragment.SamplerCount,
                 uniformBufferCount: fragment.UniformBufferCount,
+                storageBufferCount: fragment.StorageBufferCount,
                 entryPoint: fragment.EntryPoint,
                 name: fragmentResource);
 
@@ -126,6 +129,8 @@ public sealed class EmbeddedShaderMaterial : IDisposable
             throw new ArgumentOutOfRangeException(parameterName, "Sampler count cannot be negative.");
         if (spec.UniformBufferCount < 0)
             throw new ArgumentOutOfRangeException(parameterName, "Uniform buffer count cannot be negative.");
+        if (spec.StorageBufferCount < 0)
+            throw new ArgumentOutOfRangeException(parameterName, "Storage buffer count cannot be negative.");
         if (string.IsNullOrWhiteSpace(spec.EntryPoint))
             throw new ArgumentException("Shader entry point cannot be empty.", parameterName);
     }
