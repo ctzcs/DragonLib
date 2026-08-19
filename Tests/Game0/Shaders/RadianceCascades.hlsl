@@ -37,8 +37,8 @@ struct EmissionGpuData
     float4 Color;   // rgb color * intensity, a radius
 };
 
-StructuredBuffer<LightGpuData> Lights : register(t2, space2);
-StructuredBuffer<EmissionGpuData> Emissions : register(t3, space2);
+StructuredBuffer<LightGpuData> Lights : register(t1, space2);
+StructuredBuffer<EmissionGpuData> Emissions : register(t2, space2);
 
 Texture2D Texture : register(t0, space2);
 SamplerState Sampler : register(s0, space2);
@@ -183,7 +183,20 @@ float4 traceRay(float2 origin, float2 direction, float intervalStart, float inte
             break;
         }
 
-        travel += max(distanceToScene, 0.018);
+        // Emission strokes are not part of sceneDistance. Stepping only by the
+        // scene SDF leaps over these thin strokes in open space, so the rays
+        // never register the light the user drew. Fold each stroke's SDF into
+        // the march step so rays decelerate onto the stroke and illuminate it.
+        float marchDistance = distanceToScene;
+        for (int marchSegmentIndex = 0; marchSegmentIndex < (int)Tuning.z; marchSegmentIndex++)
+        {
+            float segmentRadius = max(Emissions[marchSegmentIndex].Color.a, 0.01);
+            marchDistance = min(marchDistance, sdSegment(samplePosition,
+                Emissions[marchSegmentIndex].Segment.xy,
+                Emissions[marchSegmentIndex].Segment.zw,
+                segmentRadius));
+        }
+        travel += max(marchDistance, 0.018);
     }
     return result;
 }

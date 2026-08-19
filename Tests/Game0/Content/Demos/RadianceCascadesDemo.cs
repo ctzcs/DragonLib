@@ -139,7 +139,7 @@ public sealed class RadianceCascadesDemoSystem : IEcsInit, IEcsDestroy, IUpdateS
             _game.GraphicsDevice,
             typeof(RadianceCascadesDemoSystem).Assembly,
             ShaderResourceBase,
-            new ShaderStageSpec(1, 1, "fragment_main", 4),
+            new ShaderStageSpec(1, 1, "fragment_main", 2),
             new ShaderStageSpec(0, 2, "vertex_main"));
         _passBatcher = new Batcher(_game.GraphicsDevice);
         _lightBuffer = new StorageBuffer<LightGpuData>(_game.GraphicsDevice, "Radiance Cascades lights");
@@ -221,10 +221,9 @@ public sealed class RadianceCascadesDemoSystem : IEcsInit, IEcsDestroy, IUpdateS
             _shader.Material.Vertex.SetUniformBuffer(new VertexUniforms { CameraMatrix = Matrix4x4.Identity }, 1);
 
             _passBatcher.PushMaterial(_shader.Material);
-            // SDL's graphics storage buffers are bound by register slot. The
-            // shader uses t2/t3, so slots 0/1 need valid harmless buffers too.
-            _passBatcher.FragmentStorageBuffers.Add(_lightBuffer);
-            _passBatcher.FragmentStorageBuffers.Add(_lightBuffer);
+            // SDL_shadercross packs fragment storage buffers densely in
+            // declaration order, so the shader's t2/t3 registers become
+            // binding slots 0/1: lights first, emission strokes second.
             _passBatcher.FragmentStorageBuffers.Add(_lightBuffer);
             _passBatcher.FragmentStorageBuffers.Add(_emissionBuffer);
             _passBatcher.PushSampler(new TextureSampler(
@@ -271,25 +270,30 @@ public sealed class RadianceCascadesDemoSystem : IEcsInit, IEcsDestroy, IUpdateS
         if (ImGui.GetIO().WantCaptureMouse || !_camera.TryScreenToWorld(_input.Mouse.Position, out var world))
             return;
 
-        var drawEmission = _input.Keyboard.Ctrl;
         if (_input.Mouse.LeftPressed)
         {
-            if (drawEmission)
+            _draggingLight = false;
+            _drawingEmission = false;
+            _lastDrawPoint = world;
+
+            if (_input.Keyboard.Shift)
             {
-                _drawingEmission = true;
-                _draggingLight = false;
-                _lastDrawPoint = world;
-                AddEmissionSegment(world, world + new Vector2(0.015f, 0f));
+                // Shift remains the explicit occluder/obstacle drawing mode.
                 return;
             }
 
-            var lightIndex = FindLight(world, 1.1f);
+            var lightIndex = FindLight(world, 0.5f);
             _draggingLight = lightIndex >= 0;
             if (_draggingLight)
+            {
                 _selectedLight = lightIndex;
-            _lastDrawPoint = world;
-            if (!_draggingLight && _input.Keyboard.Shift)
-                AddObstacle(_lastDrawPoint, _lastDrawPoint + new Vector2(0.01f, 0f));
+            }
+            else
+            {
+                // Empty-canvas left-drag is a freehand emissive stroke, matching
+                // the reference sandbox. No modifier key is required.
+                _drawingEmission = true;
+            }
         }
 
         if (!_input.Mouse.LeftDown)
@@ -301,7 +305,7 @@ public sealed class RadianceCascadesDemoSystem : IEcsInit, IEcsDestroy, IUpdateS
 
         if (_drawingEmission)
         {
-            if (Vector2.DistanceSquared(world, _lastDrawPoint) > 0.01f)
+            if (Vector2.DistanceSquared(world, _lastDrawPoint) > 0.0064f)
             {
                 AddEmissionSegment(_lastDrawPoint, world);
                 _lastDrawPoint = world;
@@ -321,6 +325,26 @@ public sealed class RadianceCascadesDemoSystem : IEcsInit, IEcsDestroy, IUpdateS
 
     private void AddEmissionSegment(Vector2 start, Vector2 end)
     {
+        if (Vector2.DistanceSquared(start, end) < 0.0004f)
+            return;
+
+        // Coalesce nearly-collinear samples so a long freehand stroke remains
+        // cheap for the GPU while corners stay independently editable.
+        if (_emissionSegments.Count > 0)
+        {
+            var previous = _emissionSegments[^1];
+            var incoming = end - start;
+            var existing = previous.End - previous.Start;
+            var incomingLength = incoming.Length();
+            var existingLength = existing.Length();
+            if (Vector2.DistanceSquared(previous.End, start) < 0.04f &&
+                incomingLength > 0.001f && existingLength > 0.001f &&
+                Vector2.Dot(Vector2.Normalize(existing), Vector2.Normalize(incoming)) > 0.985f)
+            {
+                previous.End = end;
+                return;
+            }
+        }
         _emissionSegments.Add(new EmissionSegment(start, end, _emissionColor, _emissionIntensity, _emissionRadius));
     }
 
@@ -338,7 +362,7 @@ public sealed class RadianceCascadesDemoSystem : IEcsInit, IEcsDestroy, IUpdateS
         ImGui.SetNextWindowSize(new Vector2(344f, 0f), ImGuiCond.FirstUseEver);
         ImGui.Begin("Radiance Cascades 2D");
         ImGui.TextUnformatted("Noiseless 2D global illumination");
-        ImGui.TextUnformatted("Drag a point light. Ctrl + LMB draws emissive strokes.");
+        ImGui.TextUnformatted("LMB draws emissive strokes; drag a light to move it.");
         ImGui.TextUnformatted("Shift + LMB draws occluders.");
         ImGui.Separator();
         if (ImGui.Button("Reset"))
