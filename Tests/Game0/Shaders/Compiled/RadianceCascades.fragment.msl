@@ -10,6 +10,7 @@ struct type_RadianceCascadesBlock
     float4 Display;
     float4 WorldColor;
     float4 Tuning;
+    float4 Paint;
     float4 Obstacle0;
     float4 Obstacle1;
     float4 Obstacle2;
@@ -31,17 +32,6 @@ struct type_StructuredBuffer_LightGpuData
     LightGpuData _m0[1];
 };
 
-struct EmissionGpuData
-{
-    float4 Segment;
-    float4 Color;
-};
-
-struct type_StructuredBuffer_EmissionGpuData
-{
-    EmissionGpuData _m0[1];
-};
-
 struct fragment_main_out
 {
     float4 out_var_SV_Target0 [[color(0)]];
@@ -53,256 +43,266 @@ struct fragment_main_in
     float4 in_var_TEXCOORD1 [[user(locn1)]];
 };
 
-fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], constant type_RadianceCascadesBlock& RadianceCascadesBlock [[buffer(0)]], const device type_StructuredBuffer_LightGpuData& Lights [[buffer(1)]], const device type_StructuredBuffer_EmissionGpuData& Emissions [[buffer(2)]], texture2d<float> Texture [[texture(0)]], sampler Sampler [[sampler(0)]])
+fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], constant type_RadianceCascadesBlock& RadianceCascadesBlock [[buffer(0)]], const device type_StructuredBuffer_LightGpuData& Lights [[buffer(1)]], texture2d<float> Texture [[texture(0)]], texture2d<float> StrokeTexture [[texture(1)]], texture2d<float> StrokeDistance [[texture(2)]], sampler Sampler [[sampler(0)]], sampler StrokeSampler [[sampler(1)]], sampler StrokeDistanceSampler [[sampler(2)]])
 {
     fragment_main_out out = {};
-    float2 _181 = (in.in_var_TEXCOORD0 - float2(0.5)) * RadianceCascadesBlock.Viewport.xy;
-    float2 _184 = abs(_181 - float2(1.89999997615814208984375, 2.900000095367431640625)) + float2(-1.63999998569488525390625, -0.180000007152557373046875);
-    float2 _196 = abs(_181 - float2(7.19999980926513671875, 2.900000095367431640625)) + float2(-0.180000007152557373046875, -2.139999866485595703125);
-    float2 _212 = abs(_181 - float2(-5.599999904632568359375, 5.0)) + float2(-2.38000011444091796875, -0.199999988079071044921875);
-    float _221 = precise::min(precise::min(precise::min(precise::min(1000.0, (precise::min(precise::max(_184.x, _184.y), 0.0) + length(precise::max(_184, float2(0.0)))) - 0.1599999964237213134765625), (precise::min(precise::max(_196.x, _196.y), 0.0) + length(precise::max(_196, float2(0.0)))) - 0.1599999964237213134765625), length(_181 - float2(4.80000019073486328125, -3.2000000476837158203125)) - 1.0499999523162841796875), (precise::min(precise::max(_212.x, _212.y), 0.0) + length(precise::max(_212, float2(0.0)))) - 0.119999997317790985107421875);
-    bool _225 = RadianceCascadesBlock.WorldColor.w > 0.5;
-    float _244;
-    if (_225)
+    float2 _185 = (in.in_var_TEXCOORD0 - float2(0.5)) * RadianceCascadesBlock.Viewport.xy;
+    float2 _188 = abs(_185 - float2(1.89999997615814208984375, 2.900000095367431640625)) + float2(-1.63999998569488525390625, -0.180000007152557373046875);
+    float2 _200 = abs(_185 - float2(7.19999980926513671875, 2.900000095367431640625)) + float2(-0.180000007152557373046875, -2.139999866485595703125);
+    float2 _216 = abs(_185 - float2(-5.599999904632568359375, 5.0)) + float2(-2.38000011444091796875, -0.199999988079071044921875);
+    float _225 = precise::min(precise::min(precise::min(precise::min(1000.0, (precise::min(precise::max(_188.x, _188.y), 0.0) + length(precise::max(_188, float2(0.0)))) - 0.1599999964237213134765625), (precise::min(precise::max(_200.x, _200.y), 0.0) + length(precise::max(_200, float2(0.0)))) - 0.1599999964237213134765625), length(_185 - float2(4.80000019073486328125, -3.2000000476837158203125)) - 1.0499999523162841796875), (precise::min(precise::max(_216.x, _216.y), 0.0) + length(precise::max(_216, float2(0.0)))) - 0.119999997317790985107421875);
+    bool _229 = RadianceCascadesBlock.WorldColor.w > 0.5;
+    float _248;
+    if (_229)
     {
-        float2 _232 = RadianceCascadesBlock.Obstacle0.zw - RadianceCascadesBlock.Obstacle0.xy;
-        float2 _233 = _181 - RadianceCascadesBlock.Obstacle0.xy;
-        _244 = precise::min(_221, length(_233 - (_232 * fast::clamp(dot(_233, _232) / precise::max(dot(_232, _232), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+        float2 _236 = RadianceCascadesBlock.Obstacle0.zw - RadianceCascadesBlock.Obstacle0.xy;
+        float2 _237 = _185 - RadianceCascadesBlock.Obstacle0.xy;
+        _248 = precise::min(_225, length(_237 - (_236 * fast::clamp(dot(_237, _236) / precise::max(dot(_236, _236), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
     }
     else
     {
-        _244 = _221;
+        _248 = _225;
     }
-    bool _245 = RadianceCascadesBlock.WorldColor.w > 1.5;
-    float _264;
-    if (_245)
+    bool _249 = RadianceCascadesBlock.WorldColor.w > 1.5;
+    float _268;
+    if (_249)
     {
-        float2 _252 = RadianceCascadesBlock.Obstacle1.zw - RadianceCascadesBlock.Obstacle1.xy;
-        float2 _253 = _181 - RadianceCascadesBlock.Obstacle1.xy;
-        _264 = precise::min(_244, length(_253 - (_252 * fast::clamp(dot(_253, _252) / precise::max(dot(_252, _252), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
-    }
-    else
-    {
-        _264 = _244;
-    }
-    bool _265 = RadianceCascadesBlock.WorldColor.w > 2.5;
-    float _284;
-    if (_265)
-    {
-        float2 _272 = RadianceCascadesBlock.Obstacle2.zw - RadianceCascadesBlock.Obstacle2.xy;
-        float2 _273 = _181 - RadianceCascadesBlock.Obstacle2.xy;
-        _284 = precise::min(_264, length(_273 - (_272 * fast::clamp(dot(_273, _272) / precise::max(dot(_272, _272), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+        float2 _256 = RadianceCascadesBlock.Obstacle1.zw - RadianceCascadesBlock.Obstacle1.xy;
+        float2 _257 = _185 - RadianceCascadesBlock.Obstacle1.xy;
+        _268 = precise::min(_248, length(_257 - (_256 * fast::clamp(dot(_257, _256) / precise::max(dot(_256, _256), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
     }
     else
     {
-        _284 = _264;
+        _268 = _248;
     }
-    bool _285 = RadianceCascadesBlock.WorldColor.w > 3.5;
-    float _304;
-    if (_285)
+    bool _269 = RadianceCascadesBlock.WorldColor.w > 2.5;
+    float _288;
+    if (_269)
     {
-        float2 _292 = RadianceCascadesBlock.Obstacle3.zw - RadianceCascadesBlock.Obstacle3.xy;
-        float2 _293 = _181 - RadianceCascadesBlock.Obstacle3.xy;
-        _304 = precise::min(_284, length(_293 - (_292 * fast::clamp(dot(_293, _292) / precise::max(dot(_292, _292), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
-    }
-    else
-    {
-        _304 = _284;
-    }
-    bool _305 = RadianceCascadesBlock.WorldColor.w > 4.5;
-    float _324;
-    if (_305)
-    {
-        float2 _312 = RadianceCascadesBlock.Obstacle4.zw - RadianceCascadesBlock.Obstacle4.xy;
-        float2 _313 = _181 - RadianceCascadesBlock.Obstacle4.xy;
-        _324 = precise::min(_304, length(_313 - (_312 * fast::clamp(dot(_313, _312) / precise::max(dot(_312, _312), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+        float2 _276 = RadianceCascadesBlock.Obstacle2.zw - RadianceCascadesBlock.Obstacle2.xy;
+        float2 _277 = _185 - RadianceCascadesBlock.Obstacle2.xy;
+        _288 = precise::min(_268, length(_277 - (_276 * fast::clamp(dot(_277, _276) / precise::max(dot(_276, _276), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
     }
     else
     {
-        _324 = _304;
+        _288 = _268;
     }
-    bool _325 = RadianceCascadesBlock.WorldColor.w > 5.5;
-    float _344;
-    if (_325)
+    bool _289 = RadianceCascadesBlock.WorldColor.w > 3.5;
+    float _308;
+    if (_289)
     {
-        float2 _332 = RadianceCascadesBlock.Obstacle5.zw - RadianceCascadesBlock.Obstacle5.xy;
-        float2 _333 = _181 - RadianceCascadesBlock.Obstacle5.xy;
-        _344 = precise::min(_324, length(_333 - (_332 * fast::clamp(dot(_333, _332) / precise::max(dot(_332, _332), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
-    }
-    else
-    {
-        _344 = _324;
-    }
-    bool _345 = RadianceCascadesBlock.WorldColor.w > 6.5;
-    float _364;
-    if (_345)
-    {
-        float2 _352 = RadianceCascadesBlock.Obstacle6.zw - RadianceCascadesBlock.Obstacle6.xy;
-        float2 _353 = _181 - RadianceCascadesBlock.Obstacle6.xy;
-        _364 = precise::min(_344, length(_353 - (_352 * fast::clamp(dot(_353, _352) / precise::max(dot(_352, _352), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+        float2 _296 = RadianceCascadesBlock.Obstacle3.zw - RadianceCascadesBlock.Obstacle3.xy;
+        float2 _297 = _185 - RadianceCascadesBlock.Obstacle3.xy;
+        _308 = precise::min(_288, length(_297 - (_296 * fast::clamp(dot(_297, _296) / precise::max(dot(_296, _296), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
     }
     else
     {
-        _364 = _344;
+        _308 = _288;
     }
-    bool _365 = RadianceCascadesBlock.WorldColor.w > 7.5;
-    float _384;
-    if (_365)
+    bool _309 = RadianceCascadesBlock.WorldColor.w > 4.5;
+    float _328;
+    if (_309)
     {
-        float2 _372 = RadianceCascadesBlock.Obstacle7.zw - RadianceCascadesBlock.Obstacle7.xy;
-        float2 _373 = _181 - RadianceCascadesBlock.Obstacle7.xy;
-        _384 = precise::min(_364, length(_373 - (_372 * fast::clamp(dot(_373, _372) / precise::max(dot(_372, _372), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
-    }
-    else
-    {
-        _384 = _364;
-    }
-    int _387 = int(RadianceCascadesBlock.Cascade.x);
-    int _390 = int(RadianceCascadesBlock.Display.x);
-    float _403 = precise::max((RadianceCascadesBlock.Viewport.z * RadianceCascadesBlock.Viewport.y) / precise::max(RadianceCascadesBlock.Viewport.x, 0.001000000047497451305389404296875), 1.0);
-    float2 _404 = float2(RadianceCascadesBlock.Viewport.z, _403);
-    float2 _405 = in.in_var_TEXCOORD0 * _404;
-    float _406 = float(_387);
-    float _407 = sqrt(_406);
-    float _408 = float(_390);
-    float _409 = powr(_407, _408);
-    float2 _414 = precise::max(floor(_404 / float2(precise::max(_409, 1.0))), float2(1.0));
-    float2 _417 = floor(_405 / _414);
-    float _422 = _406 * (_417.x + (_409 * _417.y));
-    float2 _423 = fmod(_405, _414) + float2(0.5);
-    float2 _427 = (((_423 * _409) / _404) - float2(0.5)) * RadianceCascadesBlock.Viewport.xy;
-    float _429 = float(_390 + 1);
-    float _430 = powr(_406, _429);
-    float _435 = precise::min(RadianceCascadesBlock.Viewport.x / precise::max(RadianceCascadesBlock.Viewport.z, 1.0), RadianceCascadesBlock.Viewport.y / precise::max(_403, 1.0));
-    float _441 = ((_387 < 16) ? 1.0 : _407) * precise::max(RadianceCascadesBlock.Cascade.z, 0.0500000007450580596923828125);
-    float _444 = powr(_406, float(_390 - 1));
-    bool _445 = _390 == 0;
-    float _448 = ((_445 ? 1.0 : _441) * _444) * _435;
-    int _458 = int(RadianceCascadesBlock.Cascade.y) - 1;
-    float _469;
-    if (_390 == _458)
-    {
-        _469 = RadianceCascadesBlock.Cascade.w;
+        float2 _316 = RadianceCascadesBlock.Obstacle4.zw - RadianceCascadesBlock.Obstacle4.xy;
+        float2 _317 = _185 - RadianceCascadesBlock.Obstacle4.xy;
+        _328 = precise::min(_308, length(_317 - (_316 * fast::clamp(dot(_317, _316) / precise::max(dot(_316, _316), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
     }
     else
     {
-        _469 = precise::min(RadianceCascadesBlock.Cascade.w, _448 + ((_441 * ((powr(_406, _408) - _444) + ((RadianceCascadesBlock.Tuning.x * _430) * 0.707106769084930419921875))) * _435));
+        _328 = _308;
     }
-    float3 _471;
-    _471 = float3(0.0);
-    float3 _472;
-    for (int _474 = 0; _474 < 16; _471 = _472, _474++)
+    bool _329 = RadianceCascadesBlock.WorldColor.w > 5.5;
+    float _348;
+    if (_329)
     {
-        if (_474 >= _387)
+        float2 _336 = RadianceCascadesBlock.Obstacle5.zw - RadianceCascadesBlock.Obstacle5.xy;
+        float2 _337 = _185 - RadianceCascadesBlock.Obstacle5.xy;
+        _348 = precise::min(_328, length(_337 - (_336 * fast::clamp(dot(_337, _336) / precise::max(dot(_336, _336), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+    }
+    else
+    {
+        _348 = _328;
+    }
+    bool _349 = RadianceCascadesBlock.WorldColor.w > 6.5;
+    float _368;
+    if (_349)
+    {
+        float2 _356 = RadianceCascadesBlock.Obstacle6.zw - RadianceCascadesBlock.Obstacle6.xy;
+        float2 _357 = _185 - RadianceCascadesBlock.Obstacle6.xy;
+        _368 = precise::min(_348, length(_357 - (_356 * fast::clamp(dot(_357, _356) / precise::max(dot(_356, _356), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+    }
+    else
+    {
+        _368 = _348;
+    }
+    bool _369 = RadianceCascadesBlock.WorldColor.w > 7.5;
+    float _388;
+    if (_369)
+    {
+        float2 _376 = RadianceCascadesBlock.Obstacle7.zw - RadianceCascadesBlock.Obstacle7.xy;
+        float2 _377 = _185 - RadianceCascadesBlock.Obstacle7.xy;
+        _388 = precise::min(_368, length(_377 - (_376 * fast::clamp(dot(_377, _376) / precise::max(dot(_376, _376), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+    }
+    else
+    {
+        _388 = _368;
+    }
+    int _391 = int(RadianceCascadesBlock.Cascade.x);
+    int _394 = int(RadianceCascadesBlock.Display.x);
+    float _407 = precise::max((RadianceCascadesBlock.Viewport.z * RadianceCascadesBlock.Viewport.y) / precise::max(RadianceCascadesBlock.Viewport.x, 0.001000000047497451305389404296875), 1.0);
+    float2 _408 = float2(RadianceCascadesBlock.Viewport.z, _407);
+    float2 _409 = in.in_var_TEXCOORD0 * _408;
+    float _410 = float(_391);
+    float _411 = sqrt(_410);
+    float _412 = float(_394);
+    float _413 = powr(_411, _412);
+    float2 _418 = precise::max(floor(_408 / float2(precise::max(_413, 1.0))), float2(1.0));
+    float2 _421 = floor(_409 / _418);
+    float _426 = _410 * (_421.x + (_413 * _421.y));
+    float2 _427 = fmod(_409, _418) + float2(0.5);
+    float2 _431 = (((_427 * _413) / _408) - float2(0.5)) * RadianceCascadesBlock.Viewport.xy;
+    float _433 = float(_394 + 1);
+    float _434 = powr(_410, _433);
+    float _439 = precise::min(RadianceCascadesBlock.Viewport.x / precise::max(RadianceCascadesBlock.Viewport.z, 1.0), RadianceCascadesBlock.Viewport.y / precise::max(_407, 1.0));
+    float _445 = ((_391 < 16) ? 1.0 : _411) * precise::max(RadianceCascadesBlock.Cascade.z, 0.0500000007450580596923828125);
+    float _448 = powr(_410, float(_394 - 1));
+    bool _449 = _394 == 0;
+    float _452 = ((_449 ? 1.0 : _445) * _448) * _439;
+    int _462 = int(RadianceCascadesBlock.Cascade.y) - 1;
+    float _473;
+    if (_394 == _462)
+    {
+        _473 = RadianceCascadesBlock.Cascade.w;
+    }
+    else
+    {
+        _473 = precise::min(RadianceCascadesBlock.Cascade.w, _452 + ((_445 * ((powr(_410, _412) - _448) + ((RadianceCascadesBlock.Tuning.x * _434) * 0.707106769084930419921875))) * _439));
+    }
+    float3 _475;
+    _475 = float3(0.0);
+    float3 _476;
+    for (int _478 = 0; _478 < 16; _475 = _476, _478++)
+    {
+        if (_478 >= _391)
         {
             break;
         }
-        float _483 = _422 + float(_474);
-        float _487 = ((_483 + 0.5) * 6.283185482025146484375) / precise::max(_430, 1.0);
-        float2 _491 = float2(cos(_487), -sin(_487));
-        float _492 = precise::max(_448, 0.0199999995529651641845703125);
-        float _495;
-        float4 _1655;
-        float _494 = _492;
-        int _497 = 0;
+        float _487 = _426 + float(_478);
+        float _491 = ((_487 + 0.5) * 6.283185482025146484375) / precise::max(_434, 1.0);
+        float2 _495 = float2(cos(_491), -sin(_491));
+        float _496 = precise::max(_452, 0.0199999995529651641845703125);
+        float _499;
+        float4 _1648;
+        float _498 = _496;
+        int _501 = 0;
         for (;;)
         {
-            if (_497 < 24)
+            if (_501 < 24)
             {
-                if (_497 >= int(RadianceCascadesBlock.Tuning.w))
+                if (_501 >= int(RadianceCascadesBlock.Tuning.w))
                 {
-                    _1655 = float4(0.0);
+                    _1648 = float4(0.0);
                     break;
                 }
-                if (_494 >= _469)
+                if (_498 >= _473)
                 {
-                    _1655 = float4(0.0);
+                    _1648 = float4(0.0);
                     break;
                 }
-                float2 _512 = _427 + (_491 * _494);
-                float3 _514;
-                float _517;
-                int _519;
-                _514 = float3(0.0);
-                _517 = 0.0;
-                _519 = 0;
-                float _518;
-                float3 _515;
-                int _523;
-                for (;;)
+                float2 _523;
+                float2 _516 = _431 + (_495 * _498);
+                float _561;
+                do
                 {
-                    _523 = int(RadianceCascadesBlock.Tuning.z);
-                    if (_519 < _523)
+                    _523 = (_516 / RadianceCascadesBlock.Paint.xy) + float2(0.5);
+                    bool _530;
+                    if (!(_523.x < 0.0))
                     {
-                        uint _527 = uint(_519);
-                        float _531 = precise::max(((device float*)&Emissions._m0[_527].Color)[3], 0.00999999977648258209228515625);
-                        float2 _537 = Emissions._m0[_527].Segment.zw - Emissions._m0[_527].Segment.xy;
-                        float2 _538 = _512 - Emissions._m0[_527].Segment.xy;
-                        float _546 = length(_538 - (_537 * fast::clamp(dot(_538, _537) / precise::max(dot(_537, _537), 9.9999997473787516355514526367188e-05), 0.0, 1.0)));
-                        bool _548 = (_546 - _531) < 0.0;
-                        if (_548)
-                        {
-                            _515 = _514 + (Emissions._m0[_527].Color.xyz * (0.550000011920928955078125 + (0.449999988079071044921875 * smoothstep(_531, 0.0, precise::max(_546, 0.0)))));
-                        }
-                        else
-                        {
-                            _515 = _514;
-                        }
-                        _518 = _548 ? 1.0 : _517;
-                        _514 = _515;
-                        _517 = _518;
-                        _519++;
-                        continue;
+                        _530 = _523.x > 1.0;
                     }
                     else
                     {
+                        _530 = true;
+                    }
+                    bool _536;
+                    if (!_530)
+                    {
+                        _536 = _523.y < 0.0;
+                    }
+                    else
+                    {
+                        _536 = true;
+                    }
+                    bool _542;
+                    if (!_536)
+                    {
+                        _542 = _523.y > 1.0;
+                    }
+                    else
+                    {
+                        _542 = true;
+                    }
+                    if (_542)
+                    {
+                        _561 = RadianceCascadesBlock.Paint.z + RadianceCascadesBlock.Paint.w;
                         break;
                     }
+                    _561 = (StrokeDistance.sample(StrokeDistanceSampler, _523).x * RadianceCascadesBlock.Paint.z) + RadianceCascadesBlock.Paint.w;
+                    break;
+                } while(false);
+                if (_561 < 0.02500000037252902984619140625)
+                {
+                    float4 _568 = StrokeTexture.sample(StrokeSampler, _523);
+                    float3 _575 = (powr(_568.xyz, float3(2.2000000476837158203125)) * _568.w) * RadianceCascadesBlock.Tuning.z;
+                    float4 _576 = float4(_575.x, _575.y, _575.z, float4(0.0).w);
+                    _576.w = 1.0;
+                    _1648 = _576;
+                    break;
                 }
-                float3 _560;
-                float _563;
-                int _565;
-                _560 = _514;
-                _563 = _517;
-                _565 = 0;
-                float3 _561;
-                float _564;
-                int _569;
+                float3 _579;
+                float _582;
+                int _584;
+                _579 = float3(0.0);
+                _582 = 0.0;
+                _584 = 0;
+                float3 _580;
+                float _583;
+                int _588;
                 for (;;)
                 {
-                    _569 = int(RadianceCascadesBlock.Tuning.y);
-                    if (_565 < _569)
+                    _588 = int(RadianceCascadesBlock.Tuning.y);
+                    if (_584 < _588)
                     {
-                        uint _573 = uint(_565);
-                        if (((device float*)&Lights._m0[_573].Color)[3] < 0.5)
+                        uint _592 = uint(_584);
+                        if (((device float*)&Lights._m0[_592].Color)[3] < 0.5)
                         {
-                            _561 = _560;
-                            _564 = _563;
-                            int _566 = _565 + 1;
-                            _560 = _561;
-                            _563 = _564;
-                            _565 = _566;
+                            _580 = _579;
+                            _583 = _582;
+                            int _585 = _584 + 1;
+                            _579 = _580;
+                            _582 = _583;
+                            _584 = _585;
                             continue;
                         }
-                        float2 _583 = Lights._m0[_573].Position.xy - _512;
-                        float _584 = length(_583);
-                        float _588 = precise::max(((device float*)&Lights._m0[_573].Position)[3] * 1.60000002384185791015625, 0.07999999821186065673828125);
-                        bool _589 = _584 < _588;
-                        float3 _607;
-                        if (_589)
+                        float2 _602 = Lights._m0[_592].Position.xy - _516;
+                        float _603 = length(_602);
+                        float _607 = precise::max(((device float*)&Lights._m0[_592].Position)[3] * 1.60000002384185791015625, 0.07999999821186065673828125);
+                        bool _608 = _603 < _607;
+                        float3 _626;
+                        if (_608)
                         {
-                            _607 = _560 + (((Lights._m0[_573].Color.xyz * ((device float*)&Lights._m0[_573].Position)[2]) * (0.449999988079071044921875 + (0.550000011920928955078125 * fast::clamp(dot(_491, fast::normalize(_583 + float2(9.9999997473787516355514526367188e-05))), 0.0, 1.0)))) * smoothstep(_588, 0.0, _584));
+                            _626 = _579 + (((Lights._m0[_592].Color.xyz * ((device float*)&Lights._m0[_592].Position)[2]) * (0.449999988079071044921875 + (0.550000011920928955078125 * fast::clamp(dot(_495, fast::normalize(_602 + float2(9.9999997473787516355514526367188e-05))), 0.0, 1.0)))) * smoothstep(_607, 0.0, _603));
                         }
                         else
                         {
-                            _607 = _560;
+                            _626 = _579;
                         }
-                        _561 = _607;
-                        _564 = _589 ? 1.0 : _563;
-                        int _566 = _565 + 1;
-                        _560 = _561;
-                        _563 = _564;
-                        _565 = _566;
+                        _580 = _626;
+                        _583 = _608 ? 1.0 : _582;
+                        int _585 = _584 + 1;
+                        _579 = _580;
+                        _582 = _583;
+                        _584 = _585;
                         continue;
                     }
                     else
@@ -310,33 +310,22 @@ fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], const
                         break;
                     }
                 }
-                if (_563 > 0.5)
+                if (_582 > 0.5)
                 {
-                    float4 _612 = float4(_560.x, _560.y, _560.z, float4(0.0).w);
-                    _612.w = 1.0;
-                    _1655 = _612;
+                    float4 _631 = float4(_579.x, _579.y, _579.z, float4(0.0).w);
+                    _631.w = 1.0;
+                    _1648 = _631;
                     break;
                 }
-                float2 _616 = abs(_512 - float2(1.89999997615814208984375, 2.900000095367431640625)) + float2(-1.63999998569488525390625, -0.180000007152557373046875);
-                float2 _628 = abs(_512 - float2(7.19999980926513671875, 2.900000095367431640625)) + float2(-0.180000007152557373046875, -2.139999866485595703125);
-                float2 _644 = abs(_512 - float2(-5.599999904632568359375, 5.0)) + float2(-2.38000011444091796875, -0.199999988079071044921875);
-                float _653 = precise::min(precise::min(precise::min(precise::min(1000.0, (precise::min(precise::max(_616.x, _616.y), 0.0) + length(precise::max(_616, float2(0.0)))) - 0.1599999964237213134765625), (precise::min(precise::max(_628.x, _628.y), 0.0) + length(precise::max(_628, float2(0.0)))) - 0.1599999964237213134765625), length(_512 - float2(4.80000019073486328125, -3.2000000476837158203125)) - 1.0499999523162841796875), (precise::min(precise::max(_644.x, _644.y), 0.0) + length(precise::max(_644, float2(0.0)))) - 0.119999997317790985107421875);
-                float _672;
-                if (_225)
-                {
-                    float2 _660 = RadianceCascadesBlock.Obstacle0.zw - RadianceCascadesBlock.Obstacle0.xy;
-                    float2 _661 = _512 - RadianceCascadesBlock.Obstacle0.xy;
-                    _672 = precise::min(_653, length(_661 - (_660 * fast::clamp(dot(_661, _660) / precise::max(dot(_660, _660), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
-                }
-                else
-                {
-                    _672 = _653;
-                }
+                float2 _635 = abs(_516 - float2(1.89999997615814208984375, 2.900000095367431640625)) + float2(-1.63999998569488525390625, -0.180000007152557373046875);
+                float2 _647 = abs(_516 - float2(7.19999980926513671875, 2.900000095367431640625)) + float2(-0.180000007152557373046875, -2.139999866485595703125);
+                float2 _663 = abs(_516 - float2(-5.599999904632568359375, 5.0)) + float2(-2.38000011444091796875, -0.199999988079071044921875);
+                float _672 = precise::min(precise::min(precise::min(precise::min(1000.0, (precise::min(precise::max(_635.x, _635.y), 0.0) + length(precise::max(_635, float2(0.0)))) - 0.1599999964237213134765625), (precise::min(precise::max(_647.x, _647.y), 0.0) + length(precise::max(_647, float2(0.0)))) - 0.1599999964237213134765625), length(_516 - float2(4.80000019073486328125, -3.2000000476837158203125)) - 1.0499999523162841796875), (precise::min(precise::max(_663.x, _663.y), 0.0) + length(precise::max(_663, float2(0.0)))) - 0.119999997317790985107421875);
                 float _691;
-                if (_245)
+                if (_229)
                 {
-                    float2 _679 = RadianceCascadesBlock.Obstacle1.zw - RadianceCascadesBlock.Obstacle1.xy;
-                    float2 _680 = _512 - RadianceCascadesBlock.Obstacle1.xy;
+                    float2 _679 = RadianceCascadesBlock.Obstacle0.zw - RadianceCascadesBlock.Obstacle0.xy;
+                    float2 _680 = _516 - RadianceCascadesBlock.Obstacle0.xy;
                     _691 = precise::min(_672, length(_680 - (_679 * fast::clamp(dot(_680, _679) / precise::max(dot(_679, _679), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                 }
                 else
@@ -344,10 +333,10 @@ fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], const
                     _691 = _672;
                 }
                 float _710;
-                if (_265)
+                if (_249)
                 {
-                    float2 _698 = RadianceCascadesBlock.Obstacle2.zw - RadianceCascadesBlock.Obstacle2.xy;
-                    float2 _699 = _512 - RadianceCascadesBlock.Obstacle2.xy;
+                    float2 _698 = RadianceCascadesBlock.Obstacle1.zw - RadianceCascadesBlock.Obstacle1.xy;
+                    float2 _699 = _516 - RadianceCascadesBlock.Obstacle1.xy;
                     _710 = precise::min(_691, length(_699 - (_698 * fast::clamp(dot(_699, _698) / precise::max(dot(_698, _698), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                 }
                 else
@@ -355,10 +344,10 @@ fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], const
                     _710 = _691;
                 }
                 float _729;
-                if (_285)
+                if (_269)
                 {
-                    float2 _717 = RadianceCascadesBlock.Obstacle3.zw - RadianceCascadesBlock.Obstacle3.xy;
-                    float2 _718 = _512 - RadianceCascadesBlock.Obstacle3.xy;
+                    float2 _717 = RadianceCascadesBlock.Obstacle2.zw - RadianceCascadesBlock.Obstacle2.xy;
+                    float2 _718 = _516 - RadianceCascadesBlock.Obstacle2.xy;
                     _729 = precise::min(_710, length(_718 - (_717 * fast::clamp(dot(_718, _717) / precise::max(dot(_717, _717), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                 }
                 else
@@ -366,10 +355,10 @@ fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], const
                     _729 = _710;
                 }
                 float _748;
-                if (_305)
+                if (_289)
                 {
-                    float2 _736 = RadianceCascadesBlock.Obstacle4.zw - RadianceCascadesBlock.Obstacle4.xy;
-                    float2 _737 = _512 - RadianceCascadesBlock.Obstacle4.xy;
+                    float2 _736 = RadianceCascadesBlock.Obstacle3.zw - RadianceCascadesBlock.Obstacle3.xy;
+                    float2 _737 = _516 - RadianceCascadesBlock.Obstacle3.xy;
                     _748 = precise::min(_729, length(_737 - (_736 * fast::clamp(dot(_737, _736) / precise::max(dot(_736, _736), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                 }
                 else
@@ -377,10 +366,10 @@ fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], const
                     _748 = _729;
                 }
                 float _767;
-                if (_325)
+                if (_309)
                 {
-                    float2 _755 = RadianceCascadesBlock.Obstacle5.zw - RadianceCascadesBlock.Obstacle5.xy;
-                    float2 _756 = _512 - RadianceCascadesBlock.Obstacle5.xy;
+                    float2 _755 = RadianceCascadesBlock.Obstacle4.zw - RadianceCascadesBlock.Obstacle4.xy;
+                    float2 _756 = _516 - RadianceCascadesBlock.Obstacle4.xy;
                     _767 = precise::min(_748, length(_756 - (_755 * fast::clamp(dot(_756, _755) / precise::max(dot(_755, _755), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                 }
                 else
@@ -388,10 +377,10 @@ fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], const
                     _767 = _748;
                 }
                 float _786;
-                if (_345)
+                if (_329)
                 {
-                    float2 _774 = RadianceCascadesBlock.Obstacle6.zw - RadianceCascadesBlock.Obstacle6.xy;
-                    float2 _775 = _512 - RadianceCascadesBlock.Obstacle6.xy;
+                    float2 _774 = RadianceCascadesBlock.Obstacle5.zw - RadianceCascadesBlock.Obstacle5.xy;
+                    float2 _775 = _516 - RadianceCascadesBlock.Obstacle5.xy;
                     _786 = precise::min(_767, length(_775 - (_774 * fast::clamp(dot(_775, _774) / precise::max(dot(_774, _774), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                 }
                 else
@@ -399,39 +388,39 @@ fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], const
                     _786 = _767;
                 }
                 float _805;
-                if (_365)
+                if (_349)
                 {
-                    float2 _793 = RadianceCascadesBlock.Obstacle7.zw - RadianceCascadesBlock.Obstacle7.xy;
-                    float2 _794 = _512 - RadianceCascadesBlock.Obstacle7.xy;
+                    float2 _793 = RadianceCascadesBlock.Obstacle6.zw - RadianceCascadesBlock.Obstacle6.xy;
+                    float2 _794 = _516 - RadianceCascadesBlock.Obstacle6.xy;
                     _805 = precise::min(_786, length(_794 - (_793 * fast::clamp(dot(_794, _793) / precise::max(dot(_793, _793), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                 }
                 else
                 {
                     _805 = _786;
                 }
-                if (_805 < 0.017999999225139617919921875)
+                float _824;
+                if (_369)
                 {
-                    float2 _809 = _512 + float2(0.01200000010430812835693359375, 0.0);
-                    float2 _812 = abs(_512 + float2(-1.888000011444091796875, -2.900000095367431640625)) + float2(-1.63999998569488525390625, -0.180000007152557373046875);
-                    float2 _824 = abs(_512 + float2(-7.187999725341796875, -2.900000095367431640625)) + float2(-0.180000007152557373046875, -2.139999866485595703125);
-                    float2 _840 = abs(_512 + float2(5.611999988555908203125, -5.0)) + float2(-2.38000011444091796875, -0.199999988079071044921875);
-                    float _849 = precise::min(precise::min(precise::min(precise::min(1000.0, (precise::min(precise::max(_812.x, _812.y), 0.0) + length(precise::max(_812, float2(0.0)))) - 0.1599999964237213134765625), (precise::min(precise::max(_824.x, _824.y), 0.0) + length(precise::max(_824, float2(0.0)))) - 0.1599999964237213134765625), length(_512 + float2(-4.7880001068115234375, 3.2000000476837158203125)) - 1.0499999523162841796875), (precise::min(precise::max(_840.x, _840.y), 0.0) + length(precise::max(_840, float2(0.0)))) - 0.119999997317790985107421875);
-                    float _868;
-                    if (_225)
-                    {
-                        float2 _856 = RadianceCascadesBlock.Obstacle0.zw - RadianceCascadesBlock.Obstacle0.xy;
-                        float2 _857 = _809 - RadianceCascadesBlock.Obstacle0.xy;
-                        _868 = precise::min(_849, length(_857 - (_856 * fast::clamp(dot(_857, _856) / precise::max(dot(_856, _856), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
-                    }
-                    else
-                    {
-                        _868 = _849;
-                    }
+                    float2 _812 = RadianceCascadesBlock.Obstacle7.zw - RadianceCascadesBlock.Obstacle7.xy;
+                    float2 _813 = _516 - RadianceCascadesBlock.Obstacle7.xy;
+                    _824 = precise::min(_805, length(_813 - (_812 * fast::clamp(dot(_813, _812) / precise::max(dot(_812, _812), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                }
+                else
+                {
+                    _824 = _805;
+                }
+                if (_824 < 0.017999999225139617919921875)
+                {
+                    float2 _828 = _516 + float2(0.01200000010430812835693359375, 0.0);
+                    float2 _831 = abs(_516 + float2(-1.888000011444091796875, -2.900000095367431640625)) + float2(-1.63999998569488525390625, -0.180000007152557373046875);
+                    float2 _843 = abs(_516 + float2(-7.187999725341796875, -2.900000095367431640625)) + float2(-0.180000007152557373046875, -2.139999866485595703125);
+                    float2 _859 = abs(_516 + float2(5.611999988555908203125, -5.0)) + float2(-2.38000011444091796875, -0.199999988079071044921875);
+                    float _868 = precise::min(precise::min(precise::min(precise::min(1000.0, (precise::min(precise::max(_831.x, _831.y), 0.0) + length(precise::max(_831, float2(0.0)))) - 0.1599999964237213134765625), (precise::min(precise::max(_843.x, _843.y), 0.0) + length(precise::max(_843, float2(0.0)))) - 0.1599999964237213134765625), length(_516 + float2(-4.7880001068115234375, 3.2000000476837158203125)) - 1.0499999523162841796875), (precise::min(precise::max(_859.x, _859.y), 0.0) + length(precise::max(_859, float2(0.0)))) - 0.119999997317790985107421875);
                     float _887;
-                    if (_245)
+                    if (_229)
                     {
-                        float2 _875 = RadianceCascadesBlock.Obstacle1.zw - RadianceCascadesBlock.Obstacle1.xy;
-                        float2 _876 = _809 - RadianceCascadesBlock.Obstacle1.xy;
+                        float2 _875 = RadianceCascadesBlock.Obstacle0.zw - RadianceCascadesBlock.Obstacle0.xy;
+                        float2 _876 = _828 - RadianceCascadesBlock.Obstacle0.xy;
                         _887 = precise::min(_868, length(_876 - (_875 * fast::clamp(dot(_876, _875) / precise::max(dot(_875, _875), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                     }
                     else
@@ -439,10 +428,10 @@ fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], const
                         _887 = _868;
                     }
                     float _906;
-                    if (_265)
+                    if (_249)
                     {
-                        float2 _894 = RadianceCascadesBlock.Obstacle2.zw - RadianceCascadesBlock.Obstacle2.xy;
-                        float2 _895 = _809 - RadianceCascadesBlock.Obstacle2.xy;
+                        float2 _894 = RadianceCascadesBlock.Obstacle1.zw - RadianceCascadesBlock.Obstacle1.xy;
+                        float2 _895 = _828 - RadianceCascadesBlock.Obstacle1.xy;
                         _906 = precise::min(_887, length(_895 - (_894 * fast::clamp(dot(_895, _894) / precise::max(dot(_894, _894), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                     }
                     else
@@ -450,10 +439,10 @@ fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], const
                         _906 = _887;
                     }
                     float _925;
-                    if (_285)
+                    if (_269)
                     {
-                        float2 _913 = RadianceCascadesBlock.Obstacle3.zw - RadianceCascadesBlock.Obstacle3.xy;
-                        float2 _914 = _809 - RadianceCascadesBlock.Obstacle3.xy;
+                        float2 _913 = RadianceCascadesBlock.Obstacle2.zw - RadianceCascadesBlock.Obstacle2.xy;
+                        float2 _914 = _828 - RadianceCascadesBlock.Obstacle2.xy;
                         _925 = precise::min(_906, length(_914 - (_913 * fast::clamp(dot(_914, _913) / precise::max(dot(_913, _913), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                     }
                     else
@@ -461,10 +450,10 @@ fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], const
                         _925 = _906;
                     }
                     float _944;
-                    if (_305)
+                    if (_289)
                     {
-                        float2 _932 = RadianceCascadesBlock.Obstacle4.zw - RadianceCascadesBlock.Obstacle4.xy;
-                        float2 _933 = _809 - RadianceCascadesBlock.Obstacle4.xy;
+                        float2 _932 = RadianceCascadesBlock.Obstacle3.zw - RadianceCascadesBlock.Obstacle3.xy;
+                        float2 _933 = _828 - RadianceCascadesBlock.Obstacle3.xy;
                         _944 = precise::min(_925, length(_933 - (_932 * fast::clamp(dot(_933, _932) / precise::max(dot(_932, _932), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                     }
                     else
@@ -472,10 +461,10 @@ fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], const
                         _944 = _925;
                     }
                     float _963;
-                    if (_325)
+                    if (_309)
                     {
-                        float2 _951 = RadianceCascadesBlock.Obstacle5.zw - RadianceCascadesBlock.Obstacle5.xy;
-                        float2 _952 = _809 - RadianceCascadesBlock.Obstacle5.xy;
+                        float2 _951 = RadianceCascadesBlock.Obstacle4.zw - RadianceCascadesBlock.Obstacle4.xy;
+                        float2 _952 = _828 - RadianceCascadesBlock.Obstacle4.xy;
                         _963 = precise::min(_944, length(_952 - (_951 * fast::clamp(dot(_952, _951) / precise::max(dot(_951, _951), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                     }
                     else
@@ -483,10 +472,10 @@ fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], const
                         _963 = _944;
                     }
                     float _982;
-                    if (_345)
+                    if (_329)
                     {
-                        float2 _970 = RadianceCascadesBlock.Obstacle6.zw - RadianceCascadesBlock.Obstacle6.xy;
-                        float2 _971 = _809 - RadianceCascadesBlock.Obstacle6.xy;
+                        float2 _970 = RadianceCascadesBlock.Obstacle5.zw - RadianceCascadesBlock.Obstacle5.xy;
+                        float2 _971 = _828 - RadianceCascadesBlock.Obstacle5.xy;
                         _982 = precise::min(_963, length(_971 - (_970 * fast::clamp(dot(_971, _970) / precise::max(dot(_970, _970), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                     }
                     else
@@ -494,37 +483,37 @@ fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], const
                         _982 = _963;
                     }
                     float _1001;
-                    if (_365)
+                    if (_349)
                     {
-                        float2 _989 = RadianceCascadesBlock.Obstacle7.zw - RadianceCascadesBlock.Obstacle7.xy;
-                        float2 _990 = _809 - RadianceCascadesBlock.Obstacle7.xy;
+                        float2 _989 = RadianceCascadesBlock.Obstacle6.zw - RadianceCascadesBlock.Obstacle6.xy;
+                        float2 _990 = _828 - RadianceCascadesBlock.Obstacle6.xy;
                         _1001 = precise::min(_982, length(_990 - (_989 * fast::clamp(dot(_990, _989) / precise::max(dot(_989, _989), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                     }
                     else
                     {
                         _1001 = _982;
                     }
-                    float2 _1002 = _512 - float2(0.01200000010430812835693359375, 0.0);
-                    float2 _1005 = abs(_512 - float2(1.9119999408721923828125, 2.900000095367431640625)) + float2(-1.63999998569488525390625, -0.180000007152557373046875);
-                    float2 _1017 = abs(_512 - float2(7.2119998931884765625, 2.900000095367431640625)) + float2(-0.180000007152557373046875, -2.139999866485595703125);
-                    float2 _1033 = abs(_512 - float2(-5.587999820709228515625, 5.0)) + float2(-2.38000011444091796875, -0.199999988079071044921875);
-                    float _1042 = precise::min(precise::min(precise::min(precise::min(1000.0, (precise::min(precise::max(_1005.x, _1005.y), 0.0) + length(precise::max(_1005, float2(0.0)))) - 0.1599999964237213134765625), (precise::min(precise::max(_1017.x, _1017.y), 0.0) + length(precise::max(_1017, float2(0.0)))) - 0.1599999964237213134765625), length(_512 - float2(4.812000274658203125, -3.2000000476837158203125)) - 1.0499999523162841796875), (precise::min(precise::max(_1033.x, _1033.y), 0.0) + length(precise::max(_1033, float2(0.0)))) - 0.119999997317790985107421875);
-                    float _1061;
-                    if (_225)
+                    float _1020;
+                    if (_369)
                     {
-                        float2 _1049 = RadianceCascadesBlock.Obstacle0.zw - RadianceCascadesBlock.Obstacle0.xy;
-                        float2 _1050 = _1002 - RadianceCascadesBlock.Obstacle0.xy;
-                        _1061 = precise::min(_1042, length(_1050 - (_1049 * fast::clamp(dot(_1050, _1049) / precise::max(dot(_1049, _1049), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                        float2 _1008 = RadianceCascadesBlock.Obstacle7.zw - RadianceCascadesBlock.Obstacle7.xy;
+                        float2 _1009 = _828 - RadianceCascadesBlock.Obstacle7.xy;
+                        _1020 = precise::min(_1001, length(_1009 - (_1008 * fast::clamp(dot(_1009, _1008) / precise::max(dot(_1008, _1008), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                     }
                     else
                     {
-                        _1061 = _1042;
+                        _1020 = _1001;
                     }
+                    float2 _1021 = _516 - float2(0.01200000010430812835693359375, 0.0);
+                    float2 _1024 = abs(_516 - float2(1.9119999408721923828125, 2.900000095367431640625)) + float2(-1.63999998569488525390625, -0.180000007152557373046875);
+                    float2 _1036 = abs(_516 - float2(7.2119998931884765625, 2.900000095367431640625)) + float2(-0.180000007152557373046875, -2.139999866485595703125);
+                    float2 _1052 = abs(_516 - float2(-5.587999820709228515625, 5.0)) + float2(-2.38000011444091796875, -0.199999988079071044921875);
+                    float _1061 = precise::min(precise::min(precise::min(precise::min(1000.0, (precise::min(precise::max(_1024.x, _1024.y), 0.0) + length(precise::max(_1024, float2(0.0)))) - 0.1599999964237213134765625), (precise::min(precise::max(_1036.x, _1036.y), 0.0) + length(precise::max(_1036, float2(0.0)))) - 0.1599999964237213134765625), length(_516 - float2(4.812000274658203125, -3.2000000476837158203125)) - 1.0499999523162841796875), (precise::min(precise::max(_1052.x, _1052.y), 0.0) + length(precise::max(_1052, float2(0.0)))) - 0.119999997317790985107421875);
                     float _1080;
-                    if (_245)
+                    if (_229)
                     {
-                        float2 _1068 = RadianceCascadesBlock.Obstacle1.zw - RadianceCascadesBlock.Obstacle1.xy;
-                        float2 _1069 = _1002 - RadianceCascadesBlock.Obstacle1.xy;
+                        float2 _1068 = RadianceCascadesBlock.Obstacle0.zw - RadianceCascadesBlock.Obstacle0.xy;
+                        float2 _1069 = _1021 - RadianceCascadesBlock.Obstacle0.xy;
                         _1080 = precise::min(_1061, length(_1069 - (_1068 * fast::clamp(dot(_1069, _1068) / precise::max(dot(_1068, _1068), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                     }
                     else
@@ -532,10 +521,10 @@ fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], const
                         _1080 = _1061;
                     }
                     float _1099;
-                    if (_265)
+                    if (_249)
                     {
-                        float2 _1087 = RadianceCascadesBlock.Obstacle2.zw - RadianceCascadesBlock.Obstacle2.xy;
-                        float2 _1088 = _1002 - RadianceCascadesBlock.Obstacle2.xy;
+                        float2 _1087 = RadianceCascadesBlock.Obstacle1.zw - RadianceCascadesBlock.Obstacle1.xy;
+                        float2 _1088 = _1021 - RadianceCascadesBlock.Obstacle1.xy;
                         _1099 = precise::min(_1080, length(_1088 - (_1087 * fast::clamp(dot(_1088, _1087) / precise::max(dot(_1087, _1087), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                     }
                     else
@@ -543,10 +532,10 @@ fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], const
                         _1099 = _1080;
                     }
                     float _1118;
-                    if (_285)
+                    if (_269)
                     {
-                        float2 _1106 = RadianceCascadesBlock.Obstacle3.zw - RadianceCascadesBlock.Obstacle3.xy;
-                        float2 _1107 = _1002 - RadianceCascadesBlock.Obstacle3.xy;
+                        float2 _1106 = RadianceCascadesBlock.Obstacle2.zw - RadianceCascadesBlock.Obstacle2.xy;
+                        float2 _1107 = _1021 - RadianceCascadesBlock.Obstacle2.xy;
                         _1118 = precise::min(_1099, length(_1107 - (_1106 * fast::clamp(dot(_1107, _1106) / precise::max(dot(_1106, _1106), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                     }
                     else
@@ -554,10 +543,10 @@ fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], const
                         _1118 = _1099;
                     }
                     float _1137;
-                    if (_305)
+                    if (_289)
                     {
-                        float2 _1125 = RadianceCascadesBlock.Obstacle4.zw - RadianceCascadesBlock.Obstacle4.xy;
-                        float2 _1126 = _1002 - RadianceCascadesBlock.Obstacle4.xy;
+                        float2 _1125 = RadianceCascadesBlock.Obstacle3.zw - RadianceCascadesBlock.Obstacle3.xy;
+                        float2 _1126 = _1021 - RadianceCascadesBlock.Obstacle3.xy;
                         _1137 = precise::min(_1118, length(_1126 - (_1125 * fast::clamp(dot(_1126, _1125) / precise::max(dot(_1125, _1125), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                     }
                     else
@@ -565,10 +554,10 @@ fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], const
                         _1137 = _1118;
                     }
                     float _1156;
-                    if (_325)
+                    if (_309)
                     {
-                        float2 _1144 = RadianceCascadesBlock.Obstacle5.zw - RadianceCascadesBlock.Obstacle5.xy;
-                        float2 _1145 = _1002 - RadianceCascadesBlock.Obstacle5.xy;
+                        float2 _1144 = RadianceCascadesBlock.Obstacle4.zw - RadianceCascadesBlock.Obstacle4.xy;
+                        float2 _1145 = _1021 - RadianceCascadesBlock.Obstacle4.xy;
                         _1156 = precise::min(_1137, length(_1145 - (_1144 * fast::clamp(dot(_1145, _1144) / precise::max(dot(_1144, _1144), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                     }
                     else
@@ -576,10 +565,10 @@ fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], const
                         _1156 = _1137;
                     }
                     float _1175;
-                    if (_345)
+                    if (_329)
                     {
-                        float2 _1163 = RadianceCascadesBlock.Obstacle6.zw - RadianceCascadesBlock.Obstacle6.xy;
-                        float2 _1164 = _1002 - RadianceCascadesBlock.Obstacle6.xy;
+                        float2 _1163 = RadianceCascadesBlock.Obstacle5.zw - RadianceCascadesBlock.Obstacle5.xy;
+                        float2 _1164 = _1021 - RadianceCascadesBlock.Obstacle5.xy;
                         _1175 = precise::min(_1156, length(_1164 - (_1163 * fast::clamp(dot(_1164, _1163) / precise::max(dot(_1163, _1163), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                     }
                     else
@@ -587,37 +576,37 @@ fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], const
                         _1175 = _1156;
                     }
                     float _1194;
-                    if (_365)
+                    if (_349)
                     {
-                        float2 _1182 = RadianceCascadesBlock.Obstacle7.zw - RadianceCascadesBlock.Obstacle7.xy;
-                        float2 _1183 = _1002 - RadianceCascadesBlock.Obstacle7.xy;
+                        float2 _1182 = RadianceCascadesBlock.Obstacle6.zw - RadianceCascadesBlock.Obstacle6.xy;
+                        float2 _1183 = _1021 - RadianceCascadesBlock.Obstacle6.xy;
                         _1194 = precise::min(_1175, length(_1183 - (_1182 * fast::clamp(dot(_1183, _1182) / precise::max(dot(_1182, _1182), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                     }
                     else
                     {
                         _1194 = _1175;
                     }
-                    float2 _1196 = _512 + float2(0.0, 0.01200000010430812835693359375);
-                    float2 _1199 = abs(_512 + float2(-1.89999997615814208984375, -2.888000011444091796875)) + float2(-1.63999998569488525390625, -0.180000007152557373046875);
-                    float2 _1211 = abs(_512 + float2(-7.19999980926513671875, -2.888000011444091796875)) + float2(-0.180000007152557373046875, -2.139999866485595703125);
-                    float2 _1227 = abs(_512 + float2(5.599999904632568359375, -4.98799991607666015625)) + float2(-2.38000011444091796875, -0.199999988079071044921875);
-                    float _1236 = precise::min(precise::min(precise::min(precise::min(1000.0, (precise::min(precise::max(_1199.x, _1199.y), 0.0) + length(precise::max(_1199, float2(0.0)))) - 0.1599999964237213134765625), (precise::min(precise::max(_1211.x, _1211.y), 0.0) + length(precise::max(_1211, float2(0.0)))) - 0.1599999964237213134765625), length(_512 + float2(-4.80000019073486328125, 3.2120001316070556640625)) - 1.0499999523162841796875), (precise::min(precise::max(_1227.x, _1227.y), 0.0) + length(precise::max(_1227, float2(0.0)))) - 0.119999997317790985107421875);
-                    float _1255;
-                    if (_225)
+                    float _1213;
+                    if (_369)
                     {
-                        float2 _1243 = RadianceCascadesBlock.Obstacle0.zw - RadianceCascadesBlock.Obstacle0.xy;
-                        float2 _1244 = _1196 - RadianceCascadesBlock.Obstacle0.xy;
-                        _1255 = precise::min(_1236, length(_1244 - (_1243 * fast::clamp(dot(_1244, _1243) / precise::max(dot(_1243, _1243), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                        float2 _1201 = RadianceCascadesBlock.Obstacle7.zw - RadianceCascadesBlock.Obstacle7.xy;
+                        float2 _1202 = _1021 - RadianceCascadesBlock.Obstacle7.xy;
+                        _1213 = precise::min(_1194, length(_1202 - (_1201 * fast::clamp(dot(_1202, _1201) / precise::max(dot(_1201, _1201), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                     }
                     else
                     {
-                        _1255 = _1236;
+                        _1213 = _1194;
                     }
+                    float2 _1215 = _516 + float2(0.0, 0.01200000010430812835693359375);
+                    float2 _1218 = abs(_516 + float2(-1.89999997615814208984375, -2.888000011444091796875)) + float2(-1.63999998569488525390625, -0.180000007152557373046875);
+                    float2 _1230 = abs(_516 + float2(-7.19999980926513671875, -2.888000011444091796875)) + float2(-0.180000007152557373046875, -2.139999866485595703125);
+                    float2 _1246 = abs(_516 + float2(5.599999904632568359375, -4.98799991607666015625)) + float2(-2.38000011444091796875, -0.199999988079071044921875);
+                    float _1255 = precise::min(precise::min(precise::min(precise::min(1000.0, (precise::min(precise::max(_1218.x, _1218.y), 0.0) + length(precise::max(_1218, float2(0.0)))) - 0.1599999964237213134765625), (precise::min(precise::max(_1230.x, _1230.y), 0.0) + length(precise::max(_1230, float2(0.0)))) - 0.1599999964237213134765625), length(_516 + float2(-4.80000019073486328125, 3.2120001316070556640625)) - 1.0499999523162841796875), (precise::min(precise::max(_1246.x, _1246.y), 0.0) + length(precise::max(_1246, float2(0.0)))) - 0.119999997317790985107421875);
                     float _1274;
-                    if (_245)
+                    if (_229)
                     {
-                        float2 _1262 = RadianceCascadesBlock.Obstacle1.zw - RadianceCascadesBlock.Obstacle1.xy;
-                        float2 _1263 = _1196 - RadianceCascadesBlock.Obstacle1.xy;
+                        float2 _1262 = RadianceCascadesBlock.Obstacle0.zw - RadianceCascadesBlock.Obstacle0.xy;
+                        float2 _1263 = _1215 - RadianceCascadesBlock.Obstacle0.xy;
                         _1274 = precise::min(_1255, length(_1263 - (_1262 * fast::clamp(dot(_1263, _1262) / precise::max(dot(_1262, _1262), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                     }
                     else
@@ -625,10 +614,10 @@ fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], const
                         _1274 = _1255;
                     }
                     float _1293;
-                    if (_265)
+                    if (_249)
                     {
-                        float2 _1281 = RadianceCascadesBlock.Obstacle2.zw - RadianceCascadesBlock.Obstacle2.xy;
-                        float2 _1282 = _1196 - RadianceCascadesBlock.Obstacle2.xy;
+                        float2 _1281 = RadianceCascadesBlock.Obstacle1.zw - RadianceCascadesBlock.Obstacle1.xy;
+                        float2 _1282 = _1215 - RadianceCascadesBlock.Obstacle1.xy;
                         _1293 = precise::min(_1274, length(_1282 - (_1281 * fast::clamp(dot(_1282, _1281) / precise::max(dot(_1281, _1281), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                     }
                     else
@@ -636,10 +625,10 @@ fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], const
                         _1293 = _1274;
                     }
                     float _1312;
-                    if (_285)
+                    if (_269)
                     {
-                        float2 _1300 = RadianceCascadesBlock.Obstacle3.zw - RadianceCascadesBlock.Obstacle3.xy;
-                        float2 _1301 = _1196 - RadianceCascadesBlock.Obstacle3.xy;
+                        float2 _1300 = RadianceCascadesBlock.Obstacle2.zw - RadianceCascadesBlock.Obstacle2.xy;
+                        float2 _1301 = _1215 - RadianceCascadesBlock.Obstacle2.xy;
                         _1312 = precise::min(_1293, length(_1301 - (_1300 * fast::clamp(dot(_1301, _1300) / precise::max(dot(_1300, _1300), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                     }
                     else
@@ -647,10 +636,10 @@ fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], const
                         _1312 = _1293;
                     }
                     float _1331;
-                    if (_305)
+                    if (_289)
                     {
-                        float2 _1319 = RadianceCascadesBlock.Obstacle4.zw - RadianceCascadesBlock.Obstacle4.xy;
-                        float2 _1320 = _1196 - RadianceCascadesBlock.Obstacle4.xy;
+                        float2 _1319 = RadianceCascadesBlock.Obstacle3.zw - RadianceCascadesBlock.Obstacle3.xy;
+                        float2 _1320 = _1215 - RadianceCascadesBlock.Obstacle3.xy;
                         _1331 = precise::min(_1312, length(_1320 - (_1319 * fast::clamp(dot(_1320, _1319) / precise::max(dot(_1319, _1319), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                     }
                     else
@@ -658,10 +647,10 @@ fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], const
                         _1331 = _1312;
                     }
                     float _1350;
-                    if (_325)
+                    if (_309)
                     {
-                        float2 _1338 = RadianceCascadesBlock.Obstacle5.zw - RadianceCascadesBlock.Obstacle5.xy;
-                        float2 _1339 = _1196 - RadianceCascadesBlock.Obstacle5.xy;
+                        float2 _1338 = RadianceCascadesBlock.Obstacle4.zw - RadianceCascadesBlock.Obstacle4.xy;
+                        float2 _1339 = _1215 - RadianceCascadesBlock.Obstacle4.xy;
                         _1350 = precise::min(_1331, length(_1339 - (_1338 * fast::clamp(dot(_1339, _1338) / precise::max(dot(_1338, _1338), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                     }
                     else
@@ -669,10 +658,10 @@ fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], const
                         _1350 = _1331;
                     }
                     float _1369;
-                    if (_345)
+                    if (_329)
                     {
-                        float2 _1357 = RadianceCascadesBlock.Obstacle6.zw - RadianceCascadesBlock.Obstacle6.xy;
-                        float2 _1358 = _1196 - RadianceCascadesBlock.Obstacle6.xy;
+                        float2 _1357 = RadianceCascadesBlock.Obstacle5.zw - RadianceCascadesBlock.Obstacle5.xy;
+                        float2 _1358 = _1215 - RadianceCascadesBlock.Obstacle5.xy;
                         _1369 = precise::min(_1350, length(_1358 - (_1357 * fast::clamp(dot(_1358, _1357) / precise::max(dot(_1357, _1357), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                     }
                     else
@@ -680,37 +669,37 @@ fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], const
                         _1369 = _1350;
                     }
                     float _1388;
-                    if (_365)
+                    if (_349)
                     {
-                        float2 _1376 = RadianceCascadesBlock.Obstacle7.zw - RadianceCascadesBlock.Obstacle7.xy;
-                        float2 _1377 = _1196 - RadianceCascadesBlock.Obstacle7.xy;
+                        float2 _1376 = RadianceCascadesBlock.Obstacle6.zw - RadianceCascadesBlock.Obstacle6.xy;
+                        float2 _1377 = _1215 - RadianceCascadesBlock.Obstacle6.xy;
                         _1388 = precise::min(_1369, length(_1377 - (_1376 * fast::clamp(dot(_1377, _1376) / precise::max(dot(_1376, _1376), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                     }
                     else
                     {
                         _1388 = _1369;
                     }
-                    float2 _1389 = _512 - float2(0.0, 0.01200000010430812835693359375);
-                    float2 _1392 = abs(_512 - float2(1.89999997615814208984375, 2.912000179290771484375)) + float2(-1.63999998569488525390625, -0.180000007152557373046875);
-                    float2 _1404 = abs(_512 - float2(7.19999980926513671875, 2.912000179290771484375)) + float2(-0.180000007152557373046875, -2.139999866485595703125);
-                    float2 _1420 = abs(_512 - float2(-5.599999904632568359375, 5.01200008392333984375)) + float2(-2.38000011444091796875, -0.199999988079071044921875);
-                    float _1429 = precise::min(precise::min(precise::min(precise::min(1000.0, (precise::min(precise::max(_1392.x, _1392.y), 0.0) + length(precise::max(_1392, float2(0.0)))) - 0.1599999964237213134765625), (precise::min(precise::max(_1404.x, _1404.y), 0.0) + length(precise::max(_1404, float2(0.0)))) - 0.1599999964237213134765625), length(_512 - float2(4.80000019073486328125, -3.1879999637603759765625)) - 1.0499999523162841796875), (precise::min(precise::max(_1420.x, _1420.y), 0.0) + length(precise::max(_1420, float2(0.0)))) - 0.119999997317790985107421875);
-                    float _1448;
-                    if (_225)
+                    float _1407;
+                    if (_369)
                     {
-                        float2 _1436 = RadianceCascadesBlock.Obstacle0.zw - RadianceCascadesBlock.Obstacle0.xy;
-                        float2 _1437 = _1389 - RadianceCascadesBlock.Obstacle0.xy;
-                        _1448 = precise::min(_1429, length(_1437 - (_1436 * fast::clamp(dot(_1437, _1436) / precise::max(dot(_1436, _1436), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                        float2 _1395 = RadianceCascadesBlock.Obstacle7.zw - RadianceCascadesBlock.Obstacle7.xy;
+                        float2 _1396 = _1215 - RadianceCascadesBlock.Obstacle7.xy;
+                        _1407 = precise::min(_1388, length(_1396 - (_1395 * fast::clamp(dot(_1396, _1395) / precise::max(dot(_1395, _1395), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                     }
                     else
                     {
-                        _1448 = _1429;
+                        _1407 = _1388;
                     }
+                    float2 _1408 = _516 - float2(0.0, 0.01200000010430812835693359375);
+                    float2 _1411 = abs(_516 - float2(1.89999997615814208984375, 2.912000179290771484375)) + float2(-1.63999998569488525390625, -0.180000007152557373046875);
+                    float2 _1423 = abs(_516 - float2(7.19999980926513671875, 2.912000179290771484375)) + float2(-0.180000007152557373046875, -2.139999866485595703125);
+                    float2 _1439 = abs(_516 - float2(-5.599999904632568359375, 5.01200008392333984375)) + float2(-2.38000011444091796875, -0.199999988079071044921875);
+                    float _1448 = precise::min(precise::min(precise::min(precise::min(1000.0, (precise::min(precise::max(_1411.x, _1411.y), 0.0) + length(precise::max(_1411, float2(0.0)))) - 0.1599999964237213134765625), (precise::min(precise::max(_1423.x, _1423.y), 0.0) + length(precise::max(_1423, float2(0.0)))) - 0.1599999964237213134765625), length(_516 - float2(4.80000019073486328125, -3.1879999637603759765625)) - 1.0499999523162841796875), (precise::min(precise::max(_1439.x, _1439.y), 0.0) + length(precise::max(_1439, float2(0.0)))) - 0.119999997317790985107421875);
                     float _1467;
-                    if (_245)
+                    if (_229)
                     {
-                        float2 _1455 = RadianceCascadesBlock.Obstacle1.zw - RadianceCascadesBlock.Obstacle1.xy;
-                        float2 _1456 = _1389 - RadianceCascadesBlock.Obstacle1.xy;
+                        float2 _1455 = RadianceCascadesBlock.Obstacle0.zw - RadianceCascadesBlock.Obstacle0.xy;
+                        float2 _1456 = _1408 - RadianceCascadesBlock.Obstacle0.xy;
                         _1467 = precise::min(_1448, length(_1456 - (_1455 * fast::clamp(dot(_1456, _1455) / precise::max(dot(_1455, _1455), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                     }
                     else
@@ -718,10 +707,10 @@ fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], const
                         _1467 = _1448;
                     }
                     float _1486;
-                    if (_265)
+                    if (_249)
                     {
-                        float2 _1474 = RadianceCascadesBlock.Obstacle2.zw - RadianceCascadesBlock.Obstacle2.xy;
-                        float2 _1475 = _1389 - RadianceCascadesBlock.Obstacle2.xy;
+                        float2 _1474 = RadianceCascadesBlock.Obstacle1.zw - RadianceCascadesBlock.Obstacle1.xy;
+                        float2 _1475 = _1408 - RadianceCascadesBlock.Obstacle1.xy;
                         _1486 = precise::min(_1467, length(_1475 - (_1474 * fast::clamp(dot(_1475, _1474) / precise::max(dot(_1474, _1474), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                     }
                     else
@@ -729,10 +718,10 @@ fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], const
                         _1486 = _1467;
                     }
                     float _1505;
-                    if (_285)
+                    if (_269)
                     {
-                        float2 _1493 = RadianceCascadesBlock.Obstacle3.zw - RadianceCascadesBlock.Obstacle3.xy;
-                        float2 _1494 = _1389 - RadianceCascadesBlock.Obstacle3.xy;
+                        float2 _1493 = RadianceCascadesBlock.Obstacle2.zw - RadianceCascadesBlock.Obstacle2.xy;
+                        float2 _1494 = _1408 - RadianceCascadesBlock.Obstacle2.xy;
                         _1505 = precise::min(_1486, length(_1494 - (_1493 * fast::clamp(dot(_1494, _1493) / precise::max(dot(_1493, _1493), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                     }
                     else
@@ -740,10 +729,10 @@ fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], const
                         _1505 = _1486;
                     }
                     float _1524;
-                    if (_305)
+                    if (_289)
                     {
-                        float2 _1512 = RadianceCascadesBlock.Obstacle4.zw - RadianceCascadesBlock.Obstacle4.xy;
-                        float2 _1513 = _1389 - RadianceCascadesBlock.Obstacle4.xy;
+                        float2 _1512 = RadianceCascadesBlock.Obstacle3.zw - RadianceCascadesBlock.Obstacle3.xy;
+                        float2 _1513 = _1408 - RadianceCascadesBlock.Obstacle3.xy;
                         _1524 = precise::min(_1505, length(_1513 - (_1512 * fast::clamp(dot(_1513, _1512) / precise::max(dot(_1512, _1512), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                     }
                     else
@@ -751,10 +740,10 @@ fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], const
                         _1524 = _1505;
                     }
                     float _1543;
-                    if (_325)
+                    if (_309)
                     {
-                        float2 _1531 = RadianceCascadesBlock.Obstacle5.zw - RadianceCascadesBlock.Obstacle5.xy;
-                        float2 _1532 = _1389 - RadianceCascadesBlock.Obstacle5.xy;
+                        float2 _1531 = RadianceCascadesBlock.Obstacle4.zw - RadianceCascadesBlock.Obstacle4.xy;
+                        float2 _1532 = _1408 - RadianceCascadesBlock.Obstacle4.xy;
                         _1543 = precise::min(_1524, length(_1532 - (_1531 * fast::clamp(dot(_1532, _1531) / precise::max(dot(_1531, _1531), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                     }
                     else
@@ -762,10 +751,10 @@ fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], const
                         _1543 = _1524;
                     }
                     float _1562;
-                    if (_345)
+                    if (_329)
                     {
-                        float2 _1550 = RadianceCascadesBlock.Obstacle6.zw - RadianceCascadesBlock.Obstacle6.xy;
-                        float2 _1551 = _1389 - RadianceCascadesBlock.Obstacle6.xy;
+                        float2 _1550 = RadianceCascadesBlock.Obstacle5.zw - RadianceCascadesBlock.Obstacle5.xy;
+                        float2 _1551 = _1408 - RadianceCascadesBlock.Obstacle5.xy;
                         _1562 = precise::min(_1543, length(_1551 - (_1550 * fast::clamp(dot(_1551, _1550) / precise::max(dot(_1550, _1550), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                     }
                     else
@@ -773,557 +762,586 @@ fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], const
                         _1562 = _1543;
                     }
                     float _1581;
-                    if (_365)
+                    if (_349)
                     {
-                        float2 _1569 = RadianceCascadesBlock.Obstacle7.zw - RadianceCascadesBlock.Obstacle7.xy;
-                        float2 _1570 = _1389 - RadianceCascadesBlock.Obstacle7.xy;
+                        float2 _1569 = RadianceCascadesBlock.Obstacle6.zw - RadianceCascadesBlock.Obstacle6.xy;
+                        float2 _1570 = _1408 - RadianceCascadesBlock.Obstacle6.xy;
                         _1581 = precise::min(_1562, length(_1570 - (_1569 * fast::clamp(dot(_1570, _1569) / precise::max(dot(_1569, _1569), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
                     }
                     else
                     {
                         _1581 = _1562;
                     }
-                    float2 _1584 = fast::normalize(float2(_1001 - _1194, _1388 - _1581));
-                    float4 _1586;
-                    _1586 = float4(0.0);
-                    float4 _1587;
-                    for (int _1589 = 0; _1589 < _569; _1586 = _1587, _1589++)
+                    float _1600;
+                    if (_369)
                     {
-                        uint _1594 = uint(_1589);
-                        if (((device float*)&Lights._m0[_1594].Color)[3] < 0.5)
+                        float2 _1588 = RadianceCascadesBlock.Obstacle7.zw - RadianceCascadesBlock.Obstacle7.xy;
+                        float2 _1589 = _1408 - RadianceCascadesBlock.Obstacle7.xy;
+                        _1600 = precise::min(_1581, length(_1589 - (_1588 * fast::clamp(dot(_1589, _1588) / precise::max(dot(_1588, _1588), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                    }
+                    else
+                    {
+                        _1600 = _1581;
+                    }
+                    float2 _1603 = fast::normalize(float2(_1020 - _1213, _1407 - _1600));
+                    float4 _1605;
+                    _1605 = float4(0.0);
+                    float4 _1606;
+                    for (int _1608 = 0; _1608 < _588; _1605 = _1606, _1608++)
+                    {
+                        uint _1613 = uint(_1608);
+                        if (((device float*)&Lights._m0[_1613].Color)[3] < 0.5)
                         {
-                            _1587 = _1586;
+                            _1606 = _1605;
                             continue;
                         }
-                        float2 _1604 = Lights._m0[_1594].Position.xy - _512;
-                        float _1605 = length(_1604);
-                        float3 _1623 = _1586.xyz + ((Lights._m0[_1594].Color.xyz * ((fast::clamp(dot(_1584, _1604 / float2(precise::max(_1605, 0.001000000047497451305389404296875))), 0.0, 1.0) * ((device float*)&Lights._m0[_1594].Position)[2]) / (1.0 + ((_1605 * _1605) * 0.180000007152557373046875)))) * 0.23999999463558197021484375);
-                        _1587 = float4(_1623.x, _1623.y, _1623.z, _1586.w);
+                        float2 _1623 = Lights._m0[_1613].Position.xy - _516;
+                        float _1624 = length(_1623);
+                        float3 _1642 = _1605.xyz + ((Lights._m0[_1613].Color.xyz * ((fast::clamp(dot(_1603, _1623 / float2(precise::max(_1624, 0.001000000047497451305389404296875))), 0.0, 1.0) * ((device float*)&Lights._m0[_1613].Position)[2]) / (1.0 + ((_1624 * _1624) * 0.180000007152557373046875)))) * 0.23999999463558197021484375);
+                        _1606 = float4(_1642.x, _1642.y, _1642.z, _1605.w);
                     }
-                    float4 _1625 = _1586;
-                    _1625.w = 1.0;
-                    _1655 = _1625;
+                    float4 _1644 = _1605;
+                    _1644.w = 1.0;
+                    _1648 = _1644;
                     break;
                 }
-                float _1627;
-                _1627 = _805;
-                for (int _1630 = 0; _1630 < _523; )
-                {
-                    uint _1634 = uint(_1630);
-                    float2 _1643 = Emissions._m0[_1634].Segment.zw - Emissions._m0[_1634].Segment.xy;
-                    float2 _1644 = _512 - Emissions._m0[_1634].Segment.xy;
-                    _1627 = precise::min(_1627, length(_1644 - (_1643 * fast::clamp(dot(_1644, _1643) / precise::max(dot(_1643, _1643), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - precise::max(((device float*)&Emissions._m0[_1634].Color)[3], 0.00999999977648258209228515625));
-                    _1630++;
-                    continue;
-                }
-                _495 = _494 + precise::max(_1627, 0.017999999225139617919921875);
-                _494 = _495;
-                _497++;
+                _499 = _498 + precise::max(precise::min(_824, precise::max(_561, 0.0)), 0.017999999225139617919921875);
+                _498 = _499;
+                _501++;
                 continue;
             }
             else
             {
-                _1655 = float4(0.0);
+                _1648 = float4(0.0);
                 break;
             }
         }
-        float3 _1657 = _471 + _1655.xyz;
-        bool _1663;
-        if (_390 < _458)
+        float3 _1650 = _475 + _1648.xyz;
+        bool _1656;
+        if (_394 < _462)
         {
-            _1663 = _1655.w < 0.5;
+            _1656 = _1648.w < 0.5;
         }
         else
         {
-            _1663 = false;
+            _1656 = false;
         }
-        if (_1663)
+        if (_1656)
         {
-            float _1666 = powr(_407, _429);
-            float2 _1670 = precise::max(floor(_404 / float2(_1666)), float2(1.0));
-            _472 = _1657 + Texture.sample(Sampler, fast::clamp(((float2(fmod(_483, _1666), floor(_483 / _1666)) * _1670) + fast::clamp(_423 / float2(_407), float2(0.5), _1670 - float2(0.5))) / _404, float2(0.0), float2(1.0))).xyz;
+            float _1659 = powr(_411, _433);
+            float2 _1663 = precise::max(floor(_408 / float2(_1659)), float2(1.0));
+            _476 = _1650 + Texture.sample(Sampler, fast::clamp(((float2(fmod(_487, _1659), floor(_487 / _1659)) * _1663) + fast::clamp(_427 / float2(_411), float2(0.5), _1663 - float2(0.5))) / _408, float2(0.0), float2(1.0))).xyz;
         }
         else
         {
-            _472 = _1657;
+            _476 = _1650;
         }
     }
-    float3 _1691 = _471 / float3(precise::max(_406, 1.0));
-    float3 _1777;
-    if (_445)
+    float3 _1684 = _475 / float3(precise::max(_410, 1.0));
+    float3 _1793;
+    if (_449)
     {
-        float3 _1703;
-        _1703 = float3(0.0);
-        for (int _1706 = 0; _1706 < int(RadianceCascadesBlock.Tuning.z); )
+        float2 _1701;
+        float _1739;
+        do
         {
-            uint _1713 = uint(_1706);
-            float _1717 = precise::max(((device float*)&Emissions._m0[_1713].Color)[3], 0.00999999977648258209228515625);
-            float2 _1723 = Emissions._m0[_1713].Segment.zw - Emissions._m0[_1713].Segment.xy;
-            float2 _1724 = _181 - Emissions._m0[_1713].Segment.xy;
-            _1703 += ((Emissions._m0[_1713].Color.xyz * smoothstep(_1717 * 8.0, 0.0, precise::max(length(_1724 - (_1723 * fast::clamp(dot(_1724, _1723) / precise::max(dot(_1723, _1723), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - _1717, 0.0))) * 0.2599999904632568359375);
-            _1706++;
-            continue;
-        }
-        float3 _1742;
-        _1742 = _1703;
-        float3 _1743;
-        for (int _1745 = 0; _1745 < int(RadianceCascadesBlock.Tuning.y); _1742 = _1743, _1745++)
-        {
-            uint _1753 = uint(_1745);
-            if (((device float*)&Lights._m0[_1753].Color)[3] < 0.5)
+            _1701 = (_185 / RadianceCascadesBlock.Paint.xy) + float2(0.5);
+            bool _1708;
+            if (!(_1701.x < 0.0))
             {
-                _1743 = _1742;
+                _1708 = _1701.x > 1.0;
+            }
+            else
+            {
+                _1708 = true;
+            }
+            bool _1714;
+            if (!_1708)
+            {
+                _1714 = _1701.y < 0.0;
+            }
+            else
+            {
+                _1714 = true;
+            }
+            bool _1720;
+            if (!_1714)
+            {
+                _1720 = _1701.y > 1.0;
+            }
+            else
+            {
+                _1720 = true;
+            }
+            if (_1720)
+            {
+                _1739 = RadianceCascadesBlock.Paint.z + RadianceCascadesBlock.Paint.w;
+                break;
+            }
+            _1739 = (StrokeDistance.sample(StrokeDistanceSampler, _1701).x * RadianceCascadesBlock.Paint.z) + RadianceCascadesBlock.Paint.w;
+            break;
+        } while(false);
+        float4 _1746 = StrokeTexture.sample(StrokeSampler, _1701);
+        float3 _1758;
+        _1758 = ((powr(_1746.xyz, float3(2.2000000476837158203125)) * _1746.w) * RadianceCascadesBlock.Tuning.z) * (0.300000011920928955078125 + (0.699999988079071044921875 * exp(precise::max(_1739, 0.0) * (-1.60000002384185791015625))));
+        float3 _1759;
+        for (int _1761 = 0; _1761 < int(RadianceCascadesBlock.Tuning.y); _1758 = _1759, _1761++)
+        {
+            uint _1769 = uint(_1761);
+            if (((device float*)&Lights._m0[_1769].Color)[3] < 0.5)
+            {
+                _1759 = _1758;
                 continue;
             }
-            _1743 = _1742 + (((Lights._m0[_1753].Color.xyz * ((device float*)&Lights._m0[_1753].Position)[2]) * exp(length(_181 - Lights._m0[_1753].Position.xy) * (-0.7200000286102294921875))) * 0.119999997317790985107421875);
+            _1759 = _1758 + (((Lights._m0[_1769].Color.xyz * ((device float*)&Lights._m0[_1769].Position)[2]) * exp(length(_185 - Lights._m0[_1769].Position.xy) * (-0.7200000286102294921875))) * 0.119999997317790985107421875);
         }
-        _1777 = _1691 + ((RadianceCascadesBlock.WorldColor.xyz * (0.62000000476837158203125 + (0.37999999523162841796875 * (1.0 - in.in_var_TEXCOORD0.y)))) + _1742);
+        _1793 = _1684 + ((RadianceCascadesBlock.WorldColor.xyz * (0.62000000476837158203125 + (0.37999999523162841796875 * (1.0 - in.in_var_TEXCOORD0.y)))) + _1758);
     }
     else
     {
-        _1777 = _1691;
+        _1793 = _1684;
     }
-    float3 _2618;
-    if (_445)
+    float3 _2634;
+    if (_449)
     {
-        float3 _1781;
-        _1781 = _1777;
-        float3 _1782;
-        for (int _1784 = 0; _1784 < int(RadianceCascadesBlock.Tuning.y); _1781 = _1782, _1784++)
+        float3 _1797;
+        _1797 = _1793;
+        float3 _1798;
+        for (int _1800 = 0; _1800 < int(RadianceCascadesBlock.Tuning.y); _1797 = _1798, _1800++)
         {
-            uint _1792 = uint(_1784);
-            if (((device float*)&Lights._m0[_1792].Color)[3] < 0.5)
+            uint _1808 = uint(_1800);
+            if (((device float*)&Lights._m0[_1808].Color)[3] < 0.5)
             {
-                _1782 = _1781;
+                _1798 = _1797;
                 continue;
             }
-            _1782 = mix(_1781, Lights._m0[_1792].Color.xyz * (1.0 + (((device float*)&Lights._m0[_1792].Position)[2] * 0.180000007152557373046875)), float3(smoothstep(precise::max(((device float*)&Lights._m0[_1792].Position)[3] * 1.4500000476837158203125, 0.119999997317790985107421875), precise::max(((device float*)&Lights._m0[_1792].Position)[3] * 0.180000007152557373046875, 0.02500000037252902984619140625), length(_181 - Lights._m0[_1792].Position.xy))));
+            _1798 = mix(_1797, Lights._m0[_1808].Color.xyz * (1.0 + (((device float*)&Lights._m0[_1808].Position)[2] * 0.180000007152557373046875)), float3(smoothstep(precise::max(((device float*)&Lights._m0[_1808].Position)[3] * 1.4500000476837158203125, 0.119999997317790985107421875), precise::max(((device float*)&Lights._m0[_1808].Position)[3] * 0.180000007152557373046875, 0.02500000037252902984619140625), length(_185 - Lights._m0[_1808].Position.xy))));
         }
-        bool _1827;
+        bool _1843;
         if (RadianceCascadesBlock.Viewport.w > 0.5)
         {
-            _1827 = _384 < 0.0;
+            _1843 = _388 < 0.0;
         }
         else
         {
-            _1827 = false;
+            _1843 = false;
         }
-        float3 _2617;
-        if (_1827)
+        float3 _2633;
+        if (_1843)
         {
-            float2 _1830 = _181 + float2(0.01200000010430812835693359375, 0.0);
-            float2 _1833 = abs(_181 + float2(-1.888000011444091796875, -2.900000095367431640625)) + float2(-1.63999998569488525390625, -0.180000007152557373046875);
-            float2 _1845 = abs(_181 + float2(-7.187999725341796875, -2.900000095367431640625)) + float2(-0.180000007152557373046875, -2.139999866485595703125);
-            float2 _1861 = abs(_181 + float2(5.611999988555908203125, -5.0)) + float2(-2.38000011444091796875, -0.199999988079071044921875);
-            float _1870 = precise::min(precise::min(precise::min(precise::min(1000.0, (precise::min(precise::max(_1833.x, _1833.y), 0.0) + length(precise::max(_1833, float2(0.0)))) - 0.1599999964237213134765625), (precise::min(precise::max(_1845.x, _1845.y), 0.0) + length(precise::max(_1845, float2(0.0)))) - 0.1599999964237213134765625), length(_181 + float2(-4.7880001068115234375, 3.2000000476837158203125)) - 1.0499999523162841796875), (precise::min(precise::max(_1861.x, _1861.y), 0.0) + length(precise::max(_1861, float2(0.0)))) - 0.119999997317790985107421875);
-            float _1889;
-            if (_225)
+            float2 _1846 = _185 + float2(0.01200000010430812835693359375, 0.0);
+            float2 _1849 = abs(_185 + float2(-1.888000011444091796875, -2.900000095367431640625)) + float2(-1.63999998569488525390625, -0.180000007152557373046875);
+            float2 _1861 = abs(_185 + float2(-7.187999725341796875, -2.900000095367431640625)) + float2(-0.180000007152557373046875, -2.139999866485595703125);
+            float2 _1877 = abs(_185 + float2(5.611999988555908203125, -5.0)) + float2(-2.38000011444091796875, -0.199999988079071044921875);
+            float _1886 = precise::min(precise::min(precise::min(precise::min(1000.0, (precise::min(precise::max(_1849.x, _1849.y), 0.0) + length(precise::max(_1849, float2(0.0)))) - 0.1599999964237213134765625), (precise::min(precise::max(_1861.x, _1861.y), 0.0) + length(precise::max(_1861, float2(0.0)))) - 0.1599999964237213134765625), length(_185 + float2(-4.7880001068115234375, 3.2000000476837158203125)) - 1.0499999523162841796875), (precise::min(precise::max(_1877.x, _1877.y), 0.0) + length(precise::max(_1877, float2(0.0)))) - 0.119999997317790985107421875);
+            float _1905;
+            if (_229)
             {
-                float2 _1877 = RadianceCascadesBlock.Obstacle0.zw - RadianceCascadesBlock.Obstacle0.xy;
-                float2 _1878 = _1830 - RadianceCascadesBlock.Obstacle0.xy;
-                _1889 = precise::min(_1870, length(_1878 - (_1877 * fast::clamp(dot(_1878, _1877) / precise::max(dot(_1877, _1877), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                float2 _1893 = RadianceCascadesBlock.Obstacle0.zw - RadianceCascadesBlock.Obstacle0.xy;
+                float2 _1894 = _1846 - RadianceCascadesBlock.Obstacle0.xy;
+                _1905 = precise::min(_1886, length(_1894 - (_1893 * fast::clamp(dot(_1894, _1893) / precise::max(dot(_1893, _1893), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
             }
             else
             {
-                _1889 = _1870;
+                _1905 = _1886;
             }
-            float _1908;
-            if (_245)
+            float _1924;
+            if (_249)
             {
-                float2 _1896 = RadianceCascadesBlock.Obstacle1.zw - RadianceCascadesBlock.Obstacle1.xy;
-                float2 _1897 = _1830 - RadianceCascadesBlock.Obstacle1.xy;
-                _1908 = precise::min(_1889, length(_1897 - (_1896 * fast::clamp(dot(_1897, _1896) / precise::max(dot(_1896, _1896), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                float2 _1912 = RadianceCascadesBlock.Obstacle1.zw - RadianceCascadesBlock.Obstacle1.xy;
+                float2 _1913 = _1846 - RadianceCascadesBlock.Obstacle1.xy;
+                _1924 = precise::min(_1905, length(_1913 - (_1912 * fast::clamp(dot(_1913, _1912) / precise::max(dot(_1912, _1912), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
             }
             else
             {
-                _1908 = _1889;
+                _1924 = _1905;
             }
-            float _1927;
-            if (_265)
+            float _1943;
+            if (_269)
             {
-                float2 _1915 = RadianceCascadesBlock.Obstacle2.zw - RadianceCascadesBlock.Obstacle2.xy;
-                float2 _1916 = _1830 - RadianceCascadesBlock.Obstacle2.xy;
-                _1927 = precise::min(_1908, length(_1916 - (_1915 * fast::clamp(dot(_1916, _1915) / precise::max(dot(_1915, _1915), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                float2 _1931 = RadianceCascadesBlock.Obstacle2.zw - RadianceCascadesBlock.Obstacle2.xy;
+                float2 _1932 = _1846 - RadianceCascadesBlock.Obstacle2.xy;
+                _1943 = precise::min(_1924, length(_1932 - (_1931 * fast::clamp(dot(_1932, _1931) / precise::max(dot(_1931, _1931), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
             }
             else
             {
-                _1927 = _1908;
+                _1943 = _1924;
             }
-            float _1946;
-            if (_285)
+            float _1962;
+            if (_289)
             {
-                float2 _1934 = RadianceCascadesBlock.Obstacle3.zw - RadianceCascadesBlock.Obstacle3.xy;
-                float2 _1935 = _1830 - RadianceCascadesBlock.Obstacle3.xy;
-                _1946 = precise::min(_1927, length(_1935 - (_1934 * fast::clamp(dot(_1935, _1934) / precise::max(dot(_1934, _1934), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                float2 _1950 = RadianceCascadesBlock.Obstacle3.zw - RadianceCascadesBlock.Obstacle3.xy;
+                float2 _1951 = _1846 - RadianceCascadesBlock.Obstacle3.xy;
+                _1962 = precise::min(_1943, length(_1951 - (_1950 * fast::clamp(dot(_1951, _1950) / precise::max(dot(_1950, _1950), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
             }
             else
             {
-                _1946 = _1927;
+                _1962 = _1943;
             }
-            float _1965;
-            if (_305)
+            float _1981;
+            if (_309)
             {
-                float2 _1953 = RadianceCascadesBlock.Obstacle4.zw - RadianceCascadesBlock.Obstacle4.xy;
-                float2 _1954 = _1830 - RadianceCascadesBlock.Obstacle4.xy;
-                _1965 = precise::min(_1946, length(_1954 - (_1953 * fast::clamp(dot(_1954, _1953) / precise::max(dot(_1953, _1953), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                float2 _1969 = RadianceCascadesBlock.Obstacle4.zw - RadianceCascadesBlock.Obstacle4.xy;
+                float2 _1970 = _1846 - RadianceCascadesBlock.Obstacle4.xy;
+                _1981 = precise::min(_1962, length(_1970 - (_1969 * fast::clamp(dot(_1970, _1969) / precise::max(dot(_1969, _1969), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
             }
             else
             {
-                _1965 = _1946;
+                _1981 = _1962;
             }
-            float _1984;
-            if (_325)
+            float _2000;
+            if (_329)
             {
-                float2 _1972 = RadianceCascadesBlock.Obstacle5.zw - RadianceCascadesBlock.Obstacle5.xy;
-                float2 _1973 = _1830 - RadianceCascadesBlock.Obstacle5.xy;
-                _1984 = precise::min(_1965, length(_1973 - (_1972 * fast::clamp(dot(_1973, _1972) / precise::max(dot(_1972, _1972), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                float2 _1988 = RadianceCascadesBlock.Obstacle5.zw - RadianceCascadesBlock.Obstacle5.xy;
+                float2 _1989 = _1846 - RadianceCascadesBlock.Obstacle5.xy;
+                _2000 = precise::min(_1981, length(_1989 - (_1988 * fast::clamp(dot(_1989, _1988) / precise::max(dot(_1988, _1988), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
             }
             else
             {
-                _1984 = _1965;
+                _2000 = _1981;
             }
-            float _2003;
-            if (_345)
+            float _2019;
+            if (_349)
             {
-                float2 _1991 = RadianceCascadesBlock.Obstacle6.zw - RadianceCascadesBlock.Obstacle6.xy;
-                float2 _1992 = _1830 - RadianceCascadesBlock.Obstacle6.xy;
-                _2003 = precise::min(_1984, length(_1992 - (_1991 * fast::clamp(dot(_1992, _1991) / precise::max(dot(_1991, _1991), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                float2 _2007 = RadianceCascadesBlock.Obstacle6.zw - RadianceCascadesBlock.Obstacle6.xy;
+                float2 _2008 = _1846 - RadianceCascadesBlock.Obstacle6.xy;
+                _2019 = precise::min(_2000, length(_2008 - (_2007 * fast::clamp(dot(_2008, _2007) / precise::max(dot(_2007, _2007), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
             }
             else
             {
-                _2003 = _1984;
+                _2019 = _2000;
             }
-            float _2022;
-            if (_365)
+            float _2038;
+            if (_369)
             {
-                float2 _2010 = RadianceCascadesBlock.Obstacle7.zw - RadianceCascadesBlock.Obstacle7.xy;
-                float2 _2011 = _1830 - RadianceCascadesBlock.Obstacle7.xy;
-                _2022 = precise::min(_2003, length(_2011 - (_2010 * fast::clamp(dot(_2011, _2010) / precise::max(dot(_2010, _2010), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                float2 _2026 = RadianceCascadesBlock.Obstacle7.zw - RadianceCascadesBlock.Obstacle7.xy;
+                float2 _2027 = _1846 - RadianceCascadesBlock.Obstacle7.xy;
+                _2038 = precise::min(_2019, length(_2027 - (_2026 * fast::clamp(dot(_2027, _2026) / precise::max(dot(_2026, _2026), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
             }
             else
             {
-                _2022 = _2003;
+                _2038 = _2019;
             }
-            float2 _2023 = _181 - float2(0.01200000010430812835693359375, 0.0);
-            float2 _2026 = abs(_181 - float2(1.9119999408721923828125, 2.900000095367431640625)) + float2(-1.63999998569488525390625, -0.180000007152557373046875);
-            float2 _2038 = abs(_181 - float2(7.2119998931884765625, 2.900000095367431640625)) + float2(-0.180000007152557373046875, -2.139999866485595703125);
-            float2 _2054 = abs(_181 - float2(-5.587999820709228515625, 5.0)) + float2(-2.38000011444091796875, -0.199999988079071044921875);
-            float _2063 = precise::min(precise::min(precise::min(precise::min(1000.0, (precise::min(precise::max(_2026.x, _2026.y), 0.0) + length(precise::max(_2026, float2(0.0)))) - 0.1599999964237213134765625), (precise::min(precise::max(_2038.x, _2038.y), 0.0) + length(precise::max(_2038, float2(0.0)))) - 0.1599999964237213134765625), length(_181 - float2(4.812000274658203125, -3.2000000476837158203125)) - 1.0499999523162841796875), (precise::min(precise::max(_2054.x, _2054.y), 0.0) + length(precise::max(_2054, float2(0.0)))) - 0.119999997317790985107421875);
-            float _2082;
-            if (_225)
+            float2 _2039 = _185 - float2(0.01200000010430812835693359375, 0.0);
+            float2 _2042 = abs(_185 - float2(1.9119999408721923828125, 2.900000095367431640625)) + float2(-1.63999998569488525390625, -0.180000007152557373046875);
+            float2 _2054 = abs(_185 - float2(7.2119998931884765625, 2.900000095367431640625)) + float2(-0.180000007152557373046875, -2.139999866485595703125);
+            float2 _2070 = abs(_185 - float2(-5.587999820709228515625, 5.0)) + float2(-2.38000011444091796875, -0.199999988079071044921875);
+            float _2079 = precise::min(precise::min(precise::min(precise::min(1000.0, (precise::min(precise::max(_2042.x, _2042.y), 0.0) + length(precise::max(_2042, float2(0.0)))) - 0.1599999964237213134765625), (precise::min(precise::max(_2054.x, _2054.y), 0.0) + length(precise::max(_2054, float2(0.0)))) - 0.1599999964237213134765625), length(_185 - float2(4.812000274658203125, -3.2000000476837158203125)) - 1.0499999523162841796875), (precise::min(precise::max(_2070.x, _2070.y), 0.0) + length(precise::max(_2070, float2(0.0)))) - 0.119999997317790985107421875);
+            float _2098;
+            if (_229)
             {
-                float2 _2070 = RadianceCascadesBlock.Obstacle0.zw - RadianceCascadesBlock.Obstacle0.xy;
-                float2 _2071 = _2023 - RadianceCascadesBlock.Obstacle0.xy;
-                _2082 = precise::min(_2063, length(_2071 - (_2070 * fast::clamp(dot(_2071, _2070) / precise::max(dot(_2070, _2070), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                float2 _2086 = RadianceCascadesBlock.Obstacle0.zw - RadianceCascadesBlock.Obstacle0.xy;
+                float2 _2087 = _2039 - RadianceCascadesBlock.Obstacle0.xy;
+                _2098 = precise::min(_2079, length(_2087 - (_2086 * fast::clamp(dot(_2087, _2086) / precise::max(dot(_2086, _2086), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
             }
             else
             {
-                _2082 = _2063;
+                _2098 = _2079;
             }
-            float _2101;
-            if (_245)
+            float _2117;
+            if (_249)
             {
-                float2 _2089 = RadianceCascadesBlock.Obstacle1.zw - RadianceCascadesBlock.Obstacle1.xy;
-                float2 _2090 = _2023 - RadianceCascadesBlock.Obstacle1.xy;
-                _2101 = precise::min(_2082, length(_2090 - (_2089 * fast::clamp(dot(_2090, _2089) / precise::max(dot(_2089, _2089), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                float2 _2105 = RadianceCascadesBlock.Obstacle1.zw - RadianceCascadesBlock.Obstacle1.xy;
+                float2 _2106 = _2039 - RadianceCascadesBlock.Obstacle1.xy;
+                _2117 = precise::min(_2098, length(_2106 - (_2105 * fast::clamp(dot(_2106, _2105) / precise::max(dot(_2105, _2105), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
             }
             else
             {
-                _2101 = _2082;
+                _2117 = _2098;
             }
-            float _2120;
-            if (_265)
+            float _2136;
+            if (_269)
             {
-                float2 _2108 = RadianceCascadesBlock.Obstacle2.zw - RadianceCascadesBlock.Obstacle2.xy;
-                float2 _2109 = _2023 - RadianceCascadesBlock.Obstacle2.xy;
-                _2120 = precise::min(_2101, length(_2109 - (_2108 * fast::clamp(dot(_2109, _2108) / precise::max(dot(_2108, _2108), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                float2 _2124 = RadianceCascadesBlock.Obstacle2.zw - RadianceCascadesBlock.Obstacle2.xy;
+                float2 _2125 = _2039 - RadianceCascadesBlock.Obstacle2.xy;
+                _2136 = precise::min(_2117, length(_2125 - (_2124 * fast::clamp(dot(_2125, _2124) / precise::max(dot(_2124, _2124), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
             }
             else
             {
-                _2120 = _2101;
+                _2136 = _2117;
             }
-            float _2139;
-            if (_285)
+            float _2155;
+            if (_289)
             {
-                float2 _2127 = RadianceCascadesBlock.Obstacle3.zw - RadianceCascadesBlock.Obstacle3.xy;
-                float2 _2128 = _2023 - RadianceCascadesBlock.Obstacle3.xy;
-                _2139 = precise::min(_2120, length(_2128 - (_2127 * fast::clamp(dot(_2128, _2127) / precise::max(dot(_2127, _2127), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                float2 _2143 = RadianceCascadesBlock.Obstacle3.zw - RadianceCascadesBlock.Obstacle3.xy;
+                float2 _2144 = _2039 - RadianceCascadesBlock.Obstacle3.xy;
+                _2155 = precise::min(_2136, length(_2144 - (_2143 * fast::clamp(dot(_2144, _2143) / precise::max(dot(_2143, _2143), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
             }
             else
             {
-                _2139 = _2120;
+                _2155 = _2136;
             }
-            float _2158;
-            if (_305)
+            float _2174;
+            if (_309)
             {
-                float2 _2146 = RadianceCascadesBlock.Obstacle4.zw - RadianceCascadesBlock.Obstacle4.xy;
-                float2 _2147 = _2023 - RadianceCascadesBlock.Obstacle4.xy;
-                _2158 = precise::min(_2139, length(_2147 - (_2146 * fast::clamp(dot(_2147, _2146) / precise::max(dot(_2146, _2146), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                float2 _2162 = RadianceCascadesBlock.Obstacle4.zw - RadianceCascadesBlock.Obstacle4.xy;
+                float2 _2163 = _2039 - RadianceCascadesBlock.Obstacle4.xy;
+                _2174 = precise::min(_2155, length(_2163 - (_2162 * fast::clamp(dot(_2163, _2162) / precise::max(dot(_2162, _2162), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
             }
             else
             {
-                _2158 = _2139;
+                _2174 = _2155;
             }
-            float _2177;
-            if (_325)
+            float _2193;
+            if (_329)
             {
-                float2 _2165 = RadianceCascadesBlock.Obstacle5.zw - RadianceCascadesBlock.Obstacle5.xy;
-                float2 _2166 = _2023 - RadianceCascadesBlock.Obstacle5.xy;
-                _2177 = precise::min(_2158, length(_2166 - (_2165 * fast::clamp(dot(_2166, _2165) / precise::max(dot(_2165, _2165), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                float2 _2181 = RadianceCascadesBlock.Obstacle5.zw - RadianceCascadesBlock.Obstacle5.xy;
+                float2 _2182 = _2039 - RadianceCascadesBlock.Obstacle5.xy;
+                _2193 = precise::min(_2174, length(_2182 - (_2181 * fast::clamp(dot(_2182, _2181) / precise::max(dot(_2181, _2181), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
             }
             else
             {
-                _2177 = _2158;
+                _2193 = _2174;
             }
-            float _2196;
-            if (_345)
+            float _2212;
+            if (_349)
             {
-                float2 _2184 = RadianceCascadesBlock.Obstacle6.zw - RadianceCascadesBlock.Obstacle6.xy;
-                float2 _2185 = _2023 - RadianceCascadesBlock.Obstacle6.xy;
-                _2196 = precise::min(_2177, length(_2185 - (_2184 * fast::clamp(dot(_2185, _2184) / precise::max(dot(_2184, _2184), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                float2 _2200 = RadianceCascadesBlock.Obstacle6.zw - RadianceCascadesBlock.Obstacle6.xy;
+                float2 _2201 = _2039 - RadianceCascadesBlock.Obstacle6.xy;
+                _2212 = precise::min(_2193, length(_2201 - (_2200 * fast::clamp(dot(_2201, _2200) / precise::max(dot(_2200, _2200), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
             }
             else
             {
-                _2196 = _2177;
+                _2212 = _2193;
             }
-            float _2215;
-            if (_365)
+            float _2231;
+            if (_369)
             {
-                float2 _2203 = RadianceCascadesBlock.Obstacle7.zw - RadianceCascadesBlock.Obstacle7.xy;
-                float2 _2204 = _2023 - RadianceCascadesBlock.Obstacle7.xy;
-                _2215 = precise::min(_2196, length(_2204 - (_2203 * fast::clamp(dot(_2204, _2203) / precise::max(dot(_2203, _2203), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                float2 _2219 = RadianceCascadesBlock.Obstacle7.zw - RadianceCascadesBlock.Obstacle7.xy;
+                float2 _2220 = _2039 - RadianceCascadesBlock.Obstacle7.xy;
+                _2231 = precise::min(_2212, length(_2220 - (_2219 * fast::clamp(dot(_2220, _2219) / precise::max(dot(_2219, _2219), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
             }
             else
             {
-                _2215 = _2196;
+                _2231 = _2212;
             }
-            float2 _2217 = _181 + float2(0.0, 0.01200000010430812835693359375);
-            float2 _2220 = abs(_181 + float2(-1.89999997615814208984375, -2.888000011444091796875)) + float2(-1.63999998569488525390625, -0.180000007152557373046875);
-            float2 _2232 = abs(_181 + float2(-7.19999980926513671875, -2.888000011444091796875)) + float2(-0.180000007152557373046875, -2.139999866485595703125);
-            float2 _2248 = abs(_181 + float2(5.599999904632568359375, -4.98799991607666015625)) + float2(-2.38000011444091796875, -0.199999988079071044921875);
-            float _2257 = precise::min(precise::min(precise::min(precise::min(1000.0, (precise::min(precise::max(_2220.x, _2220.y), 0.0) + length(precise::max(_2220, float2(0.0)))) - 0.1599999964237213134765625), (precise::min(precise::max(_2232.x, _2232.y), 0.0) + length(precise::max(_2232, float2(0.0)))) - 0.1599999964237213134765625), length(_181 + float2(-4.80000019073486328125, 3.2120001316070556640625)) - 1.0499999523162841796875), (precise::min(precise::max(_2248.x, _2248.y), 0.0) + length(precise::max(_2248, float2(0.0)))) - 0.119999997317790985107421875);
-            float _2276;
-            if (_225)
+            float2 _2233 = _185 + float2(0.0, 0.01200000010430812835693359375);
+            float2 _2236 = abs(_185 + float2(-1.89999997615814208984375, -2.888000011444091796875)) + float2(-1.63999998569488525390625, -0.180000007152557373046875);
+            float2 _2248 = abs(_185 + float2(-7.19999980926513671875, -2.888000011444091796875)) + float2(-0.180000007152557373046875, -2.139999866485595703125);
+            float2 _2264 = abs(_185 + float2(5.599999904632568359375, -4.98799991607666015625)) + float2(-2.38000011444091796875, -0.199999988079071044921875);
+            float _2273 = precise::min(precise::min(precise::min(precise::min(1000.0, (precise::min(precise::max(_2236.x, _2236.y), 0.0) + length(precise::max(_2236, float2(0.0)))) - 0.1599999964237213134765625), (precise::min(precise::max(_2248.x, _2248.y), 0.0) + length(precise::max(_2248, float2(0.0)))) - 0.1599999964237213134765625), length(_185 + float2(-4.80000019073486328125, 3.2120001316070556640625)) - 1.0499999523162841796875), (precise::min(precise::max(_2264.x, _2264.y), 0.0) + length(precise::max(_2264, float2(0.0)))) - 0.119999997317790985107421875);
+            float _2292;
+            if (_229)
             {
-                float2 _2264 = RadianceCascadesBlock.Obstacle0.zw - RadianceCascadesBlock.Obstacle0.xy;
-                float2 _2265 = _2217 - RadianceCascadesBlock.Obstacle0.xy;
-                _2276 = precise::min(_2257, length(_2265 - (_2264 * fast::clamp(dot(_2265, _2264) / precise::max(dot(_2264, _2264), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                float2 _2280 = RadianceCascadesBlock.Obstacle0.zw - RadianceCascadesBlock.Obstacle0.xy;
+                float2 _2281 = _2233 - RadianceCascadesBlock.Obstacle0.xy;
+                _2292 = precise::min(_2273, length(_2281 - (_2280 * fast::clamp(dot(_2281, _2280) / precise::max(dot(_2280, _2280), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
             }
             else
             {
-                _2276 = _2257;
+                _2292 = _2273;
             }
-            float _2295;
-            if (_245)
+            float _2311;
+            if (_249)
             {
-                float2 _2283 = RadianceCascadesBlock.Obstacle1.zw - RadianceCascadesBlock.Obstacle1.xy;
-                float2 _2284 = _2217 - RadianceCascadesBlock.Obstacle1.xy;
-                _2295 = precise::min(_2276, length(_2284 - (_2283 * fast::clamp(dot(_2284, _2283) / precise::max(dot(_2283, _2283), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                float2 _2299 = RadianceCascadesBlock.Obstacle1.zw - RadianceCascadesBlock.Obstacle1.xy;
+                float2 _2300 = _2233 - RadianceCascadesBlock.Obstacle1.xy;
+                _2311 = precise::min(_2292, length(_2300 - (_2299 * fast::clamp(dot(_2300, _2299) / precise::max(dot(_2299, _2299), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
             }
             else
             {
-                _2295 = _2276;
+                _2311 = _2292;
             }
-            float _2314;
-            if (_265)
+            float _2330;
+            if (_269)
             {
-                float2 _2302 = RadianceCascadesBlock.Obstacle2.zw - RadianceCascadesBlock.Obstacle2.xy;
-                float2 _2303 = _2217 - RadianceCascadesBlock.Obstacle2.xy;
-                _2314 = precise::min(_2295, length(_2303 - (_2302 * fast::clamp(dot(_2303, _2302) / precise::max(dot(_2302, _2302), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                float2 _2318 = RadianceCascadesBlock.Obstacle2.zw - RadianceCascadesBlock.Obstacle2.xy;
+                float2 _2319 = _2233 - RadianceCascadesBlock.Obstacle2.xy;
+                _2330 = precise::min(_2311, length(_2319 - (_2318 * fast::clamp(dot(_2319, _2318) / precise::max(dot(_2318, _2318), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
             }
             else
             {
-                _2314 = _2295;
+                _2330 = _2311;
             }
-            float _2333;
-            if (_285)
+            float _2349;
+            if (_289)
             {
-                float2 _2321 = RadianceCascadesBlock.Obstacle3.zw - RadianceCascadesBlock.Obstacle3.xy;
-                float2 _2322 = _2217 - RadianceCascadesBlock.Obstacle3.xy;
-                _2333 = precise::min(_2314, length(_2322 - (_2321 * fast::clamp(dot(_2322, _2321) / precise::max(dot(_2321, _2321), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                float2 _2337 = RadianceCascadesBlock.Obstacle3.zw - RadianceCascadesBlock.Obstacle3.xy;
+                float2 _2338 = _2233 - RadianceCascadesBlock.Obstacle3.xy;
+                _2349 = precise::min(_2330, length(_2338 - (_2337 * fast::clamp(dot(_2338, _2337) / precise::max(dot(_2337, _2337), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
             }
             else
             {
-                _2333 = _2314;
+                _2349 = _2330;
             }
-            float _2352;
-            if (_305)
+            float _2368;
+            if (_309)
             {
-                float2 _2340 = RadianceCascadesBlock.Obstacle4.zw - RadianceCascadesBlock.Obstacle4.xy;
-                float2 _2341 = _2217 - RadianceCascadesBlock.Obstacle4.xy;
-                _2352 = precise::min(_2333, length(_2341 - (_2340 * fast::clamp(dot(_2341, _2340) / precise::max(dot(_2340, _2340), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                float2 _2356 = RadianceCascadesBlock.Obstacle4.zw - RadianceCascadesBlock.Obstacle4.xy;
+                float2 _2357 = _2233 - RadianceCascadesBlock.Obstacle4.xy;
+                _2368 = precise::min(_2349, length(_2357 - (_2356 * fast::clamp(dot(_2357, _2356) / precise::max(dot(_2356, _2356), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
             }
             else
             {
-                _2352 = _2333;
+                _2368 = _2349;
             }
-            float _2371;
-            if (_325)
+            float _2387;
+            if (_329)
             {
-                float2 _2359 = RadianceCascadesBlock.Obstacle5.zw - RadianceCascadesBlock.Obstacle5.xy;
-                float2 _2360 = _2217 - RadianceCascadesBlock.Obstacle5.xy;
-                _2371 = precise::min(_2352, length(_2360 - (_2359 * fast::clamp(dot(_2360, _2359) / precise::max(dot(_2359, _2359), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                float2 _2375 = RadianceCascadesBlock.Obstacle5.zw - RadianceCascadesBlock.Obstacle5.xy;
+                float2 _2376 = _2233 - RadianceCascadesBlock.Obstacle5.xy;
+                _2387 = precise::min(_2368, length(_2376 - (_2375 * fast::clamp(dot(_2376, _2375) / precise::max(dot(_2375, _2375), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
             }
             else
             {
-                _2371 = _2352;
+                _2387 = _2368;
             }
-            float _2390;
-            if (_345)
+            float _2406;
+            if (_349)
             {
-                float2 _2378 = RadianceCascadesBlock.Obstacle6.zw - RadianceCascadesBlock.Obstacle6.xy;
-                float2 _2379 = _2217 - RadianceCascadesBlock.Obstacle6.xy;
-                _2390 = precise::min(_2371, length(_2379 - (_2378 * fast::clamp(dot(_2379, _2378) / precise::max(dot(_2378, _2378), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                float2 _2394 = RadianceCascadesBlock.Obstacle6.zw - RadianceCascadesBlock.Obstacle6.xy;
+                float2 _2395 = _2233 - RadianceCascadesBlock.Obstacle6.xy;
+                _2406 = precise::min(_2387, length(_2395 - (_2394 * fast::clamp(dot(_2395, _2394) / precise::max(dot(_2394, _2394), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
             }
             else
             {
-                _2390 = _2371;
+                _2406 = _2387;
             }
-            float _2409;
-            if (_365)
+            float _2425;
+            if (_369)
             {
-                float2 _2397 = RadianceCascadesBlock.Obstacle7.zw - RadianceCascadesBlock.Obstacle7.xy;
-                float2 _2398 = _2217 - RadianceCascadesBlock.Obstacle7.xy;
-                _2409 = precise::min(_2390, length(_2398 - (_2397 * fast::clamp(dot(_2398, _2397) / precise::max(dot(_2397, _2397), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                float2 _2413 = RadianceCascadesBlock.Obstacle7.zw - RadianceCascadesBlock.Obstacle7.xy;
+                float2 _2414 = _2233 - RadianceCascadesBlock.Obstacle7.xy;
+                _2425 = precise::min(_2406, length(_2414 - (_2413 * fast::clamp(dot(_2414, _2413) / precise::max(dot(_2413, _2413), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
             }
             else
             {
-                _2409 = _2390;
+                _2425 = _2406;
             }
-            float2 _2410 = _181 - float2(0.0, 0.01200000010430812835693359375);
-            float2 _2413 = abs(_181 - float2(1.89999997615814208984375, 2.912000179290771484375)) + float2(-1.63999998569488525390625, -0.180000007152557373046875);
-            float2 _2425 = abs(_181 - float2(7.19999980926513671875, 2.912000179290771484375)) + float2(-0.180000007152557373046875, -2.139999866485595703125);
-            float2 _2441 = abs(_181 - float2(-5.599999904632568359375, 5.01200008392333984375)) + float2(-2.38000011444091796875, -0.199999988079071044921875);
-            float _2450 = precise::min(precise::min(precise::min(precise::min(1000.0, (precise::min(precise::max(_2413.x, _2413.y), 0.0) + length(precise::max(_2413, float2(0.0)))) - 0.1599999964237213134765625), (precise::min(precise::max(_2425.x, _2425.y), 0.0) + length(precise::max(_2425, float2(0.0)))) - 0.1599999964237213134765625), length(_181 - float2(4.80000019073486328125, -3.1879999637603759765625)) - 1.0499999523162841796875), (precise::min(precise::max(_2441.x, _2441.y), 0.0) + length(precise::max(_2441, float2(0.0)))) - 0.119999997317790985107421875);
-            float _2469;
-            if (_225)
+            float2 _2426 = _185 - float2(0.0, 0.01200000010430812835693359375);
+            float2 _2429 = abs(_185 - float2(1.89999997615814208984375, 2.912000179290771484375)) + float2(-1.63999998569488525390625, -0.180000007152557373046875);
+            float2 _2441 = abs(_185 - float2(7.19999980926513671875, 2.912000179290771484375)) + float2(-0.180000007152557373046875, -2.139999866485595703125);
+            float2 _2457 = abs(_185 - float2(-5.599999904632568359375, 5.01200008392333984375)) + float2(-2.38000011444091796875, -0.199999988079071044921875);
+            float _2466 = precise::min(precise::min(precise::min(precise::min(1000.0, (precise::min(precise::max(_2429.x, _2429.y), 0.0) + length(precise::max(_2429, float2(0.0)))) - 0.1599999964237213134765625), (precise::min(precise::max(_2441.x, _2441.y), 0.0) + length(precise::max(_2441, float2(0.0)))) - 0.1599999964237213134765625), length(_185 - float2(4.80000019073486328125, -3.1879999637603759765625)) - 1.0499999523162841796875), (precise::min(precise::max(_2457.x, _2457.y), 0.0) + length(precise::max(_2457, float2(0.0)))) - 0.119999997317790985107421875);
+            float _2485;
+            if (_229)
             {
-                float2 _2457 = RadianceCascadesBlock.Obstacle0.zw - RadianceCascadesBlock.Obstacle0.xy;
-                float2 _2458 = _2410 - RadianceCascadesBlock.Obstacle0.xy;
-                _2469 = precise::min(_2450, length(_2458 - (_2457 * fast::clamp(dot(_2458, _2457) / precise::max(dot(_2457, _2457), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                float2 _2473 = RadianceCascadesBlock.Obstacle0.zw - RadianceCascadesBlock.Obstacle0.xy;
+                float2 _2474 = _2426 - RadianceCascadesBlock.Obstacle0.xy;
+                _2485 = precise::min(_2466, length(_2474 - (_2473 * fast::clamp(dot(_2474, _2473) / precise::max(dot(_2473, _2473), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
             }
             else
             {
-                _2469 = _2450;
+                _2485 = _2466;
             }
-            float _2488;
-            if (_245)
+            float _2504;
+            if (_249)
             {
-                float2 _2476 = RadianceCascadesBlock.Obstacle1.zw - RadianceCascadesBlock.Obstacle1.xy;
-                float2 _2477 = _2410 - RadianceCascadesBlock.Obstacle1.xy;
-                _2488 = precise::min(_2469, length(_2477 - (_2476 * fast::clamp(dot(_2477, _2476) / precise::max(dot(_2476, _2476), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                float2 _2492 = RadianceCascadesBlock.Obstacle1.zw - RadianceCascadesBlock.Obstacle1.xy;
+                float2 _2493 = _2426 - RadianceCascadesBlock.Obstacle1.xy;
+                _2504 = precise::min(_2485, length(_2493 - (_2492 * fast::clamp(dot(_2493, _2492) / precise::max(dot(_2492, _2492), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
             }
             else
             {
-                _2488 = _2469;
+                _2504 = _2485;
             }
-            float _2507;
-            if (_265)
+            float _2523;
+            if (_269)
             {
-                float2 _2495 = RadianceCascadesBlock.Obstacle2.zw - RadianceCascadesBlock.Obstacle2.xy;
-                float2 _2496 = _2410 - RadianceCascadesBlock.Obstacle2.xy;
-                _2507 = precise::min(_2488, length(_2496 - (_2495 * fast::clamp(dot(_2496, _2495) / precise::max(dot(_2495, _2495), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                float2 _2511 = RadianceCascadesBlock.Obstacle2.zw - RadianceCascadesBlock.Obstacle2.xy;
+                float2 _2512 = _2426 - RadianceCascadesBlock.Obstacle2.xy;
+                _2523 = precise::min(_2504, length(_2512 - (_2511 * fast::clamp(dot(_2512, _2511) / precise::max(dot(_2511, _2511), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
             }
             else
             {
-                _2507 = _2488;
+                _2523 = _2504;
             }
-            float _2526;
-            if (_285)
+            float _2542;
+            if (_289)
             {
-                float2 _2514 = RadianceCascadesBlock.Obstacle3.zw - RadianceCascadesBlock.Obstacle3.xy;
-                float2 _2515 = _2410 - RadianceCascadesBlock.Obstacle3.xy;
-                _2526 = precise::min(_2507, length(_2515 - (_2514 * fast::clamp(dot(_2515, _2514) / precise::max(dot(_2514, _2514), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                float2 _2530 = RadianceCascadesBlock.Obstacle3.zw - RadianceCascadesBlock.Obstacle3.xy;
+                float2 _2531 = _2426 - RadianceCascadesBlock.Obstacle3.xy;
+                _2542 = precise::min(_2523, length(_2531 - (_2530 * fast::clamp(dot(_2531, _2530) / precise::max(dot(_2530, _2530), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
             }
             else
             {
-                _2526 = _2507;
+                _2542 = _2523;
             }
-            float _2545;
-            if (_305)
+            float _2561;
+            if (_309)
             {
-                float2 _2533 = RadianceCascadesBlock.Obstacle4.zw - RadianceCascadesBlock.Obstacle4.xy;
-                float2 _2534 = _2410 - RadianceCascadesBlock.Obstacle4.xy;
-                _2545 = precise::min(_2526, length(_2534 - (_2533 * fast::clamp(dot(_2534, _2533) / precise::max(dot(_2533, _2533), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                float2 _2549 = RadianceCascadesBlock.Obstacle4.zw - RadianceCascadesBlock.Obstacle4.xy;
+                float2 _2550 = _2426 - RadianceCascadesBlock.Obstacle4.xy;
+                _2561 = precise::min(_2542, length(_2550 - (_2549 * fast::clamp(dot(_2550, _2549) / precise::max(dot(_2549, _2549), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
             }
             else
             {
-                _2545 = _2526;
+                _2561 = _2542;
             }
-            float _2564;
-            if (_325)
+            float _2580;
+            if (_329)
             {
-                float2 _2552 = RadianceCascadesBlock.Obstacle5.zw - RadianceCascadesBlock.Obstacle5.xy;
-                float2 _2553 = _2410 - RadianceCascadesBlock.Obstacle5.xy;
-                _2564 = precise::min(_2545, length(_2553 - (_2552 * fast::clamp(dot(_2553, _2552) / precise::max(dot(_2552, _2552), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                float2 _2568 = RadianceCascadesBlock.Obstacle5.zw - RadianceCascadesBlock.Obstacle5.xy;
+                float2 _2569 = _2426 - RadianceCascadesBlock.Obstacle5.xy;
+                _2580 = precise::min(_2561, length(_2569 - (_2568 * fast::clamp(dot(_2569, _2568) / precise::max(dot(_2568, _2568), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
             }
             else
             {
-                _2564 = _2545;
+                _2580 = _2561;
             }
-            float _2583;
-            if (_345)
+            float _2599;
+            if (_349)
             {
-                float2 _2571 = RadianceCascadesBlock.Obstacle6.zw - RadianceCascadesBlock.Obstacle6.xy;
-                float2 _2572 = _2410 - RadianceCascadesBlock.Obstacle6.xy;
-                _2583 = precise::min(_2564, length(_2572 - (_2571 * fast::clamp(dot(_2572, _2571) / precise::max(dot(_2571, _2571), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                float2 _2587 = RadianceCascadesBlock.Obstacle6.zw - RadianceCascadesBlock.Obstacle6.xy;
+                float2 _2588 = _2426 - RadianceCascadesBlock.Obstacle6.xy;
+                _2599 = precise::min(_2580, length(_2588 - (_2587 * fast::clamp(dot(_2588, _2587) / precise::max(dot(_2587, _2587), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
             }
             else
             {
-                _2583 = _2564;
+                _2599 = _2580;
             }
-            float _2602;
-            if (_365)
+            float _2618;
+            if (_369)
             {
-                float2 _2590 = RadianceCascadesBlock.Obstacle7.zw - RadianceCascadesBlock.Obstacle7.xy;
-                float2 _2591 = _2410 - RadianceCascadesBlock.Obstacle7.xy;
-                _2602 = precise::min(_2583, length(_2591 - (_2590 * fast::clamp(dot(_2591, _2590) / precise::max(dot(_2590, _2590), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
+                float2 _2606 = RadianceCascadesBlock.Obstacle7.zw - RadianceCascadesBlock.Obstacle7.xy;
+                float2 _2607 = _2426 - RadianceCascadesBlock.Obstacle7.xy;
+                _2618 = precise::min(_2599, length(_2607 - (_2606 * fast::clamp(dot(_2607, _2606) / precise::max(dot(_2606, _2606), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - 0.10999999940395355224609375);
             }
             else
             {
-                _2602 = _2583;
+                _2618 = _2599;
             }
-            _2617 = ((RadianceCascadesBlock.WorldColor.xyz * (0.3499999940395355224609375 + (0.64999997615814208984375 * fast::clamp(dot(fast::normalize(float2(_2022 - _2215, _2409 - _2602)), fast::normalize(float2(-0.5, -0.800000011920928955078125))), 0.0, 1.0)))) + (_1691 * 0.680000007152557373046875)) + float3(0.02500000037252902984619140625, 0.02999999932944774627685546875, 0.04500000178813934326171875);
+            _2633 = ((RadianceCascadesBlock.WorldColor.xyz * (0.3499999940395355224609375 + (0.64999997615814208984375 * fast::clamp(dot(fast::normalize(float2(_2038 - _2231, _2425 - _2618)), fast::normalize(float2(-0.5, -0.800000011920928955078125))), 0.0, 1.0)))) + (_1684 * 0.680000007152557373046875)) + float3(0.02500000037252902984619140625, 0.02999999932944774627685546875, 0.04500000178813934326171875);
         }
         else
         {
-            _2617 = _1781;
+            _2633 = _1797;
         }
-        _2618 = _2617;
+        _2634 = _2633;
     }
     else
     {
-        _2618 = _1777;
+        _2634 = _1793;
     }
-    float3 _2643;
+    float3 _2659;
     if (RadianceCascadesBlock.Display.w > 0.5)
     {
-        float2 _2634 = abs(fract(floor(_405 / float2(precise::max(powr(sqrt(RadianceCascadesBlock.Cascade.x), float(max(_390, 0))), 1.0)))) - float2(0.5));
-        _2643 = mix(_2618, float3(0.1500000059604644775390625, 0.550000011920928955078125, 0.75), float3((1.0 - smoothstep(0.439999997615814208984375, 0.5, precise::max(_2634.x, _2634.y))) * 0.3499999940395355224609375));
+        float2 _2650 = abs(fract(floor(_409 / float2(precise::max(powr(sqrt(RadianceCascadesBlock.Cascade.x), float(max(_394, 0))), 1.0)))) - float2(0.5));
+        _2659 = mix(_2634, float3(0.1500000059604644775390625, 0.550000011920928955078125, 0.75), float3((1.0 - smoothstep(0.439999997615814208984375, 0.5, precise::max(_2650.x, _2650.y))) * 0.3499999940395355224609375));
     }
     else
     {
-        _2643 = _2618;
+        _2659 = _2634;
     }
-    bool _2649;
-    if (_445)
+    bool _2665;
+    if (_449)
     {
-        _2649 = RadianceCascadesBlock.Display.z > 0.5;
+        _2665 = RadianceCascadesBlock.Display.z > 0.5;
     }
     else
     {
-        _2649 = false;
+        _2665 = false;
     }
-    float3 _2654;
-    if (_2649)
+    float3 _2670;
+    if (_2665)
     {
-        _2654 = powr(precise::max(_2643, float3(0.0)), float3(0.4545454680919647216796875));
+        _2670 = powr(precise::max(_2659, float3(0.0)), float3(0.4545454680919647216796875));
     }
     else
     {
-        _2654 = _2643;
+        _2670 = _2659;
     }
-    out.out_var_SV_Target0 = float4(fast::clamp(_2654, float3(0.0), float3(1.0)), 1.0) * in.in_var_TEXCOORD1;
+    out.out_var_SV_Target0 = float4(fast::clamp(_2670, float3(0.0), float3(1.0)), 1.0) * in.in_var_TEXCOORD1;
     return out;
 }
 

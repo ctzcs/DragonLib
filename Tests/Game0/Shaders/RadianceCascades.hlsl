@@ -14,7 +14,8 @@ cbuffer RadianceCascadesBlock : register(b0, space3)
     float4 Cascade;     // x base ray count, y cascade count, z interval split, w max distance
     float4 Display;     // x selected cascade (-1 final), y linear filter, z sRGB, w probe overlay
     float4 WorldColor;
-    float4 Tuning;     // x interval overlap, y light count, z emission segment count, w raymarch steps
+    float4 Tuning;     // x interval overlap, y light count, z stroke intensity, w raymarch steps
+    float4 Paint;      // x world width, y world height, z encode scale, w encode offset
     float4 Obstacle0;
     float4 Obstacle1;
     float4 Obstacle2;
@@ -31,31 +32,40 @@ struct LightGpuData
     float4 Color;    // rgb color, a enabled
 };
 
-struct EmissionGpuData
-{
-    float4 Segment; // xy start, zw end
-    float4 Color;   // rgb color * intensity, a radius
-};
+// Storage buffers must directly follow the sampled textures in the t-register
+// sequence: shadercross maps them to SDL_gpu binding slots by register order,
+// so Lights has to sit right after the last texture (t3), not on an arbitrary
+// register — an out-of-range slot fails graphics pipeline creation.
+StructuredBuffer<LightGpuData> Lights : register(t3, space2);
 
-StructuredBuffer<LightGpuData> Lights : register(t1, space2);
-StructuredBuffer<EmissionGpuData> Emissions : register(t2, space2);
-
+// User-painted strokes live in two fixed world-space textures instead of a
+// per-segment GPU buffer: StrokeTexture holds the sRGB stroke colors with a
+// coverage alpha, StrokeDistance holds the encoded distance to the nearest
+// stroke surface (see RadianceCascadesStroke.hlsl for the encoding). Sampling
+// keeps the raymarch cost independent of how much has been painted, matching
+// the reference sandbox's texture-driven architecture. Each texture needs
+// its OWN SamplerState: shadercross classifies textures that share one
+// SamplerState as storage textures, which Foster never binds.
 Texture2D Texture : register(t0, space2);
+Texture2D StrokeTexture : register(t1, space2);
+Texture2D StrokeDistance : register(t2, space2);
 SamplerState Sampler : register(s0, space2);
+SamplerState StrokeSampler : register(s1, space2);
+SamplerState StrokeDistanceSampler : register(s2, space2);
 
 struct VsInput
 {
     float2 Position : TEXCOORD0;
     float2 TexCoord : TEXCOORD1;
     float4 Color : TEXCOORD2;
-    float4 Type : TEXCOORD4;
+    float4 Mode : TEXCOORD4;
 };
 
 struct VsOutput
 {
     float2 TexCoord : TEXCOORD0;
     float4 Color : TEXCOORD1;
-    float4 Type : TEXCOORD4;
+    float4 Mode : TEXCOORD4;
     float4 Position : SV_Position;
 };
 
@@ -64,7 +74,7 @@ VsOutput vertex_main(VsInput input)
     VsOutput output;
     output.TexCoord = input.TexCoord;
     output.Color = input.Color;
-    output.Type = input.Type;
+    output.Mode = input.Mode;
     output.Position = mul(Matrix, mul(CameraMatrix, float4(input.Position, 0.0, 1.0)));
     return output;
 }
@@ -114,6 +124,25 @@ float2 sceneNormal(float2 p)
                              sceneDistance(p + float2(0.0, e)) - sceneDistance(p - float2(0.0, e))));
 }
 
+float2 strokeUv(float2 p)
+{
+    return p / Paint.xy + 0.5;
+}
+
+float strokeDistance(float2 p)
+{
+    float2 uv = strokeUv(p);
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)
+        return Paint.z + Paint.w; // outside the painted region, no stroke nearer than the clamp
+    return StrokeDistance.Sample(StrokeDistanceSampler, uv).r * Paint.z + Paint.w;
+}
+
+float3 strokeRadiance(float2 p)
+{
+    float4 stroke = StrokeTexture.Sample(StrokeSampler, strokeUv(p));
+    return pow(stroke.rgb, 2.2) * stroke.a * Tuning.z;
+}
+
 float4 traceRay(float2 origin, float2 direction, float intervalStart, float intervalEnd)
 {
     float travel = max(intervalStart, 0.02);
@@ -127,22 +156,19 @@ float4 traceRay(float2 origin, float2 direction, float intervalStart, float inte
             break;
 
         float2 samplePosition = origin + direction * travel;
+
+        // Painted strokes are opaque emitters, like the reference sandbox: a
+        // ray that reaches a stroke surface takes its color and terminates.
+        float distanceToStroke = strokeDistance(samplePosition);
+        if (distanceToStroke < 0.025)
+        {
+            result.rgb += strokeRadiance(samplePosition);
+            result.a = 1.0;
+            break;
+        }
+
         float3 lightRadiance = float3(0.0, 0.0, 0.0);
         float lightHit = 0.0;
-        for (int segmentIndex = 0; segmentIndex < (int)Tuning.z; segmentIndex++)
-        {
-            float segmentRadius = max(Emissions[segmentIndex].Color.a, 0.01);
-            float segmentDistance = sdSegment(samplePosition,
-                Emissions[segmentIndex].Segment.xy,
-                Emissions[segmentIndex].Segment.zw,
-                segmentRadius);
-            if (segmentDistance < 0.0)
-            {
-                float glow = smoothstep(segmentRadius, 0.0, max(segmentDistance + segmentRadius, 0.0));
-                lightRadiance += Emissions[segmentIndex].Color.rgb * (0.55 + 0.45 * glow);
-                lightHit = 1.0;
-            }
-        }
         for (int lightIndex = 0; lightIndex < (int)Tuning.y; lightIndex++)
         {
             if (Lights[lightIndex].Color.a < 0.5)
@@ -169,33 +195,23 @@ float4 traceRay(float2 origin, float2 direction, float intervalStart, float inte
         if (distanceToScene < 0.018)
         {
             float2 normal = sceneNormal(samplePosition);
-            for (int lightIndex = 0; lightIndex < (int)Tuning.y; lightIndex++)
+            for (int sceneLightIndex = 0; sceneLightIndex < (int)Tuning.y; sceneLightIndex++)
             {
-                if (Lights[lightIndex].Color.a < 0.5)
+                if (Lights[sceneLightIndex].Color.a < 0.5)
                     continue;
-                float2 toSource = Lights[lightIndex].Position.xy - samplePosition;
+                float2 toSource = Lights[sceneLightIndex].Position.xy - samplePosition;
                 float sourceDistance = length(toSource);
                 float lambert = saturate(dot(normal, toSource / max(sourceDistance, 0.001)));
-                float bounce = lambert * Lights[lightIndex].Position.z / (1.0 + sourceDistance * sourceDistance * 0.18);
-                result.rgb += Lights[lightIndex].Color.rgb * bounce * 0.24;
+                float bounce = lambert * Lights[sceneLightIndex].Position.z / (1.0 + sourceDistance * sourceDistance * 0.18);
+                result.rgb += Lights[sceneLightIndex].Color.rgb * bounce * 0.24;
             }
             result.a = 1.0;
             break;
         }
 
-        // Emission strokes are not part of sceneDistance. Stepping only by the
-        // scene SDF leaps over these thin strokes in open space, so the rays
-        // never register the light the user drew. Fold each stroke's SDF into
-        // the march step so rays decelerate onto the stroke and illuminate it.
-        float marchDistance = distanceToScene;
-        for (int marchSegmentIndex = 0; marchSegmentIndex < (int)Tuning.z; marchSegmentIndex++)
-        {
-            float segmentRadius = max(Emissions[marchSegmentIndex].Color.a, 0.01);
-            marchDistance = min(marchDistance, sdSegment(samplePosition,
-                Emissions[marchSegmentIndex].Segment.xy,
-                Emissions[marchSegmentIndex].Segment.zw,
-                segmentRadius));
-        }
+        // The stroke distance field joins the scene SDF as the march bound so
+        // rays decelerate onto thin strokes instead of leaping over them.
+        float marchDistance = min(distanceToScene, max(distanceToStroke, 0.0));
         travel += max(marchDistance, 0.018);
     }
     return result;
@@ -284,16 +300,11 @@ float4 fragment_main(VsOutput input) : SV_Target0
     {
         float3 base = WorldColor.rgb * (0.62 + 0.38 * (1.0 - uv.y));
         float3 lightGlow = float3(0.0, 0.0, 0.0);
-        for (int segmentIndex = 0; segmentIndex < (int)Tuning.z; segmentIndex++)
-        {
-            float segmentRadius = max(Emissions[segmentIndex].Color.a, 0.01);
-            float segmentDistance = sdSegment(worldPosition,
-                Emissions[segmentIndex].Segment.xy,
-                Emissions[segmentIndex].Segment.zw,
-                segmentRadius);
-            float glow = smoothstep(segmentRadius * 8.0, 0.0, max(segmentDistance, 0.0));
-            lightGlow += Emissions[segmentIndex].Color.rgb * glow * 0.26;
-        }
+        // Strokes glow with the distance field's falloff instead of a
+        // per-segment loop; painted pixels themselves shine at full strength.
+        float distanceToStroke = strokeDistance(worldPosition);
+        float strokeGlow = exp(-max(distanceToStroke, 0.0) * 1.6);
+        lightGlow += strokeRadiance(worldPosition) * (0.3 + 0.7 * strokeGlow);
         for (int lightIndex = 0; lightIndex < (int)Tuning.y; lightIndex++)
         {
             if (Lights[lightIndex].Color.a < 0.5)
