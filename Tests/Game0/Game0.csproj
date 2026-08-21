@@ -7,6 +7,28 @@
         <Nullable>enable</Nullable>
         <RunWorkingDirectory>$(MSBuildProjectDirectory)</RunWorkingDirectory>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <DebugType>embedded</DebugType>
+        <!-- 支持的运行时列表（不设置 RuntimeIdentifier，避免污染 build 输出路径） -->
+        <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+
+        <!-- 版本信息（可选，显示在 exe 属性中） -->
+        <AssemblyVersion>0.1.0.0</AssemblyVersion>
+        <FileVersion>0.1.0.0</FileVersion>
+        <Version>0.1.0</Version>
+    </PropertyGroup>
+
+    <!-- 发布专属配置：仅在 dotnet publish 时生效，不影响日常 build/run -->
+    <PropertyGroup Condition="'$(_IsPublishing)' == 'true' Or '$(PublishDir)' != ''">
+        <!-- 自包含单文件，无需安装 .NET 运行时 -->
+        <ApplicationIcon>Resources\Icons\icon.ico</ApplicationIcon>
+        <SelfContained>true</SelfContained>
+        <PublishSingleFile>true</PublishSingleFile>
+        <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+        <!-- 不要把 Content 打包进 self-extract，让资源目录保留在 exe 旁边 -->
+        <IncludeAllContentForSelfExtract>false</IncludeAllContentForSelfExtract>
+        <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+        <!-- 关闭 Trim，避免反射代码（DragonECS 注入、ImGui 等）被裁掉 -->
+        <PublishTrimmed>false</PublishTrimmed>
     </PropertyGroup>
 
     <ItemGroup>
@@ -23,9 +45,24 @@
       <Folder Include="Resources\Spine\SpineBoy\" />
     </ItemGroup>
 
+
+    <!-- Resources 目录：作为外部文件复制到输出/发布目录，明确排除出单文件 bundle -->
     <ItemGroup>
-      <Compile Remove="Benchmarks\**\*.cs" />
-      <Compile Remove="Tests\**\*.cs" />
+        <!-- 先移除 SDK 可能隐式包含的 Resources 项，避免重复/冲突 -->
+        <Content Remove="Resources\**\*.*" />
+        <None Remove="Resources\**\*.*" />
+        <Compile Remove="Benchmarks\**\*.cs" />
+        <Compile Remove="Tests\**\*.cs" />
+        
+        <None Include="Resources\**\*.*">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+            <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+            <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+        </None>
+    </ItemGroup>
+    
+    <ItemGroup>
+      
     </ItemGroup>
 
     <ItemGroup>
@@ -35,3 +72,5 @@
     </ItemGroup>
 
 </Project>
+
+

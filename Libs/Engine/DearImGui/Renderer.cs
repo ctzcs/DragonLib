@@ -475,7 +475,7 @@ public class Renderer : IDisposable
 				{
 					var textureIndex = cmd->TextureId.ToInt32();
 					if (textureIndex < boundTextures.Count)
-						material.Fragment.Samplers[0] = new(boundTextures[textureIndex], new());
+						pass.FragmentSamplers[0] = new BoundSampler(boundTextures[textureIndex], new TextureSampler(TextureFilter.Linear, TextureWrap.Clamp));
                     pass.VertexOffset = (int)(cmd->VtxOffset + globalVtxOffset);
                     pass.IndexOffset = (int)(cmd->IdxOffset + globalIdxOffset);
 					pass.IndexCount = (int)cmd->ElemCount;
