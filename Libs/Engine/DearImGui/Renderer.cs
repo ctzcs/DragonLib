@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 
 namespace Engine.DearImGui;
 using System.Diagnostics;
@@ -17,6 +17,9 @@ public class Renderer : IDisposable
 	private readonly Material material;
 	private readonly Texture fontTexture;
 	private readonly List<Texture> boundTextures = [];
+	// Per-texture sampler overrides for user textures (default: Linear/Clamp, the
+	// historical behavior). Apps register e.g. pixel-art atlases with Nearest.
+	private readonly Dictionary<Texture, TextureSampler> samplerOverrides = [];
 	private readonly List<Batcher> batchersUsed = [];
 	private readonly Stack<Batcher> batchersStack = [];
 	private readonly Stack<Batcher> batcherPool = [];
@@ -253,7 +256,7 @@ public class Renderer : IDisposable
         
         // create drawing resources
         mesh = new Mesh<PosTexColVertex, ushort>(app.GraphicsDevice);
-        material = app.GraphicsDevice.Defaults.TexturedMaterial; //new(new TexturedShader(app.GraphicsDevice));
+        material = app.GraphicsDevice.Defaults.TexturedMaterial.Clone(); // 克隆默认材质，避免每帧改写共享实例（对齐上游 FosterImGui 最新版）
         ImGui.SetCurrentContext(nint.Zero);
     }
     
@@ -475,7 +478,13 @@ public class Renderer : IDisposable
 				{
 					var textureIndex = cmd->TextureId.ToInt32();
 					if (textureIndex < boundTextures.Count)
-						pass.FragmentSamplers[0] = new BoundSampler(boundTextures[textureIndex], new TextureSampler(TextureFilter.Linear, TextureWrap.Clamp));
+					{
+						var bound = boundTextures[textureIndex];
+						var sampler = samplerOverrides.TryGetValue(bound, out var overrideSampler)
+							? overrideSampler
+							: new TextureSampler(TextureFilter.Linear, TextureWrap.Clamp);
+						pass.FragmentSamplers[0] = new BoundSampler(bound, sampler);
+					}
                     pass.VertexOffset = (int)(cmd->VtxOffset + globalVtxOffset);
                     pass.IndexOffset = (int)(cmd->IdxOffset + globalIdxOffset);
 					pass.IndexCount = (int)cmd->ElemCount;
@@ -501,6 +510,12 @@ public class Renderer : IDisposable
 		if (texture != null)
 			boundTextures.Add(texture);
 		return id;
+	}
+
+	/// <summary>Overrides the sampler used when this texture is drawn as an ImGui user texture.</summary>
+	public void SetTextureSamplerOverride(Texture texture, TextureSampler sampler)
+	{
+		samplerOverrides[texture] = sampler;
 	}
 
 	public void Dispose()

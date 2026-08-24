@@ -23,6 +23,8 @@ public sealed class LevelData
 {
     public string Name { get; set; } = "";
     public List<EntityData> Entities { get; set; } = new();
+    /// <summary>该关卡声明的编辑层（PatternWorld 编辑器使用；空层也靠它存活）。运行时不消费。</summary>
+    public List<string> Layers { get; set; } = new();
 }
 
 /// <summary>
