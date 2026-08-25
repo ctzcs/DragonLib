@@ -189,7 +189,14 @@ public class Renderer : IDisposable
 	*/
     
 
-    public Renderer(App app, byte[]? customFontData = null, int[]? glyphCodepoints = null)
+    /// <param name="glyphCodepoints">Explicit codepoint list (usage side decides the
+    /// whole coverage). Null = assembled from the neutral default below.</param>
+    /// <param name="chineseCommon">Merge ImGui's simplified-Chinese common set — a
+    /// USAGE-SIDE declaration: the engine itself stays locale-neutral.</param>
+    /// <param name="extraSymbols">Extra characters to merge (e.g. "→—·×"), so apps can
+    /// extend coverage without enumerating full codepoint lists.</param>
+    public Renderer(App app, byte[]? customFontData = null, int[]? glyphCodepoints = null,
+        bool chineseCommon = false, string? extraSymbols = null)
     {
         this.app = app;
 
@@ -214,7 +221,8 @@ public class Renderer : IDisposable
                     nint dataPtr = Marshal.AllocHGlobal(customFontData.Length);
                     Marshal.Copy(customFontData, 0, dataPtr, customFontData.Length);
 
-                    //glyph ranges 用传入的codepoints生成，如果没有退回ImGui内置的常用字
+                    //glyph ranges 用传入的codepoints生成，没有则按参数拼装。
+                    //引擎保持 locale 中立：默认只有拉丁区，中文/符号由使用方声明。
                     nint rangesPtr;
                     if (glyphCodepoints != null && glyphCodepoints.Length > 0)
                     {
@@ -224,7 +232,21 @@ public class Renderer : IDisposable
                     }
                     else
                     {
-                        rangesPtr = io.Fonts.GetGlyphRangesChineseSimplifiedCommon();
+                        var codepoints = new List<int>();
+                        for (var c = 0x20; c <= 0xFF; c++)
+                            codepoints.Add(c); // 中性默认：拉丁 + Latin-1
+                        if (chineseCommon)
+                        {
+                            var chinese = (ushort*)io.Fonts.GetGlyphRangesChineseSimplifiedCommon();
+                            for (var p = chinese; *p != 0; p++)
+                                codepoints.Add(*p);
+                        }
+                        if (!string.IsNullOrEmpty(extraSymbols))
+                            foreach (var ch in extraSymbols)
+                                codepoints.Add(ch);
+                        ushort[] merged = BuildGlyphRanges(codepoints.ToArray());
+                        rangesHandle = GCHandle.Alloc(merged, GCHandleType.Pinned);
+                        rangesPtr = rangesHandle.AddrOfPinnedObject();
                     }
                     
                     
