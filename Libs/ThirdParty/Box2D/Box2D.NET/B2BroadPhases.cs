@@ -1,4 +1,4 @@
-﻿// SPDX-FileCopyrightText: 2023 Erin Catto
+// SPDX-FileCopyrightText: 2023 Erin Catto
 // SPDX-FileCopyrightText: 2025 Ikpil Choi(ikpil@naver.com)
 // SPDX-License-Identifier: MIT
 
@@ -424,6 +424,17 @@ namespace Box2D.NET
 
             if (moveCount == 0)
             {
+                // Vendored fix (PatternWorld): an empty move buffer does NOT mean the
+                // trees are clean. A proxy enlarged last step and destroyed before this
+                // one takes its move entry with it (b2BroadPhase_DestroyProxy →
+                // b2UnBufferMove), while the enlarged flag orphaned on its ancestors is
+                // only ever cleared by a rebuild. Without this, the next
+                // b2ValidateNoEnlarged in b2Solve trips on the orphan — killing a
+                // knocked-back enemy mid-flight hit exactly this. The root read is two
+                // flag checks when clean; the partial rebuild is cheap when owed.
+                if (b2DynamicTree_HasEnlargedRoot(bp.trees[(int)B2BodyType.b2_dynamicBody]) ||
+                    b2DynamicTree_HasEnlargedRoot(bp.trees[(int)B2BodyType.b2_kinematicBody]))
+                    b2BroadPhase_RebuildTrees(bp);
                 return;
             }
 

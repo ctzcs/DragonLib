@@ -1,4 +1,4 @@
-﻿// SPDX-FileCopyrightText: 2023 Erin Catto
+// SPDX-FileCopyrightText: 2023 Erin Catto
 // SPDX-FileCopyrightText: 2025 Ikpil Choi(ikpil@naver.com)
 // SPDX-License-Identifier: MIT
 
@@ -1089,6 +1089,15 @@ namespace Box2D.NET
             B2_UNUSED(tree);
 #endif
         }
+
+        /// True while any node carries the enlarged flag. b2DynamicTree_EnlargeProxy
+        /// propagates the flag all the way to the root, so the root read answers for the
+        /// whole tree. The broad-phase uses this to detect a pending rebuild owed by a
+        /// proxy whose move-buffer entry was destroyed with it (b2RemoveLeaf recomputes
+        /// ancestor AABBs but never their flags, orphaning the flag on the survivors).
+        internal static bool b2DynamicTree_HasEnlargedRoot(B2DynamicTree tree) =>
+            tree.root != B2_NULL_INDEX &&
+            (tree.nodes[tree.root].flags & (ushort)B2TreeNodeFlags.b2_enlargedNode) != 0;
 
         /// Get the number of bytes used by this tree
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
