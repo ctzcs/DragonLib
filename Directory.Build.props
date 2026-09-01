@@ -1,0 +1,12 @@
+<Project>
+
+    <!-- 压掉整个 DragonLib 库的无价值警告：
+         CS86xx 家族 —— 库未做 null 安全标注；
+         CS0162/CS0414/CA2265 —— Box2D 移植代码的不可达分支、未使用字段、Span null 比较。
+         注意 CA2022（Stream.Read 不完整读取）保留：Foster.Audio 里那条有真实风险。
+         将来正式治理时，删除本文件即可恢复全部警告。 -->
+    <PropertyGroup>
+        <NoWarn>$(NoWarn);CS8600;CS8601;CS8602;CS8603;CS8604;CS8618;CS8625;CS8765;CS8767;CS0162;CS0414;CA2265</NoWarn>
+    </PropertyGroup>
+
+</Project>
