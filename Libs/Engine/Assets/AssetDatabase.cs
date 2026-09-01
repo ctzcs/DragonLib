@@ -47,6 +47,18 @@ public sealed class AssetDatabase
         return id;
     }
 
+    /// <summary>注销一个资产（编辑器删除 prefab 用）：解除 id→资产、id→名字 映射，并让
+    /// 该类型的名字排序缓存失效。找不到是静默 no-op。</summary>
+    public bool Unregister(AssetId id)
+    {
+        if (!_registry.TryResolve(id, out var asset) || asset is null)
+            return false;
+        _registry.Unregister(id);
+        _names.Remove(id);
+        _namesByType.Remove(asset.GetType()); // 与 Register 同一路径：名字缓存失效重建
+        return true;
+    }
+
     /// <summary>类型化解析。找不到或类型不符返回 null。</summary>
     public T? Get<T>(AssetId id) where T : class =>
         _registry.TryResolve(id, out var o) ? o as T : null;
