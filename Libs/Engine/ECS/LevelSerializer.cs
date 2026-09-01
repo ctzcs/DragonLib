@@ -14,8 +14,11 @@ public sealed class EntityData
     public AssetId Def { get; set; }
     /// <summary>实例身份（Noel 的 "id"）。</summary>
     public SpawnId Id { get; set; }
-    /// <summary>组件类型名 → 该组件的值。当前为全量快照，将来可优化成只存相对预制体的差异。</summary>
+    /// <summary>组件类型名 → 覆盖值。只存相对预制体默认值的差量（值不同、或预制体没有的组件）；与默认值一致的组件不存，加载时继承预制体。</summary>
     public Dictionary<string, JsonElement> Fields { get; set; } = new();
+    /// <summary>预制体提供、但本实例上被移除的组件类型名。null = 无（旧格式文件没有此字段）。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? Removed { get; set; }
 }
 
 /// <summary>一个关卡文件：一组被摆放的实例。</summary>
@@ -52,7 +55,7 @@ public static class LevelSerializer
 
     // ---- Save ----------------------------------------------------------
 
-    public static LevelData Save(EcsWorld world, string name)
+    public static LevelData Save(EcsWorld world, string name, AssetDatabase assets)
     {
         var level = new LevelData { Name = name };
         var spawnPool = world.GetPool<SpawnIdComp>();
@@ -70,20 +73,74 @@ public static class LevelSerializer
                 Id = spawnPool.Get(e).Id,
             };
 
-            foreach (int cid in world.GetComponentTypeIDsFor(e))
+            var prefab = assets.Get<Prefab>(data.Def);
+            if (prefab != null)
             {
-                var pool = pools[cid];
-                var type = pool.ComponentType;
-                if (type == typeof(SpawnIdComp) || type == typeof(PrefabRefComp)) continue;
+                // 差量保存：只存相对预制体的覆盖与移除，未覆盖的组件加载时继承默认。
+                var removed = new List<string>();
+                DiffAgainstPrefab(world, e, prefab, data.Fields, removed);
+                if (removed.Count > 0)
+                    data.Removed = removed;
+            }
+            else
+            {
+                // 预制体解析不到：退化为全量快照，保证实例能原样加载回来（不丢数据）。
+                foreach (int cid in world.GetComponentTypeIDsFor(e))
+                {
+                    var pool = pools[cid];
+                    var type = pool.ComponentType;
+                    if (type == typeof(SpawnIdComp) || type == typeof(PrefabRefComp)) continue;
 
-                object raw = pool.GetRaw(e);
-                data.Fields[type.Name] =
-                    JsonSerializer.SerializeToElement(raw, type, PrefabSerializer.Options);
+                    object raw = pool.GetRaw(e);
+                    data.Fields[type.Name] =
+                        JsonSerializer.SerializeToElement(raw, type, PrefabSerializer.Options);
+                }
             }
             level.Entities.Add(data);
         }
         return level;
     }
+
+    /// <summary>
+    /// 计算实体相对预制体的差量：与默认值不同（或预制体没有）的组件进 overrides；
+    /// 预制体有而实体没有的组件类型名进 removed。Save 与编辑器的预制体传播共用。
+    /// </summary>
+    public static void DiffAgainstPrefab(EcsWorld world, int entity, Prefab prefab,
+        Dictionary<string, JsonElement> overrides, List<string>? removed)
+    {
+        var pools = world.AllPools;
+        HashSet<string>? present = removed == null ? null : new HashSet<string>();
+
+        foreach (int cid in world.GetComponentTypeIDsFor(entity))
+        {
+            var pool = pools[cid];
+            var type = pool.ComponentType;
+            if (type == typeof(SpawnIdComp) || type == typeof(PrefabRefComp)) continue;
+
+            object raw = pool.GetRaw(entity);
+            var json = JsonSerializer.SerializeToElement(raw, type, PrefabSerializer.Options);
+            present?.Add(type.Name);
+            if (prefab.Components.TryGetValue(type.Name, out var defaultJson)
+                && ComponentJsonEquals(defaultJson, json, type))
+                continue;   // 与预制体默认值一致：不存，继承默认。
+            overrides[type.Name] = json;
+        }
+
+        if (removed == null) return;
+        foreach (var typeName in prefab.Components.Keys)
+            if (!present!.Contains(typeName))
+                removed.Add(typeName);
+    }
+
+    /// <summary>
+    /// JsonElement 的原文带着来源的格式（磁盘文件的缩进层级 vs 内存序列化的碎片），
+    /// 直接比文本不可靠。各自过一遍同类型的反序列化 + 序列化得到规范形再比。
+    /// </summary>
+    private static bool ComponentJsonEquals(JsonElement a, JsonElement b, Type type)
+        => Canonicalize(a, type) == Canonicalize(b, type);
+
+    private static string Canonicalize(JsonElement json, Type type)
+        => JsonSerializer.SerializeToElement(json.Deserialize(type, PrefabSerializer.Options), type, PrefabSerializer.Options).GetRawText();
 
     // ---- Load ----------------------------------------------------------
 
@@ -105,6 +162,22 @@ public static class LevelSerializer
                 continue;
             }
             int e = PrefabSerializer.Instantiate(world, prefab, data.Fields, data.Id);
+
+            // 差量格式的另一半：实例上被移除的预制体组件，实例化后删掉。
+            if (data.Removed != null)
+                foreach (var typeName in data.Removed)
+                {
+                    var removedType = EcsPoolUtil.ResolveComponentType(typeName);
+                    var removedPool = removedType == null ? null : EcsPoolUtil.GetOrCreatePoolFor(world, removedType);
+                    if (removedPool == null)
+                    {
+                        EcsDebug.PrintWarning($"Level: 未知组件类型 '{typeName}'，移除已跳过。");
+                        continue;
+                    }
+                    if (removedPool.Has(e))
+                        removedPool.Del(e);
+                }
+
             map[data.Id] = world.GetEntityLong(e);
         }
 
