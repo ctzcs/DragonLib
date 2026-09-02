@@ -1,11 +1,15 @@
-// Bakes one emissive stroke's capsule SDF into the stroke distance-field
-// target. The C# side submits each segment as a quad whose TexCoord carries
-// the vertex WORLD position (the batcher's Matrix slot holds the paint-target
-// ortho projection, so SV-space coordinates are pixels, not world units).
-// Quads are drawn with min blending, so the R channel keeps the smallest
-// (nearest-stroke) distance everywhere. Encoding:
+// Bakes one primitive's SDF into a distance-field target. The C# side submits
+// each primitive as a quad whose TexCoord carries the vertex WORLD position
+// (the batcher's Matrix slot holds the paint-target ortho projection, so
+// SV-space coordinates are pixels, not world units). Quads are drawn with min
+// blending, so the R channel keeps the smallest (nearest-surface) distance
+// everywhere. Encoding:
 // R = saturate((distance - lo) / (hi - lo)), matching the Paint uniform
 // decode in RadianceCascades.hlsl.
+//
+// Primitive type (Params.z): 0 = capsule segment (Segment xy=start, zw=end,
+// radius Params.x), 1 = circle (Segment xy=center, radius Params.x),
+// 2 = round box (Segment xy=center, zw=half size, corner radius Params.x).
 
 cbuffer VertexMatrixBlock : register(b0, space1)
 {
@@ -14,8 +18,8 @@ cbuffer VertexMatrixBlock : register(b0, space1)
 
 cbuffer StrokeFieldBlock : register(b0, space3)
 {
-    float4 Segment; // xy start, zw end, world units
-    float4 Params;  // x radius, y encode scale (hi - lo), z unused, w encode offset (lo)
+    float4 Segment; // see primitive type above
+    float4 Params;  // x radius, y encode scale (hi - lo), z primitive type, w encode offset (lo)
 };
 
 struct VsInput
@@ -42,9 +46,23 @@ VsOutput vertex_main(VsInput input)
 
 float4 fragment_main(VsOutput input) : SV_Target0
 {
-    float2 ab = Segment.zw - Segment.xy;
-    float h = saturate(dot(input.WorldPosition - Segment.xy, ab) / max(dot(ab, ab), 0.0001));
-    float distance = length(input.WorldPosition - Segment.xy - ab * h) - Params.x;
+    float2 p = input.WorldPosition;
+    float distance;
+    if (Params.z > 1.5)
+    {
+        float2 q = abs(p - Segment.xy) - Segment.zw + Params.x;
+        distance = min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - Params.x;
+    }
+    else if (Params.z > 0.5)
+    {
+        distance = length(p - Segment.xy) - Params.x;
+    }
+    else
+    {
+        float2 ab = Segment.zw - Segment.xy;
+        float h = saturate(dot(p - Segment.xy, ab) / max(dot(ab, ab), 0.0001));
+        distance = length(p - Segment.xy - ab * h) - Params.x;
+    }
     float encoded = saturate((distance - Params.w) / Params.y);
     return float4(encoded, encoded, encoded, 1.0);
 }

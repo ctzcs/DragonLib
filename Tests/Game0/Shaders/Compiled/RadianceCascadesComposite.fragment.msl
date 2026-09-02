@@ -1,0 +1,278 @@
+#include <metal_stdlib>
+#include <simd/simd.h>
+
+using namespace metal;
+
+struct type_RadianceCascadesBlock
+{
+    float4 Viewport;
+    float4 Cascade;
+    float4 Display;
+    float4 WorldColor;
+    float4 Tuning;
+    float4 Paint;
+};
+
+struct fragment_main_out
+{
+    float4 out_var_SV_Target0 [[color(0)]];
+};
+
+struct fragment_main_in
+{
+    float2 in_var_TEXCOORD0 [[user(locn0)]];
+    float4 in_var_TEXCOORD1 [[user(locn1)]];
+};
+
+fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], constant type_RadianceCascadesBlock& RadianceCascadesBlock [[buffer(0)]], texture2d<float> Texture [[texture(0)]], texture2d<float> StaticEmission [[texture(1)]], texture2d<float> StaticDistance [[texture(2)]], texture2d<float> DynamicEmission [[texture(3)]], sampler Sampler [[sampler(0)]], sampler StaticEmissionSampler [[sampler(1)]], sampler StaticDistanceSampler [[sampler(2)]], sampler DynamicEmissionSampler [[sampler(3)]])
+{
+    fragment_main_out out = {};
+    float2 _105;
+    float2 _107;
+    float2 _85 = (in.in_var_TEXCOORD0 - float2(0.5)) * RadianceCascadesBlock.Viewport.xy;
+    float4 _89 = Texture.sample(Sampler, in.in_var_TEXCOORD0);
+    float3 _90 = _89.xyz;
+    float3 _100 = ((_90 * _90) / precise::max(_90 + float3(RadianceCascadesBlock.Display.w), float3(9.9999997473787516355514526367188e-06))) * RadianceCascadesBlock.Tuning.y;
+    float _143;
+    do
+    {
+        _105 = RadianceCascadesBlock.Paint.xy;
+        _107 = (_85 / _105) + float2(0.5);
+        bool _113;
+        if (_107.x >= 0.0)
+        {
+            _113 = _107.x <= 1.0;
+        }
+        else
+        {
+            _113 = false;
+        }
+        bool _118;
+        if (_113)
+        {
+            _118 = _107.y >= 0.0;
+        }
+        else
+        {
+            _118 = false;
+        }
+        bool _123;
+        if (_118)
+        {
+            _123 = _107.y <= 1.0;
+        }
+        else
+        {
+            _123 = false;
+        }
+        if (!_123)
+        {
+            _143 = RadianceCascadesBlock.Paint.z + RadianceCascadesBlock.Paint.w;
+            break;
+        }
+        _143 = (StaticDistance.sample(StaticDistanceSampler, _107).x * RadianceCascadesBlock.Paint.z) + RadianceCascadesBlock.Paint.w;
+        break;
+    } while(false);
+    float4 _147 = StaticEmission.sample(StaticEmissionSampler, _107);
+    float _150 = _147.w;
+    float4 _173 = DynamicEmission.sample(DynamicEmissionSampler, _107);
+    bool _187;
+    if (RadianceCascadesBlock.Viewport.w > 0.5)
+    {
+        _187 = _143 < 0.0;
+    }
+    else
+    {
+        _187 = false;
+    }
+    bool _191;
+    if (_187)
+    {
+        _191 = _150 < 0.0500000007450580596923828125;
+    }
+    else
+    {
+        _191 = false;
+    }
+    float3 _371;
+    if (_191)
+    {
+        float _234;
+        do
+        {
+            float2 _198 = ((_85 + float2(0.01200000010430812835693359375, 0.0)) / _105) + float2(0.5);
+            float _199 = _198.x;
+            bool _204;
+            if (_199 >= 0.0)
+            {
+                _204 = _199 <= 1.0;
+            }
+            else
+            {
+                _204 = false;
+            }
+            bool _209;
+            if (_204)
+            {
+                _209 = _198.y >= 0.0;
+            }
+            else
+            {
+                _209 = false;
+            }
+            bool _214;
+            if (_209)
+            {
+                _214 = _198.y <= 1.0;
+            }
+            else
+            {
+                _214 = false;
+            }
+            if (!_214)
+            {
+                _234 = RadianceCascadesBlock.Paint.z + RadianceCascadesBlock.Paint.w;
+                break;
+            }
+            _234 = (StaticDistance.sample(StaticDistanceSampler, _198).x * RadianceCascadesBlock.Paint.z) + RadianceCascadesBlock.Paint.w;
+            break;
+        } while(false);
+        float _275;
+        do
+        {
+            float2 _239 = ((_85 - float2(0.01200000010430812835693359375, 0.0)) / _105) + float2(0.5);
+            float _240 = _239.x;
+            bool _245;
+            if (_240 >= 0.0)
+            {
+                _245 = _240 <= 1.0;
+            }
+            else
+            {
+                _245 = false;
+            }
+            bool _250;
+            if (_245)
+            {
+                _250 = _239.y >= 0.0;
+            }
+            else
+            {
+                _250 = false;
+            }
+            bool _255;
+            if (_250)
+            {
+                _255 = _239.y <= 1.0;
+            }
+            else
+            {
+                _255 = false;
+            }
+            if (!_255)
+            {
+                _275 = RadianceCascadesBlock.Paint.z + RadianceCascadesBlock.Paint.w;
+                break;
+            }
+            _275 = (StaticDistance.sample(StaticDistanceSampler, _239).x * RadianceCascadesBlock.Paint.z) + RadianceCascadesBlock.Paint.w;
+            break;
+        } while(false);
+        float _317;
+        do
+        {
+            float2 _281 = ((_85 + float2(0.0, 0.01200000010430812835693359375)) / _105) + float2(0.5);
+            float _282 = _281.x;
+            bool _287;
+            if (_282 >= 0.0)
+            {
+                _287 = _282 <= 1.0;
+            }
+            else
+            {
+                _287 = false;
+            }
+            bool _292;
+            if (_287)
+            {
+                _292 = _281.y >= 0.0;
+            }
+            else
+            {
+                _292 = false;
+            }
+            bool _297;
+            if (_292)
+            {
+                _297 = _281.y <= 1.0;
+            }
+            else
+            {
+                _297 = false;
+            }
+            if (!_297)
+            {
+                _317 = RadianceCascadesBlock.Paint.z + RadianceCascadesBlock.Paint.w;
+                break;
+            }
+            _317 = (StaticDistance.sample(StaticDistanceSampler, _281).x * RadianceCascadesBlock.Paint.z) + RadianceCascadesBlock.Paint.w;
+            break;
+        } while(false);
+        float _358;
+        do
+        {
+            float2 _322 = ((_85 - float2(0.0, 0.01200000010430812835693359375)) / _105) + float2(0.5);
+            float _323 = _322.x;
+            bool _328;
+            if (_323 >= 0.0)
+            {
+                _328 = _323 <= 1.0;
+            }
+            else
+            {
+                _328 = false;
+            }
+            bool _333;
+            if (_328)
+            {
+                _333 = _322.y >= 0.0;
+            }
+            else
+            {
+                _333 = false;
+            }
+            bool _338;
+            if (_333)
+            {
+                _338 = _322.y <= 1.0;
+            }
+            else
+            {
+                _338 = false;
+            }
+            if (!_338)
+            {
+                _358 = RadianceCascadesBlock.Paint.z + RadianceCascadesBlock.Paint.w;
+                break;
+            }
+            _358 = (StaticDistance.sample(StaticDistanceSampler, _322).x * RadianceCascadesBlock.Paint.z) + RadianceCascadesBlock.Paint.w;
+            break;
+        } while(false);
+        _371 = ((RadianceCascadesBlock.WorldColor.xyz * (0.3499999940395355224609375 + (0.64999997615814208984375 * fast::clamp(dot(fast::normalize(float2(_234 - _275, _317 - _358)), fast::normalize(float2(-0.5, -0.800000011920928955078125))), 0.0, 1.0)))) + (_100 * 0.680000007152557373046875)) + float3(0.02500000037252902984619140625, 0.02999999932944774627685546875, 0.04500000178813934326171875);
+    }
+    else
+    {
+        _371 = (_100 + (RadianceCascadesBlock.WorldColor.xyz * (0.62000000476837158203125 + (0.37999999523162841796875 * (1.0 - in.in_var_TEXCOORD0.y))))) + ((((powr(_147.xyz, float3(2.2000000476837158203125)) * _150) * RadianceCascadesBlock.Tuning.z) * (0.300000011920928955078125 + (0.699999988079071044921875 * exp(precise::max(_143, 0.0) * (-1.60000002384185791015625))))) + ((powr(_173.xyz, float3(2.2000000476837158203125)) * 8.0) * 1.10000002384185791015625));
+    }
+    float3 _379;
+    if (RadianceCascadesBlock.Display.z > 0.5)
+    {
+        _379 = powr(precise::max(_371, float3(0.0)), float3(0.4545454680919647216796875));
+    }
+    else
+    {
+        _379 = _371;
+    }
+    out.out_var_SV_Target0 = float4(fast::clamp(_379, float3(0.0), float3(1.0)), 1.0) * in.in_var_TEXCOORD1;
+    return out;
+}
+

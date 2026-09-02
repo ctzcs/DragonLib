@@ -22,10 +22,29 @@ struct fragment_main_in
 fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], constant type_StrokeFieldBlock& StrokeFieldBlock [[buffer(0)]])
 {
     fragment_main_out out = {};
-    float2 _30 = StrokeFieldBlock.Segment.zw - StrokeFieldBlock.Segment.xy;
-    float2 _31 = in.in_var_TEXCOORD0 - StrokeFieldBlock.Segment.xy;
-    float _49 = fast::clamp(((length(_31 - (_30 * fast::clamp(dot(_31, _30) / precise::max(dot(_30, _30), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - StrokeFieldBlock.Params.x) - StrokeFieldBlock.Params.w) / StrokeFieldBlock.Params.y, 0.0, 1.0);
-    out.out_var_SV_Target0 = float4(_49, _49, _49, 1.0);
+    float _86;
+    if (StrokeFieldBlock.Params.z > 1.5)
+    {
+        float2 _47 = (abs(in.in_var_TEXCOORD0 - StrokeFieldBlock.Segment.xy) - StrokeFieldBlock.Segment.zw) + float2(StrokeFieldBlock.Params.x);
+        _86 = (precise::min(precise::max(_47.x, _47.y), 0.0) + length(precise::max(_47, float2(0.0)))) - StrokeFieldBlock.Params.x;
+    }
+    else
+    {
+        float _85;
+        if (StrokeFieldBlock.Params.z > 0.5)
+        {
+            _85 = length(in.in_var_TEXCOORD0 - StrokeFieldBlock.Segment.xy) - StrokeFieldBlock.Params.x;
+        }
+        else
+        {
+            float2 _72 = StrokeFieldBlock.Segment.zw - StrokeFieldBlock.Segment.xy;
+            float2 _73 = in.in_var_TEXCOORD0 - StrokeFieldBlock.Segment.xy;
+            _85 = length(_73 - (_72 * fast::clamp(dot(_73, _72) / precise::max(dot(_72, _72), 9.9999997473787516355514526367188e-05), 0.0, 1.0))) - StrokeFieldBlock.Params.x;
+        }
+        _86 = _85;
+    }
+    float _93 = fast::clamp((_86 - StrokeFieldBlock.Params.w) / StrokeFieldBlock.Params.y, 0.0, 1.0);
+    out.out_var_SV_Target0 = float4(_93, _93, _93, 1.0);
     return out;
 }
 

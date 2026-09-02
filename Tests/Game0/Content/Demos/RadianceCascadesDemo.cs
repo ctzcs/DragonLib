@@ -13,10 +13,11 @@ namespace Game0.Content.Demos;
 /// <summary>
 /// A multi-pass 2D Radiance Cascades laboratory. The shader follows the
 /// reference probe packing, interval cascade, ping-pong merge, and linear
-/// filtering steps. User strokes are rasterized into world-anchored paint
-/// and distance-field textures (like the reference sandbox), so lighting
-/// cost stays flat no matter how much is drawn; an analytic SDF supplies
-/// the rest of the scene geometry.
+/// filtering steps. Everything the rays can hit is texture-driven, so
+/// raymarch cost stays flat no matter how much is drawn or how many lights
+/// exist: scene geometry, drawn occluders and painted strokes are baked into
+/// one static distance field (rebuilt on change), while point lights are
+/// re-stamped every frame into a dynamic emission/distance texture pair.
 /// </summary>
 public sealed class RadianceCascadesDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, IRenderSystem
 {
@@ -34,7 +35,14 @@ public sealed class RadianceCascadesDemoSystem : IEcsInit, IEcsDestroy, IUpdateS
     private const float PaintWorldWidth = 48f;
     private const float PaintWorldHeight = 27f;
     private const float StrokeDistanceLow = -0.8f;
-    private const float StrokeDistanceHigh = 2f;
+    // Upper encode range. SDF marching leaps by the sampled distance, so a
+    // deep range keeps long rays cheap; 8-bit precision (8.8/256 ≈ 0.034
+    // world units) is fine for the cascade's low-res probes.
+    private const float StrokeDistanceHigh = 8f;
+    // Dynamic (light) textures only hold soft radial stamps, so they run at
+    // half the static bake resolution to cut per-frame clear/draw bandwidth.
+    private const int DynamicTextureWidth = PaintTextureWidth / 2;
+    private const int DynamicTextureHeight = PaintTextureHeight / 2;
 
     // The reference sandbox paints with a fixed swatch palette beside the
     // canvas; stroke colors are stored in linear space so the final 1/2.2
@@ -60,8 +68,7 @@ public sealed class RadianceCascadesDemoSystem : IEcsInit, IEcsDestroy, IUpdateS
     private const int WorldUniformIndex = DisplayUniformIndex + 1;
     private const int TuningUniformIndex = WorldUniformIndex + 1;
     private const int PaintUniformIndex = TuningUniformIndex + 1;
-    private const int ObstacleUniformIndex = PaintUniformIndex + 1;
-    private const int UniformVectorCount = ObstacleUniformIndex + MaxObstacles;
+    private const int UniformVectorCount = PaintUniformIndex + 1;
 
     private sealed class LightSource
     {
@@ -99,17 +106,17 @@ public sealed class RadianceCascadesDemoSystem : IEcsInit, IEcsDestroy, IUpdateS
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 4)]
-    private struct LightGpuData
+    private struct StrokeFieldUniforms
     {
-        public Vector4 Position;
-        public Vector4 Color;
+        public Vector4 Segment; // capsule: xy start, zw end; circle/round box: xy center, zw half size
+        public Vector4 Params;  // x radius, y encode scale, z primitive type (0 capsule, 1 circle, 2 round box), w encode offset
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 4)]
-    private struct StrokeFieldUniforms
+    private struct LightStampUniforms
     {
-        public Vector4 Segment; // xy start, zw end, world units
-        public Vector4 Params;  // x radius, y encode scale, z unused, w encode offset
+        public Vector4 Light;   // xy center, z effective radius, w intensity
+        public Vector4 Color;   // rgb linear color
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 4)]
@@ -128,13 +135,21 @@ public sealed class RadianceCascadesDemoSystem : IEcsInit, IEcsDestroy, IUpdateS
 
     private EmbeddedShaderMaterial? _shader;
     private EmbeddedShaderMaterial? _strokeFieldShader;
+    private EmbeddedShaderMaterial? _lightStampShader;
+    private EmbeddedShaderMaterial? _compositeShader;
+    private EmbeddedShaderMaterial? _blurShader;
     private Batcher? _passBatcher;
-    private StorageBuffer<LightGpuData>? _lightBuffer;
-    private LightGpuData[] _lightUpload = [];
     private Target? _targetA;
     private Target? _targetB;
-    private Target? _paintTarget;
-    private Target? _distanceTarget;
+    private Target? _staticEmissionTarget;
+    private Target? _staticDistanceTarget;
+    private Target? _dynamicEmissionTarget;
+    private Target? _dynamicDistanceTarget;
+    // Bench-only: window-sized target the composite is re-rendered into so the
+    // final image can be dumped deterministically (OS window captures are
+    // unreliable — z-order, focus, other apps).
+    private Target? _compositeTarget;
+    private bool _compositeDumped;
     private bool _paintDirty = true;
     private int _targetWidth;
     private int _targetHeight;
@@ -157,7 +172,10 @@ public sealed class RadianceCascadesDemoSystem : IEcsInit, IEcsDestroy, IUpdateS
     private float _intervalOverlap = 0.04f;
     private float _renderScale = 0.2f;
     private int _raymarchSteps = 10;
-    private int _baseRayCount = 4;
+    private int _giSmoothing = 2;
+    private float _giIntensity = 0.7f;
+    private float _giFloor = 0.02f;
+    private int _baseRayCount = 16;
     private int _cascadeCount = 4;
     private bool _autoCascadeCount = true;
     private int _cascadeIndex = -1;
@@ -175,7 +193,7 @@ public sealed class RadianceCascadesDemoSystem : IEcsInit, IEcsDestroy, IUpdateS
             _game.GraphicsDevice,
             typeof(RadianceCascadesDemoSystem).Assembly,
             ShaderResourceBase,
-            new ShaderStageSpec(3, 1, "fragment_main", 1),
+            new ShaderStageSpec(5, 1, "fragment_main"),
             new ShaderStageSpec(0, 2, "vertex_main"));
         _strokeFieldShader = EmbeddedShaderMaterial.Load(
             _game.GraphicsDevice,
@@ -183,10 +201,29 @@ public sealed class RadianceCascadesDemoSystem : IEcsInit, IEcsDestroy, IUpdateS
             "Game0/Shaders/RadianceCascadesStroke",
             new ShaderStageSpec(0, 1, "fragment_main"),
             new ShaderStageSpec(0, 1, "vertex_main"));
+        _lightStampShader = EmbeddedShaderMaterial.Load(
+            _game.GraphicsDevice,
+            typeof(RadianceCascadesDemoSystem).Assembly,
+            "Game0/Shaders/RadianceCascadesLight",
+            new ShaderStageSpec(0, 1, "fragment_main"),
+            new ShaderStageSpec(0, 1, "vertex_main"));
+        _compositeShader = EmbeddedShaderMaterial.Load(
+            _game.GraphicsDevice,
+            typeof(RadianceCascadesDemoSystem).Assembly,
+            "Game0/Shaders/RadianceCascadesComposite",
+            new ShaderStageSpec(4, 1, "fragment_main"),
+            new ShaderStageSpec(0, 1, "vertex_main"));
+        _blurShader = EmbeddedShaderMaterial.Load(
+            _game.GraphicsDevice,
+            typeof(RadianceCascadesDemoSystem).Assembly,
+            "Game0/Shaders/RadianceCascadesBlur",
+            new ShaderStageSpec(1, 1, "fragment_main"),
+            new ShaderStageSpec(0, 1, "vertex_main"));
         _passBatcher = new Batcher(_game.GraphicsDevice);
-        _lightBuffer = new StorageBuffer<LightGpuData>(_game.GraphicsDevice, "Radiance Cascades lights");
-        _paintTarget = new Target(_game.GraphicsDevice, PaintTextureWidth, PaintTextureHeight, name: "Radiance Cascades strokes");
-        _distanceTarget = new Target(_game.GraphicsDevice, PaintTextureWidth, PaintTextureHeight, name: "Radiance Cascades stroke distance");
+        _staticEmissionTarget = new Target(_game.GraphicsDevice, PaintTextureWidth, PaintTextureHeight, name: "Radiance Cascades static emission");
+        _staticDistanceTarget = new Target(_game.GraphicsDevice, PaintTextureWidth, PaintTextureHeight, name: "Radiance Cascades static distance");
+        _dynamicEmissionTarget = new Target(_game.GraphicsDevice, DynamicTextureWidth, DynamicTextureHeight, name: "Radiance Cascades dynamic emission");
+        _dynamicDistanceTarget = new Target(_game.GraphicsDevice, DynamicTextureWidth, DynamicTextureHeight, name: "Radiance Cascades dynamic distance");
         _paintDirty = true;
     }
 
@@ -196,22 +233,58 @@ public sealed class RadianceCascadesDemoSystem : IEcsInit, IEcsDestroy, IUpdateS
         _shader = null;
         _strokeFieldShader?.Dispose();
         _strokeFieldShader = null;
-        _lightBuffer?.Dispose();
-        _lightBuffer = null;
+        _lightStampShader?.Dispose();
+        _lightStampShader = null;
+        _compositeShader?.Dispose();
+        _compositeShader = null;
+        _blurShader?.Dispose();
+        _blurShader = null;
         _targetA?.Dispose();
         _targetB?.Dispose();
-        _paintTarget?.Dispose();
-        _distanceTarget?.Dispose();
+        _staticEmissionTarget?.Dispose();
+        _staticDistanceTarget?.Dispose();
+        _dynamicEmissionTarget?.Dispose();
+        _dynamicDistanceTarget?.Dispose();
+        _compositeTarget?.Dispose();
+        _compositeTarget = null;
         _passBatcher?.Dispose();
         _targetA = null;
         _targetB = null;
-        _paintTarget = null;
-        _distanceTarget = null;
+        _staticEmissionTarget = null;
+        _staticDistanceTarget = null;
+        _dynamicEmissionTarget = null;
+        _dynamicDistanceTarget = null;
         _passBatcher = null;
     }
 
+    // --- Benchmark hook: set RC_BENCH=<seconds> to auto-enter this scene,
+    // disable vsync and unlock the update loop, sample Render FPS after a
+    // warmup, then write the result to RC_BENCH_OUT (default rc-bench.txt)
+    // and exit. Optional overrides: RC_BENCH_SCALE / RC_BENCH_RAYS /
+    // RC_BENCH_STEPS / RC_BENCH_LIGHTS. Used to A/B the texture-driven
+    // rewrite against the analytic baseline.
+    private static readonly int BenchSeconds =
+        int.TryParse(Environment.GetEnvironmentVariable("RC_BENCH"), out var benchEnv) ? benchEnv : 0;
+    private bool _benchStarted;
+    private bool _benchConfigured;
+    private bool _benchDumpPending = Environment.GetEnvironmentVariable("RC_BENCH_DUMP") != null;
+    private double _benchElapsed;
+    private const double BenchWarmupSeconds = 3.0;
+    private float _benchMin = float.MaxValue;
+    private float _benchMax;
+    private double _benchSum;
+    private int _benchCount;
+
     public void Update()
     {
+        if (BenchSeconds > 0 && !_benchStarted && _sceneRouter.Current == RuntimeScene.Main)
+        {
+            _game.GraphicsDevice.VSync = false;
+            _game.UpdateMode = UpdateMode.UnlockedStep();
+            _sceneRouter.SwitchTo(RuntimeScene.RadianceCascades2D);
+            _benchStarted = true;
+        }
+
         var active = _sceneRouter.Current == RuntimeScene.RadianceCascades2D;
         if (active && !_wasActive)
         {
@@ -234,14 +307,121 @@ public sealed class RadianceCascadesDemoSystem : IEcsInit, IEcsDestroy, IUpdateS
         if (!active)
             return;
 
+        if (_benchStarted)
+        {
+            UpdateBenchmark();
+            if (!_benchConfigured)
+                ConfigureBenchmark();
+        }
+
         DrawControls();
         HandleCanvasInput();
     }
 
+    // One separable gaussian pass over a cascade target (see
+    // RadianceCascadesBlur.hlsl). The optimized taps rely on linear sampling.
+    private void BlurPass(Target source, Target destination, float dirX, float dirY, in TextureSampler sampler)
+    {
+        _blurShader!.Material.Fragment.SetUniformBuffer(new Vector4(dirX, dirY, 0f, 0f));
+        _passBatcher!.PushMaterial(_blurShader.Material);
+        _passBatcher.PushSampler(sampler);
+        _passBatcher.PushMatrix(Matrix3x2.Identity, relative: false);
+        _passBatcher.Quad(source.Attachments[0],
+            new Vector2(0f, 0f), new Vector2(source.Width, 0f), new Vector2(source.Width, source.Height), new Vector2(0f, source.Height),
+            Vector2.Zero, Vector2.UnitX, Vector2.One, Vector2.UnitY, Color.White);
+        _passBatcher.PopMatrix();
+        _passBatcher.PopSampler();
+        _passBatcher.PopMaterial();
+        _passBatcher.Render(destination);
+        _passBatcher.Clear();
+    }
+
+    // Dumps a bake target to a PNG for visual verification of the
+    // texture-driven pipeline (RC_BENCH_DUMP=1).
+    private static void DumpTarget(Target target, string fileName)
+    {
+        try
+        {
+            var pixels = new Color[target.Width * target.Height];
+            target.Attachments[0].GetData<Color>(pixels);
+            new Image(target.Width, target.Height, pixels).WritePng(fileName);
+            Log.Info($"RC dump wrote {fileName} ({target.Width}x{target.Height})");
+        }
+        catch (Exception exception)
+        {
+            Log.Info($"RC dump failed for {fileName}: {exception.Message}");
+        }
+    }
+
+    private void ConfigureBenchmark()
+    {
+        _benchConfigured = true;
+        if (float.TryParse(Environment.GetEnvironmentVariable("RC_BENCH_SCALE"), out var scale))
+            _renderScale = Math.Clamp(scale, 0.05f, 1f);
+        if (int.TryParse(Environment.GetEnvironmentVariable("RC_BENCH_RAYS"), out var rays))
+            _baseRayCount = Math.Clamp(rays, 4, 16);
+        if (int.TryParse(Environment.GetEnvironmentVariable("RC_BENCH_STEPS"), out var steps))
+            _raymarchSteps = Math.Clamp(steps, 4, 24);
+        if (int.TryParse(Environment.GetEnvironmentVariable("RC_BENCH_SMOOTH"), out var smooth))
+            _giSmoothing = Math.Clamp(smooth, 0, 3);
+        if (float.TryParse(Environment.GetEnvironmentVariable("RC_BENCH_OVERLAP"), out var overlap))
+            _intervalOverlap = Math.Clamp(overlap, 0f, 0.2f);
+        if (float.TryParse(Environment.GetEnvironmentVariable("RC_BENCH_FLOOR"), out var floor))
+            _giFloor = Math.Clamp(floor, 0f, 0.1f);
+        if (float.TryParse(Environment.GetEnvironmentVariable("RC_BENCH_MAXDIST"), out var maxDist))
+            _maxRayDistance = Math.Clamp(maxDist, 4f, 80f);
+        if (float.TryParse(Environment.GetEnvironmentVariable("RC_BENCH_GIINT"), out var giInt))
+            _giIntensity = Math.Clamp(giInt, 0.1f, 3f);
+        if (int.TryParse(Environment.GetEnvironmentVariable("RC_BENCH_LIGHTS"), out var lightTarget))
+        {
+            var rng = new Random(7);
+            while (_lights.Count < lightTarget)
+            {
+                _lights.Add(new LightSource(
+                    new Vector2(-14f + (float)rng.NextDouble() * 28f, -8f + (float)rng.NextDouble() * 16f),
+                    new Vector3(0.4f + (float)rng.NextDouble() * 0.6f,
+                                0.3f + (float)rng.NextDouble() * 0.7f,
+                                0.4f + (float)rng.NextDouble() * 0.6f),
+                    2f + (float)rng.NextDouble() * 6f,
+                    0.2f + (float)rng.NextDouble() * 0.4f));
+            }
+        }
+    }
+
+    private void UpdateBenchmark()
+    {
+        _benchElapsed += _game.Time.Delta;
+        if (_benchElapsed <= BenchWarmupSeconds)
+            return;
+
+        var fps = _game.RenderFramesPerSecond;
+        if (fps > 0f)
+        {
+            _benchMin = Math.Min(_benchMin, fps);
+            _benchMax = Math.Max(_benchMax, fps);
+            _benchSum += fps;
+            _benchCount++;
+        }
+
+        if (_benchElapsed < BenchWarmupSeconds + BenchSeconds)
+            return;
+
+        var avg = _benchCount > 0 ? _benchSum / _benchCount : 0.0;
+        var outputPath = Environment.GetEnvironmentVariable("RC_BENCH_OUT") ?? "rc-bench.txt";
+        File.WriteAllText(outputPath,
+            $"RC_BENCH seconds={BenchSeconds} samples={_benchCount}\n" +
+            $"avg={avg:F1} min={(_benchCount > 0 ? _benchMin : 0f):F1} max={_benchMax:F1}\n" +
+            $"settings: renderScale={_renderScale} baseRays={_baseRayCount} steps={_raymarchSteps} " +
+            $"cascades={(_autoCascadeCount ? CalculateCascadeCount(_game.Window.WidthInPixels, _game.Window.HeightInPixels) : _cascadeCount)} " +
+            $"lights={_lights.Count} strokes={_emissionSegments.Count} window={_game.Window.WidthInPixels}x{_game.Window.HeightInPixels}\n");
+        _game.Exit();
+    }
+
     public void Render()
     {
-        if (!_wasActive || _shader == null || _passBatcher == null || _lightBuffer == null ||
-            _strokeFieldShader == null || _paintTarget == null || _distanceTarget == null)
+        if (!_wasActive || _shader == null || _passBatcher == null || _strokeFieldShader == null ||
+            _lightStampShader == null || _staticEmissionTarget == null || _staticDistanceTarget == null ||
+            _dynamicEmissionTarget == null || _dynamicDistanceTarget == null)
             return;
 
         var windowWidth = Math.Max(_game.Window.WidthInPixels, 1);
@@ -249,21 +429,37 @@ public sealed class RadianceCascadesDemoSystem : IEcsInit, IEcsDestroy, IUpdateS
         var width = Math.Max((int)MathF.Round(windowWidth * _renderScale), 1);
         var height = Math.Max((int)MathF.Round(windowHeight * _renderScale), 1);
         EnsureTargets(width, height);
+        if (BenchSeconds > 0 && (_compositeTarget == null || _compositeTarget.Width != windowWidth || _compositeTarget.Height != windowHeight))
+        {
+            _compositeTarget?.Dispose();
+            _compositeTarget = new Target(_game.GraphicsDevice, windowWidth, windowHeight, name: "Radiance Cascades composite");
+        }
         if (_paintDirty)
-            RebuildPaintTextures();
+            RebuildStaticTextures();
+        RebuildDynamicTextures();
+
+        if (_benchDumpPending)
+        {
+            _benchDumpPending = false;
+            DumpTarget(_staticDistanceTarget, "rc-dump-static-distance.png");
+            DumpTarget(_staticEmissionTarget, "rc-dump-static-emission.png");
+            DumpTarget(_dynamicDistanceTarget, "rc-dump-dynamic-distance.png");
+            DumpTarget(_dynamicEmissionTarget, "rc-dump-dynamic-emission.png");
+        }
         var worldWidth = windowWidth / _camera.PPU;
         var worldHeight = windowHeight / _camera.PPU;
         var cascadeCount = _autoCascadeCount ? CalculateCascadeCount(width, height) : _cascadeCount;
         var selectedCascade = _cascadeIndex < 0 ? -1 : Math.Min(_cascadeIndex, cascadeCount - 1);
-        UploadGpuBuffers();
         var cascadeSampler = new TextureSampler(
             _linearFilter ? TextureFilter.Linear : TextureFilter.Nearest,
             TextureWrap.Clamp);
         // Slot 0 belongs to the previous cascade's texture (bound by the
-        // batcher per draw); the paint and distance textures stay bound in
-        // slots 1 and 2 for every cascade pass.
-        _shader.Material.Fragment.Samplers[1] = new BoundSampler(_paintTarget.Attachments[0], cascadeSampler);
-        _shader.Material.Fragment.Samplers[2] = new BoundSampler(_distanceTarget.Attachments[0], cascadeSampler);
+        // batcher per draw); the emission/distance textures stay bound in
+        // slots 1-4 for every cascade pass.
+        _shader.Material.Fragment.Samplers[1] = new BoundSampler(_staticEmissionTarget.Attachments[0], cascadeSampler);
+        _shader.Material.Fragment.Samplers[2] = new BoundSampler(_staticDistanceTarget.Attachments[0], cascadeSampler);
+        _shader.Material.Fragment.Samplers[3] = new BoundSampler(_dynamicEmissionTarget.Attachments[0], cascadeSampler);
+        _shader.Material.Fragment.Samplers[4] = new BoundSampler(_dynamicDistanceTarget.Attachments[0], cascadeSampler);
         var targets = new[] { _targetA!, _targetB! };
         var previous = -1;
         var output = 0;
@@ -280,10 +476,6 @@ public sealed class RadianceCascadesDemoSystem : IEcsInit, IEcsDestroy, IUpdateS
             _shader.Material.Vertex.SetUniformBuffer(new VertexUniforms { CameraMatrix = Matrix4x4.Identity }, 1);
 
             _passBatcher.PushMaterial(_shader.Material);
-            // The shader keeps Lights at t3, right after the three sampled
-            // textures, so shadercross maps it to storage binding slot 0 —
-            // the slot this buffer occupies in the fragment storage list.
-            _passBatcher.FragmentStorageBuffers.Add(_lightBuffer);
             _passBatcher.PushSampler(cascadeSampler);
             _passBatcher.PushMatrix(Matrix3x2.Identity, relative: false);
             var sourceTexture = hasPrevious ? targets[previous].Attachments[0] : null;
@@ -303,8 +495,65 @@ public sealed class RadianceCascadesDemoSystem : IEcsInit, IEcsDestroy, IUpdateS
         }
 
         var finalTexture = selectedTexture >= 0 ? targets[selectedTexture].Attachments[0] : targets[previous].Attachments[0];
+
+        // Smooth the indirect term before it reaches the full-res composite:
+        // H+V gaussian passes at cascade resolution, ping-ponging between the
+        // two cascade targets (each iteration ends back in targets[previous]).
+        if (selectedTexture < 0 && _giSmoothing > 0)
+        {
+            for (var i = 0; i < _giSmoothing; i++)
+            {
+                BlurPass(targets[previous], targets[output], 1f / width, 0f, cascadeSampler);
+                BlurPass(targets[output], targets[previous], 0f, 1f / height, cascadeSampler);
+            }
+        }
+
         _batcher.PushMatrix(Matrix3x2.Identity, relative: false);
-        _batcher.ImageStretch(new Subtexture(finalTexture), new Rect(0f, 0f, windowWidth, windowHeight), Color.White);
+        if (selectedTexture >= 0 || _compositeShader == null)
+        {
+            // Debug cascade views blit the raw (linear radiance) probe texture.
+            _batcher.ImageStretch(new Subtexture(finalTexture), new Rect(0f, 0f, windowWidth, windowHeight), Color.White);
+        }
+        else
+        {
+            // Final view: full-resolution composite — crisp display terms plus
+            // the low-res indirect radiance, mirroring the game integration's
+            // full-res scene / low-res lighting split.
+            FillFragmentUniforms(worldWidth, worldHeight, width, cascadeCount, 0);
+            // Repurpose slots the composite shader owns: Tuning.y carries the
+            // GI intensity, Display.w the GI floor (probe overlay only exists
+            // in the debug cascade views, which never run this pass).
+            _fragmentUniformVectors[TuningUniformIndex].Y = _giIntensity;
+            _fragmentUniformVectors[DisplayUniformIndex].W = _giFloor;
+            _compositeShader.Material.Fragment.SetUniformBuffer(MemoryMarshal.AsBytes(_fragmentUniformVectors.AsSpan()));
+            _compositeShader.Material.Fragment.Samplers[1] = new BoundSampler(_staticEmissionTarget!.Attachments[0], cascadeSampler);
+            _compositeShader.Material.Fragment.Samplers[2] = new BoundSampler(_staticDistanceTarget!.Attachments[0], cascadeSampler);
+            _compositeShader.Material.Fragment.Samplers[3] = new BoundSampler(_dynamicEmissionTarget!.Attachments[0], cascadeSampler);
+            _batcher.PushMaterial(_compositeShader.Material);
+            _batcher.PushSampler(cascadeSampler);
+            _batcher.ImageStretch(new Subtexture(finalTexture), new Rect(0f, 0f, windowWidth, windowHeight), Color.White);
+            _batcher.PopSampler();
+            _batcher.PopMaterial();
+
+            // Bench-only: re-render the composite into the dump target and
+            // save it mid-benchmark (RC_BENCH_DUMP=1).
+            if (BenchSeconds > 0 && _compositeTarget != null && !_compositeDumped &&
+                Environment.GetEnvironmentVariable("RC_BENCH_DUMP") != null &&
+                _benchElapsed > BenchWarmupSeconds + BenchSeconds * 0.5)
+            {
+                _compositeDumped = true;
+                _passBatcher.PushMaterial(_compositeShader.Material);
+                _passBatcher.PushSampler(cascadeSampler);
+                _passBatcher.PushMatrix(Matrix3x2.Identity, relative: false);
+                _passBatcher.ImageStretch(new Subtexture(finalTexture), new Rect(0f, 0f, windowWidth, windowHeight), Color.White);
+                _passBatcher.PopMatrix();
+                _passBatcher.PopSampler();
+                _passBatcher.PopMaterial();
+                _passBatcher.Render(_compositeTarget);
+                _passBatcher.Clear();
+                DumpTarget(_compositeTarget, "rc-dump-composite.png");
+            }
+        }
         DrawStrokePalette(windowHeight);
         _batcher.PopMatrix();
     }
@@ -342,15 +591,15 @@ public sealed class RadianceCascadesDemoSystem : IEcsInit, IEcsDestroy, IUpdateS
         _paintDirty = true;
     }
 
-    private void RebuildPaintTextures()
+    private void RebuildStaticTextures()
     {
         _paintDirty = false;
         var worldToTexture = Matrix3x2.CreateScale(PaintTextureWidth / PaintWorldWidth, PaintTextureHeight / PaintWorldHeight) *
             Matrix3x2.CreateTranslation(PaintTextureWidth * 0.5f, PaintTextureHeight * 0.5f);
 
         // Pass 1: stroke colors as round-capped lines (line + end circles)
-        // into the sRGB paint texture, alpha = coverage.
-        _paintTarget!.Clear(Color.Transparent);
+        // into the sRGB emission texture, alpha = coverage.
+        _staticEmissionTarget!.Clear(Color.Transparent);
         _passBatcher!.PushMatrix(worldToTexture, relative: false);
         foreach (var segment in _emissionSegments)
         {
@@ -359,42 +608,125 @@ public sealed class RadianceCascadesDemoSystem : IEcsInit, IEcsDestroy, IUpdateS
             _passBatcher.Circle(segment.Start, segment.Radius, 12, color);
             _passBatcher.Circle(segment.End, segment.Radius, 12, color);
         }
-        _passBatcher.Render(_paintTarget);
+        _passBatcher.Render(_staticEmissionTarget);
         _passBatcher.PopMatrix();
         _passBatcher.Clear();
 
-        // Pass 2: encoded capsule distance field, one min-blended quad per
-        // stroke. Quad TexCoords carry world positions; the shader's uniform
-        // must be set before PushMaterial because pushing clones the state.
-        _distanceTarget!.Clear(Color.White);
+        // Pass 2: merged distance field — the static scene primitives, drawn
+        // occluders and stroke capsules all min-blend into one texture. All
+        // batches share one submission per pass (min blending is
+        // order-independent).
+        _staticDistanceTarget!.Clear(Color.White);
         var minBlend = new BlendMode(BlendOp.Min, BlendFactor.One, BlendFactor.One);
-        var encodeScale = StrokeDistanceHigh - StrokeDistanceLow;
+        _passBatcher.PushMatrix(worldToTexture, relative: false);
+        // The fixed scene (was the analytic SDF in the old shader):
+        // two ledges, a pillar and a floating platform, plus a sphere.
+        StampDistance(new Vector4(1.9f, 2.9f, 1.8f, 0.34f), 0.16f, 2, minBlend);
+        StampDistance(new Vector4(7.2f, 2.9f, 0.34f, 2.3f), 0.16f, 2, minBlend);
+        StampDistance(new Vector4(4.8f, -3.2f, 0f, 0f), 1.05f, 1, minBlend);
+        StampDistance(new Vector4(-5.6f, 5.0f, 2.5f, 0.32f), 0.12f, 2, minBlend);
+        for (var i = 0; i < _obstacleCount; i++)
+            StampDistance(_obstacles[i], 0.11f, 0, minBlend);
         foreach (var segment in _emissionSegments)
+            StampDistance(new Vector4(segment.Start.X, segment.Start.Y, segment.End.X, segment.End.Y), segment.Radius, 0, minBlend);
+        _passBatcher.Render(_staticDistanceTarget);
+        _passBatcher.PopMatrix();
+        _passBatcher.Clear();
+    }
+
+    // Point lights are re-stamped every frame: dragging one costs two quads
+    // (emission + distance disc) instead of a full bake.
+    private void RebuildDynamicTextures()
+    {
+        var worldToTexture = Matrix3x2.CreateScale(DynamicTextureWidth / PaintWorldWidth, DynamicTextureHeight / PaintWorldHeight) *
+            Matrix3x2.CreateTranslation(DynamicTextureWidth * 0.5f, DynamicTextureHeight * 0.5f);
+        var addBlend = new BlendMode(BlendOp.Add, BlendFactor.One, BlendFactor.One);
+        var minBlend = new BlendMode(BlendOp.Min, BlendFactor.One, BlendFactor.One);
+
+        _dynamicEmissionTarget!.Clear(Color.Transparent);
+        _passBatcher!.PushMatrix(worldToTexture, relative: false);
+        foreach (var light in _lights)
         {
-            var center = (segment.Start + segment.End) * 0.5f;
-            var half = (segment.End - segment.Start) * 0.5f;
-            var inflate = segment.Radius + StrokeDistanceHigh + 0.1f;
-            var min = center - new Vector2(MathF.Abs(half.X) + inflate, MathF.Abs(half.Y) + inflate);
-            var max = center + new Vector2(MathF.Abs(half.X) + inflate, MathF.Abs(half.Y) + inflate);
-            _strokeFieldShader!.Material.Fragment.SetUniformBuffer(new StrokeFieldUniforms
+            if (!light.Enabled)
+                continue;
+            _lightStampShader!.Material.Fragment.SetUniformBuffer(new LightStampUniforms
             {
-                Segment = new Vector4(segment.Start.X, segment.Start.Y, segment.End.X, segment.End.Y),
-                Params = new Vector4(segment.Radius, encodeScale, 0f, StrokeDistanceLow),
+                Light = new Vector4(light.Position, light.Radius, light.Intensity),
+                Color = new Vector4(light.Color, 1f),
             });
-            _passBatcher.PushMatrix(worldToTexture, relative: false);
-            _passBatcher.PushMaterial(_strokeFieldShader.Material);
-            _passBatcher.PushBlend(minBlend);
+            var extent = light.Radius * 2.2f;
+            var min = light.Position - new Vector2(extent);
+            var max = light.Position + new Vector2(extent);
+            _passBatcher.PushMaterial(_lightStampShader.Material);
+            _passBatcher.PushBlend(addBlend);
             _passBatcher.Quad(
                 null,
                 min, new Vector2(max.X, min.Y), max, new Vector2(min.X, max.Y),
                 min, new Vector2(max.X, min.Y), max, new Vector2(min.X, max.Y),
                 Color.White);
-            _passBatcher.Render(_distanceTarget);
             _passBatcher.PopBlend();
             _passBatcher.PopMaterial();
-            _passBatcher.PopMatrix();
-            _passBatcher.Clear();
         }
+        _passBatcher.Render(_dynamicEmissionTarget);
+        _passBatcher.PopMatrix();
+        _passBatcher.Clear();
+
+        _dynamicDistanceTarget!.Clear(Color.White);
+        _passBatcher.PushMatrix(worldToTexture, relative: false);
+        foreach (var light in _lights)
+        {
+            if (!light.Enabled)
+                continue;
+            // The distance disc uses the emission stamp's solid core radius,
+            // so rays terminate where emission is still at full strength.
+            StampDistance(new Vector4(light.Position.X, light.Position.Y, 0f, 0f), Math.Max(light.Radius * 0.5f, 0.04f), 1, minBlend);
+        }
+        _passBatcher.Render(_dynamicDistanceTarget);
+        _passBatcher.PopMatrix();
+        _passBatcher.Clear();
+    }
+
+    // Submits one min-blended primitive quad into the current distance pass.
+    // Quad TexCoords carry world positions; the shader's uniform must be set
+    // before PushMaterial because pushing clones the material state. Type:
+    // 0 capsule (Segment xy/zw endpoints), 1 circle (xy center), 2 round box
+    // (xy center, zw half size); `radius` is the capsule/circle radius or the
+    // box corner radius.
+    private void StampDistance(Vector4 segment, float radius, int type, in BlendMode blend)
+    {
+        var extent = radius + StrokeDistanceHigh + 0.1f;
+        Vector2 min, max;
+        if (type == 0)
+        {
+            var a = new Vector2(segment.X, segment.Y);
+            var b = new Vector2(segment.Z, segment.W);
+            min = Vector2.Min(a, b) - new Vector2(extent);
+            max = Vector2.Max(a, b) + new Vector2(extent);
+        }
+        else if (type == 1)
+        {
+            min = new Vector2(segment.X - extent, segment.Y - extent);
+            max = new Vector2(segment.X + extent, segment.Y + extent);
+        }
+        else
+        {
+            min = new Vector2(segment.X - segment.Z - extent, segment.Y - segment.W - extent);
+            max = new Vector2(segment.X + segment.Z + extent, segment.Y + segment.W + extent);
+        }
+        _strokeFieldShader!.Material.Fragment.SetUniformBuffer(new StrokeFieldUniforms
+        {
+            Segment = segment,
+            Params = new Vector4(radius, StrokeDistanceHigh - StrokeDistanceLow, type, StrokeDistanceLow),
+        });
+        _passBatcher!.PushMaterial(_strokeFieldShader.Material);
+        _passBatcher.PushBlend(blend);
+        _passBatcher.Quad(
+            null,
+            min, new Vector2(max.X, min.Y), max, new Vector2(min.X, max.Y),
+            min, new Vector2(max.X, min.Y), max, new Vector2(min.X, max.Y),
+            Color.White);
+        _passBatcher.PopBlend();
+        _passBatcher.PopMaterial();
     }
 
     private static Color LinearToSrgbColor(Vector3 linear) => new(
@@ -583,6 +915,7 @@ public sealed class RadianceCascadesDemoSystem : IEcsInit, IEcsDestroy, IUpdateS
         if (_obstacleCount >= MaxObstacles)
             return;
         _obstacles[_obstacleCount++] = new Vector4(a.X, a.Y, b.X, b.Y);
+        MarkPaintDirty();
     }
 
     private void DrawControls()
@@ -603,6 +936,7 @@ public sealed class RadianceCascadesDemoSystem : IEcsInit, IEcsDestroy, IUpdateS
         {
             Array.Clear(_obstacles);
             _obstacleCount = 0;
+            MarkPaintDirty();
         }
         ImGui.SameLine();
         if (ImGui.Button("Clear light strokes"))
@@ -630,6 +964,9 @@ public sealed class RadianceCascadesDemoSystem : IEcsInit, IEcsDestroy, IUpdateS
         ImGui.SliderFloat("Max Ray Distance", ref _maxRayDistance, 4f, 80f, "%.1f");
         ImGui.SliderFloat("Render Scale", ref _renderScale, 0.125f, 1f, "%.3f");
         ImGui.SliderInt("Raymarch Steps", ref _raymarchSteps, 4, 24);
+        ImGui.SliderInt("GI Smoothing", ref _giSmoothing, 0, 3);
+        ImGui.SliderFloat("GI Intensity", ref _giIntensity, 0.1f, 3f, "%.2f");
+        ImGui.SliderFloat("GI Floor", ref _giFloor, 0f, 0.1f, "%.3f");
         ImGui.Checkbox("Use Linear Filter", ref _linearFilter);
         ImGui.Checkbox("Correct sRGB", ref _correctSrgb);
         ImGui.Checkbox("Show Probes", ref _showProbes);
@@ -657,7 +994,7 @@ public sealed class RadianceCascadesDemoSystem : IEcsInit, IEcsDestroy, IUpdateS
             _lights.RemoveAt(Math.Clamp(_selectedLight, 0, _lights.Count - 1));
             _selectedLight = Math.Clamp(_selectedLight, 0, _lights.Count - 1);
         }
-        ImGui.Text($"Lights: {_lights.Count} (GPU storage buffer)");
+        ImGui.Text($"Lights: {_lights.Count} (distance-field texture)");
         for (var i = 0; i < _lights.Count; i++)
         {
             var label = $"Light {i + 1}{(_lights[i].Enabled ? "" : " (off)")}";
@@ -686,7 +1023,10 @@ public sealed class RadianceCascadesDemoSystem : IEcsInit, IEcsDestroy, IUpdateS
         _intervalOverlap = 0.04f;
         _renderScale = 0.2f;
         _raymarchSteps = 10;
-        _baseRayCount = 4;
+        _giSmoothing = 2;
+        _giIntensity = 0.7f;
+        _giFloor = 0.02f;
+        _baseRayCount = 16;
         _cascadeCount = 4;
         _autoCascadeCount = true;
         _cascadeIndex = -1;
@@ -745,10 +1085,10 @@ public sealed class RadianceCascadesDemoSystem : IEcsInit, IEcsDestroy, IUpdateS
         _fragmentUniformVectors[ViewportUniformIndex] = new Vector4(worldWidth, worldHeight, width, _showScene ? 1f : 0f);
         _fragmentUniformVectors[CascadeUniformIndex] = new Vector4(_baseRayCount, cascadeCount, _intervalLength, _maxRayDistance);
         _fragmentUniformVectors[DisplayUniformIndex] = new Vector4(cascadeIndex, _linearFilter ? 1f : 0f, _correctSrgb ? 1f : 0f, _showProbes ? 1f : 0f);
-        _fragmentUniformVectors[WorldUniformIndex] = new Vector4(_worldColor, _obstacleCount);
+        _fragmentUniformVectors[WorldUniformIndex] = new Vector4(_worldColor, 0f);
         _fragmentUniformVectors[TuningUniformIndex] = new Vector4(
             _intervalOverlap,
-            _lights.Count,
+            0f,
             _emissionIntensity,
             _raymarchSteps);
         _fragmentUniformVectors[PaintUniformIndex] = new Vector4(
@@ -756,28 +1096,6 @@ public sealed class RadianceCascadesDemoSystem : IEcsInit, IEcsDestroy, IUpdateS
             PaintWorldHeight,
             StrokeDistanceHigh - StrokeDistanceLow,
             StrokeDistanceLow);
-        for (var i = 0; i < MaxObstacles; i++)
-            _fragmentUniformVectors[ObstacleUniformIndex + i] = _obstacles[i];
-    }
-
-    private void UploadGpuBuffers()
-    {
-        if (_lightBuffer == null)
-            return;
-
-        var lightCount = Math.Max(_lights.Count, 1);
-        if (_lightUpload.Length < lightCount)
-            _lightUpload = new LightGpuData[lightCount];
-        for (var i = 0; i < _lights.Count; i++)
-        {
-            var light = _lights[i];
-            _lightUpload[i] = new LightGpuData
-            {
-                Position = new Vector4(light.Position, light.Intensity, light.Radius),
-                Color = new Vector4(light.Color, light.Enabled ? 1f : 0f),
-            };
-        }
-        _lightBuffer.Upload(_lightUpload.AsSpan(0, lightCount));
     }
 
     private static Matrix4x4 ToMatrix4x4(in Matrix3x2 matrix) => new(

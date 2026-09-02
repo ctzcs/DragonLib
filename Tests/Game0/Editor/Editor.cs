@@ -618,7 +618,7 @@ public sealed class LevelEditorSystem : IUpdateSystem, IRenderSystem
 
     private void SaveLevel()
     {
-        var level = LevelSerializer.Save(_world, _levelName);
+        var level = LevelSerializer.Save(_world, _levelName, _assets);
         StorageUtils.GetDevGameRoot.SaveJson(LevelPath(_levelName), level, PrefabSerializer.Options);
         _status = $"Saved '{LevelPath(_levelName)}' ({level.Entities.Count} entities).";
     }

@@ -1,3 +1,14 @@
+// Texture-driven 2D Radiance Cascades. Scene geometry, painted strokes and
+// point lights are all baked into world-anchored textures, so the raymarch
+// inner loop is two texture fetches regardless of light count or geometry
+// complexity:
+//   StaticEmission  - painted strokes (sRGB color + coverage alpha)
+//   StaticDistance  - encoded min distance to scene geometry AND strokes
+//   DynamicEmission - point-light radial stamps (pow-encoded radiance x 1/8)
+//   DynamicDistance - encoded distance to light discs
+// The probe packing, interval cascade and ping-pong merge steps follow the
+// reference sandbox, unchanged from the analytic version.
+
 cbuffer VertexMatrixBlock : register(b0, space1)
 {
     float4x4 Matrix;
@@ -13,45 +24,23 @@ cbuffer RadianceCascadesBlock : register(b0, space3)
     float4 Viewport;    // xy world size, z pixel width, w show scene
     float4 Cascade;     // x base ray count, y cascade count, z interval split, w max distance
     float4 Display;     // x selected cascade (-1 final), y linear filter, z sRGB, w probe overlay
-    float4 WorldColor;
-    float4 Tuning;     // x interval overlap, y light count, z stroke intensity, w raymarch steps
-    float4 Paint;      // x world width, y world height, z encode scale, w encode offset
-    float4 Obstacle0;
-    float4 Obstacle1;
-    float4 Obstacle2;
-    float4 Obstacle3;
-    float4 Obstacle4;
-    float4 Obstacle5;
-    float4 Obstacle6;
-    float4 Obstacle7;
+    float4 WorldColor;  // rgb world color
+    float4 Tuning;      // x interval overlap, y unused, z stroke intensity, w raymarch steps
+    float4 Paint;       // x world width, y world height, z encode scale, w encode offset
 };
 
-struct LightGpuData
-{
-    float4 Position; // xy position, z intensity, w radius
-    float4 Color;    // rgb color, a enabled
-};
-
-// Storage buffers must directly follow the sampled textures in the t-register
-// sequence: shadercross maps them to SDL_gpu binding slots by register order,
-// so Lights has to sit right after the last texture (t3), not on an arbitrary
-// register — an out-of-range slot fails graphics pipeline creation.
-StructuredBuffer<LightGpuData> Lights : register(t3, space2);
-
-// User-painted strokes live in two fixed world-space textures instead of a
-// per-segment GPU buffer: StrokeTexture holds the sRGB stroke colors with a
-// coverage alpha, StrokeDistance holds the encoded distance to the nearest
-// stroke surface (see RadianceCascadesStroke.hlsl for the encoding). Sampling
-// keeps the raymarch cost independent of how much has been painted, matching
-// the reference sandbox's texture-driven architecture. Each texture needs
-// its OWN SamplerState: shadercross classifies textures that share one
-// SamplerState as storage textures, which Foster never binds.
+// Each texture needs its OWN SamplerState: shadercross classifies textures
+// that share one SamplerState as storage textures, which Foster never binds.
 Texture2D Texture : register(t0, space2);
-Texture2D StrokeTexture : register(t1, space2);
-Texture2D StrokeDistance : register(t2, space2);
+Texture2D StaticEmission : register(t1, space2);
+Texture2D StaticDistance : register(t2, space2);
+Texture2D DynamicEmission : register(t3, space2);
+Texture2D DynamicDistance : register(t4, space2);
 SamplerState Sampler : register(s0, space2);
-SamplerState StrokeSampler : register(s1, space2);
-SamplerState StrokeDistanceSampler : register(s2, space2);
+SamplerState StaticEmissionSampler : register(s1, space2);
+SamplerState StaticDistanceSampler : register(s2, space2);
+SamplerState DynamicEmissionSampler : register(s3, space2);
+SamplerState DynamicDistanceSampler : register(s4, space2);
 
 struct VsInput
 {
@@ -80,67 +69,46 @@ VsOutput vertex_main(VsInput input)
 }
 
 static const float TAU = 6.28318530718;
+// The light stamp shader stores pow(radiance * 1/8, 1/2.2); decode inverts it,
+// giving 8x HDR headroom in an 8-bit target.
+static const float LightEmissionDecode = 8.0;
 
-float sdRoundBox(float2 p, float2 halfSize, float radius)
-{
-    float2 q = abs(p) - halfSize + radius;
-    return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - radius;
-}
-
-float sdSegment(float2 p, float2 a, float2 b, float radius)
-{
-    float2 ab = b - a;
-    float h = saturate(dot(p - a, ab) / max(dot(ab, ab), 0.0001));
-    return length(p - a - ab * h) - radius;
-}
-
-float obstacleDistance(float2 p, float4 segment)
-{
-    return sdSegment(p, segment.xy, segment.zw, 0.11);
-}
-
-float sceneDistance(float2 p)
-{
-    float d = 1000.0;
-    d = min(d, sdRoundBox(p - float2(1.9, 2.9), float2(1.8, 0.34), 0.16));
-    d = min(d, sdRoundBox(p - float2(7.2, 2.9), float2(0.34, 2.3), 0.16));
-    d = min(d, length(p - float2(4.8, -3.2)) - 1.05);
-    d = min(d, sdRoundBox(p - float2(-5.6, 5.0), float2(2.5, 0.32), 0.12));
-    if (WorldColor.a > 0.5) d = min(d, obstacleDistance(p, Obstacle0));
-    if (WorldColor.a > 1.5) d = min(d, obstacleDistance(p, Obstacle1));
-    if (WorldColor.a > 2.5) d = min(d, obstacleDistance(p, Obstacle2));
-    if (WorldColor.a > 3.5) d = min(d, obstacleDistance(p, Obstacle3));
-    if (WorldColor.a > 4.5) d = min(d, obstacleDistance(p, Obstacle4));
-    if (WorldColor.a > 5.5) d = min(d, obstacleDistance(p, Obstacle5));
-    if (WorldColor.a > 6.5) d = min(d, obstacleDistance(p, Obstacle6));
-    if (WorldColor.a > 7.5) d = min(d, obstacleDistance(p, Obstacle7));
-    return d;
-}
-
-float2 sceneNormal(float2 p)
-{
-    float e = 0.012;
-    return normalize(float2(sceneDistance(p + float2(e, 0.0)) - sceneDistance(p - float2(e, 0.0)),
-                             sceneDistance(p + float2(0.0, e)) - sceneDistance(p - float2(0.0, e))));
-}
-
-float2 strokeUv(float2 p)
+float2 fieldUv(float2 p)
 {
     return p / Paint.xy + 0.5;
 }
 
-float strokeDistance(float2 p)
+bool inField(float2 uv)
 {
-    float2 uv = strokeUv(p);
-    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)
-        return Paint.z + Paint.w; // outside the painted region, no stroke nearer than the clamp
-    return StrokeDistance.Sample(StrokeDistanceSampler, uv).r * Paint.z + Paint.w;
+    return uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0;
 }
 
-float3 strokeRadiance(float2 p)
+float staticDistance(float2 p)
 {
-    float4 stroke = StrokeTexture.Sample(StrokeSampler, strokeUv(p));
-    return pow(stroke.rgb, 2.2) * stroke.a * Tuning.z;
+    float2 uv = fieldUv(p);
+    if (!inField(uv))
+        return Paint.z + Paint.w; // outside the baked region reads as far
+    return StaticDistance.Sample(StaticDistanceSampler, uv).r * Paint.z + Paint.w;
+}
+
+float dynamicDistance(float2 p)
+{
+    float2 uv = fieldUv(p);
+    if (!inField(uv))
+        return Paint.z + Paint.w;
+    return DynamicDistance.Sample(DynamicDistanceSampler, uv).r * Paint.z + Paint.w;
+}
+
+float3 staticEmission(float2 p)
+{
+    float4 s = StaticEmission.Sample(StaticEmissionSampler, fieldUv(p));
+    return pow(s.rgb, 2.2) * s.a * Tuning.z;
+}
+
+float3 dynamicEmission(float2 p)
+{
+    float3 s = DynamicEmission.Sample(DynamicEmissionSampler, fieldUv(p)).rgb;
+    return pow(s, 2.2) * LightEmissionDecode;
 }
 
 float4 traceRay(float2 origin, float2 direction, float intervalStart, float intervalEnd)
@@ -157,61 +125,27 @@ float4 traceRay(float2 origin, float2 direction, float intervalStart, float inte
 
         float2 samplePosition = origin + direction * travel;
 
-        // Painted strokes are opaque emitters, like the reference sandbox: a
-        // ray that reaches a stroke surface takes its color and terminates.
-        float distanceToStroke = strokeDistance(samplePosition);
-        if (distanceToStroke < 0.025)
+        // Static hit: a painted stroke (emissive) or scene geometry (dark, so
+        // it acts purely as an occluder for the cascade transport).
+        float dStatic = staticDistance(samplePosition);
+        if (dStatic < 0.025)
         {
-            result.rgb += strokeRadiance(samplePosition);
+            result.rgb += staticEmission(samplePosition);
             result.a = 1.0;
             break;
         }
 
-        float3 lightRadiance = float3(0.0, 0.0, 0.0);
-        float lightHit = 0.0;
-        for (int lightIndex = 0; lightIndex < (int)Tuning.y; lightIndex++)
+        // Dynamic hit: a point-light disc; the stamp's radial falloff bakes
+        // the glow profile, so nearer rays pick up more radiance.
+        float dDynamic = dynamicDistance(samplePosition);
+        if (dDynamic < 0.025)
         {
-            if (Lights[lightIndex].Color.a < 0.5)
-                continue;
-            float2 toLight = Lights[lightIndex].Position.xy - samplePosition;
-            float lightDistance = length(toLight);
-            float lightRadius = max(Lights[lightIndex].Position.w * 1.6, 0.08);
-            if (lightDistance < lightRadius)
-            {
-                float facing = saturate(dot(direction, normalize(toLight + float2(0.0001, 0.0001))));
-                float glow = smoothstep(lightRadius, 0.0, lightDistance);
-                lightRadiance += Lights[lightIndex].Color.rgb * Lights[lightIndex].Position.z * (0.45 + 0.55 * facing) * glow;
-                lightHit = 1.0;
-            }
-        }
-        if (lightHit > 0.5)
-        {
-            result.rgb += lightRadiance;
+            result.rgb += dynamicEmission(samplePosition);
             result.a = 1.0;
             break;
         }
 
-        float distanceToScene = sceneDistance(samplePosition);
-        if (distanceToScene < 0.018)
-        {
-            float2 normal = sceneNormal(samplePosition);
-            for (int sceneLightIndex = 0; sceneLightIndex < (int)Tuning.y; sceneLightIndex++)
-            {
-                if (Lights[sceneLightIndex].Color.a < 0.5)
-                    continue;
-                float2 toSource = Lights[sceneLightIndex].Position.xy - samplePosition;
-                float sourceDistance = length(toSource);
-                float lambert = saturate(dot(normal, toSource / max(sourceDistance, 0.001)));
-                float bounce = lambert * Lights[sceneLightIndex].Position.z / (1.0 + sourceDistance * sourceDistance * 0.18);
-                result.rgb += Lights[sceneLightIndex].Color.rgb * bounce * 0.24;
-            }
-            result.a = 1.0;
-            break;
-        }
-
-        // The stroke distance field joins the scene SDF as the march bound so
-        // rays decelerate onto thin strokes instead of leaping over them.
-        float marchDistance = min(distanceToScene, max(distanceToStroke, 0.0));
+        float marchDistance = min(dStatic, dDynamic);
         travel += max(marchDistance, 0.018);
     }
     return result;
@@ -289,54 +223,10 @@ float4 fragment_main(VsOutput input) : SV_Target0
 {
     float2 uv = input.TexCoord;
     float2 worldPosition = (uv - 0.5) * Viewport.xy;
-    float scene = sceneDistance(worldPosition);
     float hitAmount;
-    float3 indirect = radiancePass(worldPosition, uv, hitAmount);
-    float3 color = indirect;
-
-    // Only the lowest cascade becomes the final display layer. Upper layers
-    // remain linear radiance textures so they can be merged by the next pass.
-    if ((int)Display.x == 0)
-    {
-        float3 base = WorldColor.rgb * (0.62 + 0.38 * (1.0 - uv.y));
-        float3 lightGlow = float3(0.0, 0.0, 0.0);
-        // Strokes glow with the distance field's falloff instead of a
-        // per-segment loop; painted pixels themselves shine at full strength.
-        float distanceToStroke = strokeDistance(worldPosition);
-        float strokeGlow = exp(-max(distanceToStroke, 0.0) * 1.6);
-        lightGlow += strokeRadiance(worldPosition) * (0.3 + 0.7 * strokeGlow);
-        for (int lightIndex = 0; lightIndex < (int)Tuning.y; lightIndex++)
-        {
-            if (Lights[lightIndex].Color.a < 0.5)
-                continue;
-            lightGlow += Lights[lightIndex].Color.rgb * Lights[lightIndex].Position.z * exp(-length(worldPosition - Lights[lightIndex].Position.xy) * 0.72) * 0.12;
-        }
-        color += base + lightGlow;
-    }
-    // Scene presentation belongs only to the final (highest spatial
-    // resolution) cascade. Intermediate cascades must remain pure radiance so
-    // their packed probes can be merged without duplicating UI/display terms.
-    if ((int)Display.x == 0)
-    {
-        for (int lightIndex = 0; lightIndex < (int)Tuning.y; lightIndex++)
-        {
-            if (Lights[lightIndex].Color.a < 0.5)
-                continue;
-            float lightDisc = smoothstep(
-                max(Lights[lightIndex].Position.w * 1.45, 0.12),
-                max(Lights[lightIndex].Position.w * 0.18, 0.025),
-                length(worldPosition - Lights[lightIndex].Position.xy));
-            color = lerp(color, Lights[lightIndex].Color.rgb * (1.0 + Lights[lightIndex].Position.z * 0.18), lightDisc);
-        }
-
-        if (Viewport.w > 0.5 && scene < 0.0)
-        {
-            float2 normal = sceneNormal(worldPosition);
-            float topLight = 0.35 + 0.65 * saturate(dot(normal, normalize(float2(-0.5, -0.8))));
-            color = WorldColor.rgb * topLight + indirect * 0.68;
-            color += float3(0.025, 0.03, 0.045);
-        }
-    }
+    // Every cascade now stays pure linear radiance; the display terms live in
+    // the full-resolution composite pass (RadianceCascadesComposite.hlsl).
+    float3 color = radiancePass(worldPosition, uv, hitAmount);
 
     if (Display.w > 0.5)
     {
@@ -346,7 +236,5 @@ float4 fragment_main(VsOutput input) : SV_Target0
         color = lerp(color, float3(0.15, 0.55, 0.75), gridLineStrength * 0.35);
     }
 
-    if ((int)Display.x == 0 && Display.z > 0.5)
-        color = pow(max(color, 0.0), 1.0 / 2.2);
     return float4(saturate(color), 1.0) * input.Color;
 }
