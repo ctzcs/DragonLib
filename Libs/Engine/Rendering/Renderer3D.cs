@@ -26,7 +26,7 @@ public sealed class Renderer3D : IDisposable
 
     private sealed class DrawItem
     {
-        public required Mesh3D Mesh;
+        public required Mesh Mesh;
         public required Material Material;
         public Matrix4x4 World;
         public VertexBuffer? InstanceBuffer;
@@ -116,7 +116,7 @@ public sealed class Renderer3D : IDisposable
     /// <summary>
     /// Queues one mesh transform for a direct draw shader.
     /// </summary>
-    public void Draw(Mesh3D mesh, Material material, in Matrix4x4 world)
+    public void Draw(Mesh mesh, Material material, in Matrix4x4 world)
     {
         EnsureActive();
         ArgumentNullException.ThrowIfNull(mesh);
@@ -133,11 +133,17 @@ public sealed class Renderer3D : IDisposable
     }
 
     /// <summary>
+    /// Queues one mesh transform for a direct draw shader.
+    /// </summary>
+    public void Draw(Mesh3D mesh, Material material, in Matrix4x4 world)
+        => Draw(mesh.Geometry, material, world);
+
+    /// <summary>
     /// Uploads arbitrary instance data to a renderer-managed transient buffer
     /// and queues one instanced draw. The shader defines the instance layout.
     /// </summary>
     public void DrawInstances<TInstance>(
-        Mesh3D mesh,
+        Mesh mesh,
         Material material,
         ReadOnlySpan<TInstance> instances)
         where TInstance : unmanaged, IVertex
@@ -155,10 +161,21 @@ public sealed class Renderer3D : IDisposable
     }
 
     /// <summary>
+    /// Uploads arbitrary instance data to a renderer-managed transient buffer
+    /// and queues one instanced draw. The shader defines the instance layout.
+    /// </summary>
+    public void DrawInstances<TInstance>(
+        Mesh3D mesh,
+        Material material,
+        ReadOnlySpan<TInstance> instances)
+        where TInstance : unmanaged, IVertex
+        => DrawInstances(mesh.Geometry, material, instances);
+
+    /// <summary>
     /// Queues an instanced draw using a caller-owned instance buffer.
     /// </summary>
     public void DrawInstances(
-        Mesh3D mesh,
+        Mesh mesh,
         Material material,
         VertexBuffer instanceBuffer,
         int instanceCount)
@@ -166,8 +183,8 @@ public sealed class Renderer3D : IDisposable
         EnsureActive();
         ArgumentNullException.ThrowIfNull(mesh);
         ArgumentNullException.ThrowIfNull(material);
-        ArgumentNullException.ThrowIfNull(instanceBuffer);
         EnsureMeshDevice(mesh);
+        ArgumentNullException.ThrowIfNull(instanceBuffer);
         if (!ReferenceEquals(instanceBuffer.GraphicsDevice, _graphicsDevice))
             throw new InvalidOperationException("Instance buffer and Renderer3D must belong to the same GraphicsDevice.");
         if (instanceBuffer.IsDisposed)
@@ -180,8 +197,18 @@ public sealed class Renderer3D : IDisposable
         QueueInstances(mesh, material, instanceBuffer, instanceCount);
     }
 
-    private void QueueInstances(
+    /// <summary>
+    /// Queues an instanced draw using a caller-owned instance buffer.
+    /// </summary>
+    public void DrawInstances(
         Mesh3D mesh,
+        Material material,
+        VertexBuffer instanceBuffer,
+        int instanceCount)
+        => DrawInstances(mesh.Geometry, material, instanceBuffer, instanceCount);
+
+    private void QueueInstances(
+        Mesh mesh,
         Material material,
         VertexBuffer instanceBuffer,
         int instanceCount)
@@ -250,7 +277,7 @@ public sealed class Renderer3D : IDisposable
             World = item.World,
         });
 
-        item.Mesh.Geometry.GraphicsDevice.Draw(new DrawCommand(target, item.Mesh.Geometry, item.Material)
+        item.Mesh.GraphicsDevice.Draw(new DrawCommand(target, item.Mesh, item.Material)
         {
             BlendMode = BlendMode.NonPremultiplied,
             CullMode = CullMode.Back,
@@ -270,7 +297,7 @@ public sealed class Renderer3D : IDisposable
             ViewProjection = camera.ViewProjection,
         });
 
-        var command = new DrawCommand(target, item.Mesh.Geometry, item.Material);
+        var command = new DrawCommand(target, item.Mesh, item.Material);
         command.VertexBuffers.Add((item.InstanceBuffer!, true));
         command.InstanceCount = item.InstanceCount;
         command.BlendMode = BlendMode.NonPremultiplied;
@@ -278,7 +305,7 @@ public sealed class Renderer3D : IDisposable
         command.DepthCompare = DepthCompare.LessOrEqual;
         command.DepthTestEnabled = true;
         command.DepthWriteEnabled = true;
-        item.Mesh.Geometry.GraphicsDevice.Draw(command);
+        item.Mesh.GraphicsDevice.Draw(command);
     }
 
     private void EnsureActive()
@@ -287,10 +314,10 @@ public sealed class Renderer3D : IDisposable
             throw new InvalidOperationException("Renderer3D requires an active Begin/End pass.");
     }
 
-    private void EnsureMeshDevice(Mesh3D mesh)
+    private void EnsureMeshDevice(Mesh mesh)
     {
-        if (!ReferenceEquals(mesh.Geometry.GraphicsDevice, _target!.GraphicsDevice))
-            throw new InvalidOperationException("Mesh3D and render target must belong to the same GraphicsDevice.");
+        if (!ReferenceEquals(mesh.GraphicsDevice, _target!.GraphicsDevice))
+            throw new InvalidOperationException("Mesh and render target must belong to the same GraphicsDevice.");
     }
 
     private InstanceBufferPool<TInstance> GetInstanceBufferPool<TInstance>()
