@@ -20,6 +20,7 @@ namespace Game0.Content.Demos;
 public sealed class GltfSceneDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, IRenderSystem
 {
     private const string ShaderResourceBase = "Game0/Shaders/Standard3D";
+    private const string DepthShaderResourceBase = "Game0/Shaders/DepthOnly";
     private const string LevelPath = "Resources/Levels/gltf_scene.json";
 
     [DI] private SceneRouter<RuntimeScene> _sceneRouter = null!;
@@ -31,6 +32,8 @@ public sealed class GltfSceneDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, 
     [DI] private MyGame _game = null!;
 
     private EmbeddedShaderMaterial? _shader;
+    private EmbeddedShaderMaterial? _depthShader;
+    private ShadowMap? _shadowMap;
     private Renderer3D? _renderer;
     private RenderTarget3D? _renderTarget;
     private Texture? _whiteTexture;
@@ -45,17 +48,33 @@ public sealed class GltfSceneDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, 
     private Vector3 _target = new(0f, 0.9f, 0f);
     private string _status = "not loaded";
 
+    private bool _shadowsEnabled = true;
+    private float _shadowBias = 0.0015f;
+    private float _shadowDarkness = 0.65f;
+    private float _lightAzimuth = -0.9f;
+    private float _lightElevation = 0.9f;
+    private Vector3 _ambientLightColor = new(0.36f, 0.39f, 0.46f);
+    private Vector3 _diffuseLightColor = new(1.00f, 0.95f, 0.88f);
+
     public void Init()
     {
         _shader = EmbeddedShaderMaterial.Load(
             _game.GraphicsDevice,
             typeof(GltfSceneDemoSystem).Assembly,
             ShaderResourceBase,
-            new ShaderStageSpec(2, 2, "fragment_main"),
+            new ShaderStageSpec(3, 3, "fragment_main"),
+            new ShaderStageSpec(0, 2, "vertex_main"));
+
+        _depthShader = EmbeddedShaderMaterial.Load(
+            _game.GraphicsDevice,
+            typeof(GltfSceneDemoSystem).Assembly,
+            DepthShaderResourceBase,
+            new ShaderStageSpec(0, 0, "fragment_main"),
             new ShaderStageSpec(0, 1, "vertex_main"));
 
         _whiteTexture = new Texture(_game.GraphicsDevice, 1, 1, [Color.White], name: "White 1x1");
         _renderTarget = new RenderTarget3D(_game.GraphicsDevice);
+        _shadowMap = new ShadowMap(_game.GraphicsDevice, 2048);
         _renderer = new Renderer3D(_game.GraphicsDevice);
     }
 
@@ -63,12 +82,16 @@ public sealed class GltfSceneDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, 
     {
         _whiteTexture?.Dispose();
         _renderTarget?.Dispose();
+        _shadowMap?.Dispose();
         _renderer?.Dispose();
         _shader?.Dispose();
+        _depthShader?.Dispose();
         _whiteTexture = null;
         _renderTarget = null;
+        _shadowMap = null;
         _renderer = null;
         _shader = null;
+        _depthShader = null;
         _materialCache.Clear();
         _loadedEntities.Clear();
     }
@@ -114,7 +137,8 @@ public sealed class GltfSceneDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, 
 
     public void Render()
     {
-        if (!_wasActive || _renderTarget == null || _shader == null || _renderer == null)
+        if (!_wasActive || _renderTarget == null || _shader == null || _depthShader == null ||
+            _shadowMap == null || _renderer == null)
             return;
 
         var width = _game.Window.WidthInPixels;
@@ -123,19 +147,42 @@ public sealed class GltfSceneDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, 
         _renderTarget.Clear(new Color(0x0A0E17));
         _camera.ViewportSize = new Point2(width, height);
 
-        var lightDirection = new Vector3(-0.45f, -0.75f, 0.35f);
+        var horizontalLight = MathF.Cos(_lightElevation);
+        var lightDirection = new Vector3(
+            horizontalLight * MathF.Cos(_lightAzimuth),
+            -MathF.Sin(_lightElevation),
+            horizontalLight * MathF.Sin(_lightAzimuth));
         var lightUniforms = new LightUniforms
         {
             LightDirection = new Vector4(lightDirection, 0f),
-            Ambient = new Vector4(0.36f, 0.39f, 0.46f, 1f),
-            Diffuse = new Vector4(1f, 0.95f, 0.88f, 1f),
+            Ambient = new Vector4(_ambientLightColor, 1f),
+            Diffuse = new Vector4(_diffuseLightColor, 1f),
         };
+
+        // 光照正交框覆盖整个摆放区域。
+        _shadowMap.Resize(_shadowMap.Size);
+        _shadowMap.UpdateLight(lightDirection, new Vector3(0f, 1f, 0f), 6f);
+        var shadowUniforms = new ShadowMatrixUniforms { LightViewProjection = _shadowMap.LightViewProjection };
+        var shadowSettings = new ShadowSettingsUniforms
+        {
+            Settings = new Vector4(
+                _shadowsEnabled ? 1f : 0f,
+                1f / _shadowMap.Size,
+                _shadowBias,
+                _shadowDarkness),
+        };
+        var shadowSampler = new BoundSampler(_shadowMap.DepthTexture, new TextureSampler(TextureFilter.Linear, TextureWrap.Clamp));
+        if (_shadowsEnabled)
+            _shadowMap.Clear();
 
         var meshPool = _world.GetPool<MeshRendererComp>();
         var localToWorldPool = _world.GetPool<LocalToWorldComp>();
 
         _drawnInstances = 0;
         _renderer.Begin(_renderTarget.Target, _camera);
+        if (_shadowsEnabled)
+            _renderer.SetShadowPass(_shadowMap.Target, _depthShader.Material, _shadowMap.LightViewProjection);
+
         foreach (int e in _world.Entities)
         {
             if (!meshPool.Has(e) || !localToWorldPool.Has(e)) continue;
@@ -151,6 +198,10 @@ public sealed class GltfSceneDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, 
                 if (meshRenderer.MeshIndex >= 0 && i != meshRenderer.MeshIndex) continue;
                 var material = materials[i];
                 material.Fragment.SetUniformBuffer(lightUniforms);
+                material.Vertex.SetUniformBuffer(shadowUniforms, 1);
+                material.Fragment.SetUniformBuffer(shadowSettings, 2);
+                if (_shadowsEnabled)
+                    material.Fragment.Samplers[2] = shadowSampler;
                 _renderer.Draw(model.Primitives[i].Mesh, material, world);
             }
 
@@ -244,6 +295,15 @@ public sealed class GltfSceneDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, 
             SaveLevel();
             ReloadLevel();
         }
+        ImGui.Separator();
+        ImGui.Checkbox("Shadows", ref _shadowsEnabled);
+        ImGui.SliderFloat("Shadow bias", ref _shadowBias, 0f, 0.01f);
+        ImGui.SliderFloat("Shadow darkness", ref _shadowDarkness, 0f, 1f);
+        ImGui.Separator();
+        ImGui.SliderFloat("Light azimuth", ref _lightAzimuth, -MathF.PI, MathF.PI);
+        ImGui.SliderFloat("Light elevation", ref _lightElevation, 0.2f, 1.5f);
+        ImGui.ColorEdit3("Ambient", ref _ambientLightColor);
+        ImGui.ColorEdit3("Diffuse", ref _diffuseLightColor);
         ImGui.End();
     }
 
@@ -260,5 +320,17 @@ public sealed class GltfSceneDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, 
     {
         public Vector4 BaseColorFactor;
         public Vector4 Flags;
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, Pack = 4)]
+    private struct ShadowMatrixUniforms
+    {
+        public Matrix4x4 LightViewProjection;
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, Pack = 4)]
+    private struct ShadowSettingsUniforms
+    {
+        public Vector4 Settings; // x: enabled, y: texel size, z: bias, w: darkness
     }
 }

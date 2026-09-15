@@ -24,6 +24,12 @@ public sealed class Renderer3D : IDisposable
         public Matrix4x4 ViewProjection;
     }
 
+    [StructLayout(LayoutKind.Sequential, Pack = 4)]
+    private struct ShadowDirectVertexUniforms
+    {
+        public Matrix4x4 WorldLightViewProjection;
+    }
+
     private sealed class DrawItem
     {
         public required Mesh Mesh;
@@ -85,12 +91,38 @@ public sealed class Renderer3D : IDisposable
     private Camera3D? _camera;
     private int _sequence;
     private bool _disposed;
+    private IDrawableTarget? _shadowTarget;
+    private Material? _shadowMaterial;
+    private Matrix4x4 _shadowLightViewProjection;
 
     public bool IsActive => _target != null;
 
     public Renderer3D(GraphicsDevice graphicsDevice)
     {
         _graphicsDevice = graphicsDevice;
+    }
+
+    /// <summary>
+    /// 为本帧启用阴影 pass：End() 会先把已收集的 draw 提交到 <paramref name="shadowTarget"/>
+    /// （用 <paramref name="depthMaterial"/>，面剔除翻转为 Front 消 acne），再提交颜色 pass。
+    /// 须在 Begin 之后、End 之前调用。depthMaterial 的顶点 uniform 需为单个
+    /// WorldLightViewProjection 矩阵（见 DepthOnly.hlsl）。
+    /// 实例化 draw 不进阴影 pass。
+    /// </summary>
+    public void SetShadowPass(
+        IDrawableTarget shadowTarget,
+        Material depthMaterial,
+        in Matrix4x4 lightViewProjection)
+    {
+        EnsureActive();
+        ArgumentNullException.ThrowIfNull(shadowTarget);
+        ArgumentNullException.ThrowIfNull(depthMaterial);
+        if (!ReferenceEquals(shadowTarget.GraphicsDevice, _graphicsDevice))
+            throw new InvalidOperationException("Shadow target and Renderer3D must belong to the same GraphicsDevice.");
+
+        _shadowTarget = shadowTarget;
+        _shadowMaterial = depthMaterial;
+        _shadowLightViewProjection = lightViewProjection;
     }
 
     /// <summary>
@@ -253,6 +285,12 @@ public sealed class Renderer3D : IDisposable
                 return instanceOrder != 0 ? instanceOrder : left.Sequence.CompareTo(right.Sequence);
             });
 
+            if (_shadowTarget != null && _shadowMaterial != null)
+            {
+                foreach (var item in _items)
+                    SubmitShadow(_shadowTarget, item);
+            }
+
             foreach (var item in _items)
             {
                 if (item.IsInstanced)
@@ -266,6 +304,8 @@ public sealed class Renderer3D : IDisposable
             _items.Clear();
             _target = null;
             _camera = null;
+            _shadowTarget = null;
+            _shadowMaterial = null;
         }
     }
 
@@ -306,6 +346,29 @@ public sealed class Renderer3D : IDisposable
         command.DepthTestEnabled = true;
         command.DepthWriteEnabled = true;
         item.Mesh.GraphicsDevice.Draw(command);
+    }
+
+    /// <summary>
+    /// 阴影深度 pass。面剔除翻转为 Front 消除自遮挡 acne；深度比较用 Less（深度图每帧清理）。
+    /// 实例化 draw 暂不进阴影 pass（DepthOnly 着色器不读实例缓冲，进来了也是错的）。
+    /// </summary>
+    private void SubmitShadow(IDrawableTarget shadowTarget, DrawItem item)
+    {
+        if (item.IsInstanced)
+            return;
+
+        _shadowMaterial!.Vertex.SetUniformBuffer(new ShadowDirectVertexUniforms
+        {
+            WorldLightViewProjection = item.World * _shadowLightViewProjection,
+        });
+
+        _graphicsDevice.Draw(new DrawCommand(shadowTarget, item.Mesh, _shadowMaterial)
+        {
+            CullMode = CullMode.Front,
+            DepthCompare = DepthCompare.Less,
+            DepthTestEnabled = true,
+            DepthWriteEnabled = true,
+        });
     }
 
     private void EnsureActive()

@@ -1,0 +1,27 @@
+#include <metal_stdlib>
+#include <simd/simd.h>
+
+using namespace metal;
+
+struct type_ShadowVertexBlock
+{
+    float4x4 WorldLightViewProjection;
+};
+
+struct vertex_main_out
+{
+    float4 gl_Position [[position]];
+};
+
+struct vertex_main_in
+{
+    float3 in_var_TEXCOORD0 [[attribute(0)]];
+};
+
+vertex vertex_main_out vertex_main(vertex_main_in in [[stage_in]], constant type_ShadowVertexBlock& ShadowVertexBlock [[buffer(0)]])
+{
+    vertex_main_out out = {};
+    out.gl_Position = ShadowVertexBlock.WorldLightViewProjection * float4(in.in_var_TEXCOORD0, 1.0);
+    return out;
+}
+

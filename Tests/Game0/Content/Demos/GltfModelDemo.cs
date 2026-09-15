@@ -69,8 +69,8 @@ public sealed class GltfModelDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, 
             _game.GraphicsDevice,
             typeof(GltfModelDemoSystem).Assembly,
             ShaderResourceBase,
-            new ShaderStageSpec(2, 2, "fragment_main"),
-            new ShaderStageSpec(0, 1, "vertex_main"));
+            new ShaderStageSpec(3, 3, "fragment_main"),
+            new ShaderStageSpec(0, 2, "vertex_main"));
 
         _whiteTexture = new Texture(_game.GraphicsDevice, 1, 1, [Color.White], name: "White 1x1");
         _renderTarget = new RenderTarget3D(_game.GraphicsDevice);
