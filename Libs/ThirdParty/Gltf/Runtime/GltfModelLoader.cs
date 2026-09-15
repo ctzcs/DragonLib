@@ -254,9 +254,9 @@ public static class GltfModelLoader
 
         var result = new GltfMaterial
         {
-            BaseColorFactor = material!.FindChannel("BaseColor")?.Parameter ?? Vector4.One,
-            Metallic = material.FindChannel("MetallicRoughness")?.Parameter.X ?? 0f,
-            Roughness = material.FindChannel("MetallicRoughness")?.Parameter.Y ?? 1f,
+            BaseColorFactor = material!.FindChannel("BaseColor")?.Color ?? Vector4.One,
+            Metallic = material.FindChannel("MetallicRoughness")?.GetFactor("MetallicFactor") ?? 0f,
+            Roughness = material.FindChannel("MetallicRoughness")?.GetFactor("RoughnessFactor") ?? 1f,
             DoubleSided = material.DoubleSided,
             AlbedoTexture = ResolveTexture(device, material.FindChannel("BaseColor")?.Texture, textureCache, asset),
             NormalTexture = ResolveTexture(device, material.FindChannel("Normal")?.Texture, textureCache, asset),
