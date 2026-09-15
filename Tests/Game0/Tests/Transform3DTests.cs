@@ -185,6 +185,22 @@ public sealed class Transform3DTests
         Assert.Equal(-1, round.MeshIndex);
     }
 
+    [Fact]
+    public void QuaternionSerializationHasNoDerivedPropertyNoise()
+    {
+        var comp = new Transform3DComp(
+            Vector3.One,
+            Quaternion.CreateFromAxisAngle(Vector3.UnitY, 0.5f),
+            Vector3.One);
+        var json = JsonSerializer.SerializeToElement(comp, PrefabSerializer.Options);
+
+        // IsIdentity 是只读派生属性，不该出现在存盘 JSON 里（历史 bug：差量保存会带出噪声）。
+        Assert.False(json.GetProperty("Rotation").TryGetProperty("IsIdentity", out _));
+
+        var round = json.Deserialize<Transform3DComp>(PrefabSerializer.Options);
+        AssertEx.ApproxEquals(new Vector3(0f, MathF.Sin(0.25f), 0f), new Vector3(round.Rotation.X, round.Rotation.Y, round.Rotation.Z), 1e-6f);
+    }
+
     private static class AssertEx
     {
         public static void ApproxEquals(Vector3 expected, Vector3 actual, float epsilon = 1e-4f)

@@ -21,11 +21,14 @@ override是level概念，覆盖实体的数据存到Level中
  */
 public static class PrefabSerializer
 {
-    // 组件序列化共用的 STJ 配置。IncludeFields 因为 ECS 组件通常是公开字段的 struct。
+    // 组件序列化共用的 STJ 配置。IncludeFields 因为 ECS 组件通常是公开字段的 struct；
+    // Quaternion/Matrix4x4 用自定义转换器去掉 IsIdentity 这类派生属性的序列化噪声
+    // （否则存盘值带着只读属性，既难看也让差量比较不稳定）。
     public static readonly JsonSerializerOptions Options = new()
     {
         WriteIndented = true,
         IncludeFields = true,
+        Converters = { new QuaternionConverter(), new Matrix4x4Converter() },
     };
 
     /// <summary>
