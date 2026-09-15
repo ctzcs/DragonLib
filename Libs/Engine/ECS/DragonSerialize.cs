@@ -43,8 +43,9 @@ public sealed class Prefab : IAsset
 }
 
 /// <summary>
-/// 序列化时被跳过的组件：身份组件（由实例化重新打上）+ 派生数据组件（由系统每帧重算，
-/// 存盘只会制造噪声）。PrefabSerializer.Capture 与 LevelSerializer 的差量/快照路径共用。
+/// 序列化时被跳过的组件 = 身份层（由实例化重新打上）+ 派生层（实现了
+/// <see cref="IEcsDerivedComponent"/>，由系统每帧重算）。PrefabSerializer.Capture 与
+/// LevelSerializer 的差量/快照路径共用。新增派生组件只需实现标记接口，无需改这里。
 /// </summary>
 public static class EcsSerialization
 {
@@ -52,6 +53,6 @@ public static class EcsSerialization
     {
         return componentType == typeof(SpawnIdComp)
             || componentType == typeof(PrefabRefComp)
-            || componentType == typeof(LocalToWorldComp);
+            || typeof(IEcsDerivedComponent).IsAssignableFrom(componentType);
     }
 }

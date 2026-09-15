@@ -1,7 +1,20 @@
 using System.Numerics;
 using DCFApixels.DragonECS;
 
+// 本文件是 3D 变换的【派生层】runtime：LocalToWorldComp 由下面的系统每帧重算并写入，
+// 实现了 IEcsDerivedComponent，序列化统一跳过（见 EcsComponentLayers.cs 的分层约定）。
+// 配置层组件（Transform3DComp / Parent3DComp）在 Transform3D.cs。
+
 namespace Engine.ECS;
+
+/// <summary>
+/// 派生的世界矩阵（v * Local * … * ParentLocal 的行向量约定，与 Renderer3D 一致）。
+/// 由 <see cref="Transform3DSystem"/> 重算，不进 prefab/level。
+/// </summary>
+public struct LocalToWorldComp : IEcsComponent, IEcsDerivedComponent
+{
+    public Matrix4x4 Value;
+}
 
 /// <summary>
 /// 每帧把 <see cref="Transform3DComp"/>（含 <see cref="Parent3DComp"/> 层级）传播成

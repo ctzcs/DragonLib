@@ -128,6 +128,20 @@ public sealed class Transform3DTests
         Assert.False(prefab.Components.ContainsKey("SpawnIdComp"));
     }
 
+    /// <summary>分层是声明式的：实现 IEcsDerivedComponent 的新组件自动被排除，无需改 EcsSerialization。</summary>
+    private struct FakeDerivedComp : IEcsComponent, IEcsDerivedComponent
+    {
+        public Matrix4x4 Value;
+    }
+
+    [Fact]
+    public void AnyDerivedMarkerComponentIsExcludedAutomatically()
+    {
+        Assert.True(EcsSerialization.IsExcluded(typeof(FakeDerivedComp)));
+        Assert.False(EcsSerialization.IsExcluded(typeof(Transform3DComp)));
+        Assert.False(EcsSerialization.IsExcluded(typeof(Parent3DComp)));
+    }
+
     [Fact]
     public void LevelDiffRoundTripsTransform3DAndParent()
     {
