@@ -19,6 +19,7 @@ public class SceneModule : EcsModule<SceneModule>
         b.Add(new Box2DDemoSystem());
         b.Add(new DualCamera2DDemoSystem());
         b.Add(new ThreeDDemoSystem());
+        b.Add(new GltfModelDemoSystem());
         b.Add(new LightSandboxDemoSystem());
         b.Add(new RadianceCascadesDemoSystem());
         b.Add(new EntitiesDemo());
@@ -35,6 +36,7 @@ public enum RuntimeScene
     Box2D,
     DualCamera2D,
     ThreeD,
+    GltfModel,
     LightSandbox,
     RadianceCascades2D,
 }
@@ -71,6 +73,9 @@ public sealed class SceneLauncherSystem : IUpdateSystem
 
             if (ImGui.Button("3D Mountain Demo"))
                 _sceneRouter.SwitchTo(RuntimeScene.ThreeD);
+
+            if (ImGui.Button("glTF Model Demo"))
+                _sceneRouter.SwitchTo(RuntimeScene.GltfModel);
 
             if (ImGui.Button("Lighting Sandbox"))
                 _sceneRouter.SwitchTo(RuntimeScene.LightSandbox);

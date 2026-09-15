@@ -10,6 +10,9 @@ public partial class LocalStorage(string rootPath) : StorageContainer
 {
     private readonly string _root = Path.GetFullPath(rootPath);
 
+    /// <summary>存储根目录的绝对路径（供需要真实文件路径的加载器使用，如 glTF 的外部 .bin）。</summary>
+    public string RootPath => _root;
+
     public override bool Writable => true;
 
     private string Full(string path) => Path.Combine(_root, path);

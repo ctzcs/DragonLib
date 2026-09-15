@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Numerics;
 using DCFApixels.DragonECS;
+using DragonLib.Gltf;
 using Engine;
 using Engine.Assets;
 using Engine.DearImGui;
@@ -122,6 +123,12 @@ public class MyGame : GameApp
             scanDir: "Resources/Prefabs", nameRoot: "Resources", options: PrefabSerializer.Options);
         Log.Info($"Loaded {loaded} prefab(s) from Resources/Prefabs.");
 
+        // 模型目录：.glb/.gltf（含 FbxToGltf 工具转出的产物），名字 = 相对 "Resources" 的路径（如 Models/testscene）。
+        int modelsLoaded = GltfModelScanner.ScanInto(
+            _assets, GraphicsDevice, StorageUtils.GetDevGameRoot,
+            scanDir: "Resources/Models", nameRoot: "Resources");
+        Log.Info($"Loaded {modelsLoaded} model(s) from Resources/Models.");
+
         //Font Load
         
         
@@ -138,6 +145,7 @@ public class MyGame : GameApp
             .Inject(_camera)
             .Inject(_camera3D)
             .Inject(_sceneRouter)
+            .Inject(_assets)
             .Inject(Input)
             .Inject(_imGui)
             .Inject(_paper)
