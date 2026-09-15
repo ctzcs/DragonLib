@@ -89,7 +89,7 @@ public static class LevelSerializer
                 {
                     var pool = pools[cid];
                     var type = pool.ComponentType;
-                    if (type == typeof(SpawnIdComp) || type == typeof(PrefabRefComp)) continue;
+                    if (EcsSerialization.IsExcluded(type)) continue;
 
                     object raw = pool.GetRaw(e);
                     data.Fields[type.Name] =
@@ -115,7 +115,7 @@ public static class LevelSerializer
         {
             var pool = pools[cid];
             var type = pool.ComponentType;
-            if (type == typeof(SpawnIdComp) || type == typeof(PrefabRefComp)) continue;
+            if (EcsSerialization.IsExcluded(type)) continue;
 
             object raw = pool.GetRaw(entity);
             var json = JsonSerializer.SerializeToElement(raw, type, PrefabSerializer.Options);

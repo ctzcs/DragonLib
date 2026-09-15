@@ -12,6 +12,7 @@ public class SceneModule : EcsModule<SceneModule>
     public override void Import(EcsPipeline.Builder b)
     {
         b.Add(new SceneLauncherSystem());
+        b.Add(new Transform3DSystem());
         b.Add(new DreamBlockDemoSystem());
         b.Add(new FishSdfDemoSystem());
         b.Add(new MachineGunSdfDemoSystem());
@@ -20,6 +21,7 @@ public class SceneModule : EcsModule<SceneModule>
         b.Add(new DualCamera2DDemoSystem());
         b.Add(new ThreeDDemoSystem());
         b.Add(new GltfModelDemoSystem());
+        b.Add(new GltfSceneDemoSystem());
         b.Add(new LightSandboxDemoSystem());
         b.Add(new RadianceCascadesDemoSystem());
         b.Add(new EntitiesDemo());
@@ -37,6 +39,7 @@ public enum RuntimeScene
     DualCamera2D,
     ThreeD,
     GltfModel,
+    GltfScene,
     LightSandbox,
     RadianceCascades2D,
 }
@@ -76,6 +79,9 @@ public sealed class SceneLauncherSystem : IUpdateSystem
 
             if (ImGui.Button("glTF Model Demo"))
                 _sceneRouter.SwitchTo(RuntimeScene.GltfModel);
+
+            if (ImGui.Button("glTF Scene (ECS)"))
+                _sceneRouter.SwitchTo(RuntimeScene.GltfScene);
 
             if (ImGui.Button("Lighting Sandbox"))
                 _sceneRouter.SwitchTo(RuntimeScene.LightSandbox);

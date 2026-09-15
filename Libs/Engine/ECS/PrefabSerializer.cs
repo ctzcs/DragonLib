@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using DCFApixels.DragonECS;
@@ -74,7 +75,7 @@ public static class PrefabSerializer
         {
             var pool = pools[cid];
             var type = pool.ComponentType;
-            if (type == typeof(SpawnIdComp) || type == typeof(PrefabRefComp)) continue;
+            if (EcsSerialization.IsExcluded(type)) continue;
 
             object raw = pool.GetRaw(entity);
             prefab.Components[type.Name] =
