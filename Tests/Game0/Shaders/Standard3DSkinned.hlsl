@@ -1,0 +1,232 @@
+// Standard3DSkinned: Standard3D 的蒙皮顶点变体。片段部分与 Standard3D 完全一致
+// （PBR Cook-Torrance GGX + PCF 阴影 + 点光），改动片段逻辑时两个文件要同步。
+// 顶点输入 PositionNormalUvSkinVertex（JOINTS_0 打包成 uint4，WEIGHTS_0 已归一化），
+// LBS：skinned = Σ w_i × palette[j_i]，palette 由 CPU（SkeletonAnimator）按行向量约定
+// 算好（IBM × jointGlobal），实体 World 矩阵照常乘在蒙皮结果上。
+
+cbuffer VertexMatrixBlock : register(b0, space1)
+{
+    float4x4 WorldViewProjection;
+    float4x4 World;
+};
+
+cbuffer ShadowMatrixBlock : register(b1, space1)
+{
+    float4x4 LightViewProjection;
+};
+
+#define MAX_JOINTS 64
+
+// joint palette：与 C# 侧 SkeletonAnimator.MaxJoints 对齐，由 Renderer3D 提交时写入（slot 2）。
+cbuffer JointPaletteBlock : register(b2, space1)
+{
+    float4x4 JointMatrices[MAX_JOINTS];
+};
+
+cbuffer Standard3DLightBlock : register(b0, space3)
+{
+    float4 LightDirection;
+    float4 Ambient;
+    float4 Diffuse;
+    float4 CameraPosition; // xyz: 相机世界位置（镜面项要 view 方向）
+};
+
+cbuffer Standard3DMaterialBlock : register(b1, space3)
+{
+    float4 BaseColorFactor;
+    float4 MaterialFlags; // x: has albedo, y: has normal map, z: normal strength, w: alpha mode (0 opaque, 1 mask, 2 blend)
+    float4 AlphaParams;   // x: alpha cutoff (mask mode)
+    float4 PbrParams;     // x: metallic, y: roughness
+};
+
+cbuffer Standard3DShadowBlock : register(b2, space3)
+{
+    float4 ShadowSettings; // x: enabled, y: texel size, z: bias, w: darkness
+};
+
+#define MAX_POINT_LIGHTS 16
+
+// 与 C# 侧 PointLight3D.Pack 的布局一致。
+cbuffer Standard3DPointLightBlock : register(b3, space3)
+{
+    float4 PointLightMeta; // x: count
+    float4 PointLightPositionRange[MAX_POINT_LIGHTS];  // xyz: position, w: range
+    float4 PointLightColorIntensity[MAX_POINT_LIGHTS]; // xyz: color, w: intensity
+};
+
+Texture2D AlbedoTexture : register(t0, space2);
+SamplerState AlbedoSampler : register(s0, space2);
+
+Texture2D NormalTexture : register(t1, space2);
+SamplerState NormalSampler : register(s1, space2);
+
+Texture2D ShadowMapTexture : register(t2, space2);
+SamplerState ShadowSampler : register(s2, space2);
+
+struct VsInput
+{
+    float3 Position : TEXCOORD0;
+    float3 Normal : TEXCOORD1;
+    float2 Uv : TEXCOORD2;
+    float4 Tangent : TEXCOORD3;
+    uint4 Joints : TEXCOORD4;
+    float4 Weights : TEXCOORD5;
+};
+
+struct VsOutput
+{
+    float3 Normal : TEXCOORD0;
+    float4 Tangent : TEXCOORD1;
+    float2 Uv : TEXCOORD2;
+    float4 ShadowPosition : TEXCOORD3;
+    float3 WorldPosition : TEXCOORD4;
+    float4 Position : SV_Position;
+};
+
+VsOutput vertex_main(VsInput input)
+{
+    // LBS：蒙皮矩阵加权和（权重和为 1，cook 时已归一化），实体 World 照常乘在后面。
+    float4x4 skin =
+        JointMatrices[input.Joints.x] * input.Weights.x +
+        JointMatrices[input.Joints.y] * input.Weights.y +
+        JointMatrices[input.Joints.z] * input.Weights.z +
+        JointMatrices[input.Joints.w] * input.Weights.w;
+
+    VsOutput output;
+    float4 skinned = mul(skin, float4(input.Position, 1.0));
+    float4 worldPosition = mul(World, skinned);
+    output.Position = mul(WorldViewProjection, skinned);
+    output.WorldPosition = worldPosition.xyz;
+    // 法线/切线：先蒙皮后实体 World 的 3x3（MVP 不做逆转置，非均匀缩放/剪切下有轻微误差，
+    // 与静态路径的 normal 处理精度一致）。
+    float3 skinnedNormal = mul((float3x3)skin, input.Normal);
+    output.Normal = normalize(mul((float3x3)World, skinnedNormal));
+    float3 skinnedTangent = mul((float3x3)skin, input.Tangent.xyz);
+    output.Tangent = float4(normalize(mul((float3x3)World, skinnedTangent)), input.Tangent.w);
+    output.Uv = input.Uv;
+    output.ShadowPosition = mul(LightViewProjection, worldPosition);
+    return output;
+}
+
+float ComputeShadow(VsOutput input)
+{
+    if (ShadowSettings.x < 0.5)
+        return 1.0;
+
+    // 行向量矩阵乘出的裁剪空间：xyz 除以 w 后 x/y ∈ [-1,1]（映射到 uv），z 即深度。
+    float3 ndc = input.ShadowPosition.xyz / input.ShadowPosition.w;
+    float2 uv = ndc.xy * 0.5 + 0.5;
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)
+        return 1.0; // 光照正交框外：不投影。
+
+    float texel = ShadowSettings.y;
+    float bias = ShadowSettings.z;
+    float darkness = ShadowSettings.w;
+
+    float lit = 0.0;
+    for (int y = -1; y <= 1; y++)
+    {
+        for (int x = -1; x <= 1; x++)
+        {
+            float2 offset = float2(x, y) * texel;
+            float depth = ShadowMapTexture.Sample(ShadowSampler, uv + offset).r;
+            lit += (ndc.z - bias) <= depth ? 1.0 : 0.0;
+        }
+    }
+
+    float shadow = lit / 9.0;
+    return 1.0 - darkness * (1.0 - shadow);
+}
+
+// Cook-Torrance GGX 三件：NDF / Geometry / Fresnel。
+float DistributionGGX(float3 normal, float3 halfVector, float roughness)
+{
+    float a = roughness * roughness;
+    float a2 = a * a;
+    float nDotH = saturate(dot(normal, halfVector));
+    float denom = nDotH * nDotH * (a2 - 1.0) + 1.0;
+    return a2 / (3.14159265 * denom * denom);
+}
+
+float GeometrySchlickGGX(float nDotV, float roughness)
+{
+    float k = roughness + 1.0;
+    k = k * k / 8.0;
+    return nDotV / (nDotV * (1.0 - k) + k);
+}
+
+float3 FresnelSchlick(float cosTheta, float3 f0)
+{
+    return f0 + (1.0 - f0) * pow(1.0 - cosTheta, 5.0);
+}
+
+// 单个光源的 Cook-Torrance 贡献。radiance 已含衰减/阴影；漫反射不除 π，
+// 光照强度直接当亮度参数用（metallic=0/roughness=1 时 ≈ 原 Lambert 观感）。
+float3 ShadeCookTorrance(
+    float3 normal, float3 viewDir, float3 lightDir, float3 radiance,
+    float3 albedo, float metallic, float roughness)
+{
+    float3 halfVector = normalize(viewDir + lightDir);
+    float nDotL = saturate(dot(normal, lightDir));
+    float nDotV = saturate(dot(normal, viewDir));
+
+    float3 f0 = lerp(float3(0.04, 0.04, 0.04), albedo, metallic);
+    float3 f = FresnelSchlick(saturate(dot(halfVector, viewDir)), f0);
+    float d = DistributionGGX(normal, halfVector, roughness);
+    float g = GeometrySchlickGGX(nDotV, roughness) * GeometrySchlickGGX(nDotL, roughness);
+    float3 specular = d * g * f / max(4.0 * nDotV * nDotL, 1e-4);
+
+    float3 diffuse = (1.0 - f) * (1.0 - metallic) * albedo;
+    return (diffuse + specular) * radiance * nDotL;
+}
+
+float4 fragment_main(VsOutput input) : SV_Target0
+{
+    float4 baseColor = BaseColorFactor;
+    if (MaterialFlags.x > 0.5)
+        baseColor *= AlbedoTexture.Sample(AlbedoSampler, input.Uv);
+
+    // alpha cutout：mask 模式下低于 cutoff 的像素直接丢弃（仍在不透明队列，正常写深度）。
+    if (MaterialFlags.w > 0.5 && MaterialFlags.w < 1.5)
+        clip(baseColor.a - AlphaParams.x);
+
+    float3 normal = normalize(input.Normal);
+    if (MaterialFlags.y > 0.5)
+    {
+        // TBN basis; tangent.w carries bitangent handedness.
+        float3 tangent = normalize(input.Tangent.xyz);
+        float3 bitangent = cross(normal, tangent) * input.Tangent.w;
+        float3x3 tbn = float3x3(tangent, bitangent, normal);
+
+        float3 sampled = NormalTexture.Sample(NormalSampler, input.Uv).xyz * 2.0 - 1.0;
+        sampled.xy *= MaterialFlags.z;
+        normal = normalize(mul(sampled, tbn));
+    }
+
+    float3 albedo = baseColor.rgb;
+    float metallic = saturate(PbrParams.x);
+    float roughness = clamp(PbrParams.y, 0.05, 1.0);
+    float3 viewDir = normalize(CameraPosition.xyz - input.WorldPosition);
+
+    // 方向光（带 PCF 阴影）。
+    float shadow = ComputeShadow(input);
+    float3 lightDir = normalize(-LightDirection.xyz);
+    float3 color = ShadeCookTorrance(normal, viewDir, lightDir, Diffuse.rgb * shadow, albedo, metallic, roughness);
+
+    // 点光（无阴影）：smooth window 衰减，range 外为 0。
+    int pointLightCount = min((int)PointLightMeta.x, MAX_POINT_LIGHTS);
+    for (int i = 0; i < pointLightCount; i++)
+    {
+        float3 toLight = PointLightPositionRange[i].xyz - input.WorldPosition;
+        float distance = length(toLight);
+        float range = max(PointLightPositionRange[i].w, 0.001);
+        float attenuation = saturate(1.0 - distance / range);
+        attenuation *= attenuation;
+        float3 pointRadiance = PointLightColorIntensity[i].rgb * PointLightColorIntensity[i].a * attenuation;
+        color += ShadeCookTorrance(normal, viewDir, toLight / max(distance, 0.0001), pointRadiance, albedo, metallic, roughness);
+    }
+
+    // 环境光：无 IBL，平面环境项。
+    color += Ambient.rgb * albedo;
+    return float4(saturate(color), baseColor.a);
+}

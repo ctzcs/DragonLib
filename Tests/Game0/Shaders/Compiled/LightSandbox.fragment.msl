@@ -8,15 +8,19 @@ struct type_LightSandboxBlock
     float4 LightDirection;
     float4 Ambient;
     float4 Diffuse;
-    float4 PointLightPosition;
-    float4 PointLightColor;
-    float4 PointLightParams;
 };
 
 struct type_MaterialBlock
 {
     float4 Albedo;
     float4 Emissive;
+};
+
+struct type_LightSandboxPointLightBlock
+{
+    float4 PointLightMeta;
+    float4 PointLightPositionRange[16];
+    float4 PointLightColorIntensity[16];
 };
 
 struct fragment_main_out
@@ -31,14 +35,23 @@ struct fragment_main_in
     float4 in_var_TEXCOORD2 [[user(locn2)]];
 };
 
-fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], constant type_LightSandboxBlock& LightSandboxBlock [[buffer(0)]], constant type_MaterialBlock& MaterialBlock [[buffer(1)]])
+fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], constant type_LightSandboxBlock& LightSandboxBlock [[buffer(0)]], constant type_MaterialBlock& MaterialBlock [[buffer(1)]], constant type_LightSandboxPointLightBlock& LightSandboxPointLightBlock [[buffer(2)]])
 {
     fragment_main_out out = {};
-    float3 _41 = fast::normalize(in.in_var_TEXCOORD0);
-    float3 _52 = LightSandboxBlock.PointLightPosition.xyz - in.in_var_TEXCOORD1;
-    float _54 = precise::max(length(_52), 0.001000000047497451305389404296875);
-    float _64 = fast::clamp(1.0 - (_54 / precise::max(LightSandboxBlock.PointLightParams.z, 0.00999999977648258209228515625)), 0.0, 1.0);
-    out.out_var_SV_Target0 = float4(fast::clamp(((in.in_var_TEXCOORD2.xyz * MaterialBlock.Albedo.xyz) * ((LightSandboxBlock.Ambient.xyz + (LightSandboxBlock.Diffuse.xyz * fast::clamp(dot(_41, fast::normalize(-LightSandboxBlock.LightDirection.xyz)), 0.0, 1.0))) + ((((LightSandboxBlock.PointLightColor.xyz * fast::clamp(dot(_41, _52 / float3(_54)), 0.0, 1.0)) * (_64 * _64)) * LightSandboxBlock.PointLightParams.y) * LightSandboxBlock.PointLightParams.x))) + (MaterialBlock.Emissive.xyz * MaterialBlock.Emissive.w), float3(0.0), float3(1.0)), in.in_var_TEXCOORD2.w);
+    float3 _47 = fast::normalize(in.in_var_TEXCOORD0);
+    int _66 = min(int(LightSandboxPointLightBlock.PointLightMeta.x), 16);
+    float3 _68;
+    _68 = LightSandboxBlock.Ambient.xyz + (LightSandboxBlock.Diffuse.xyz * fast::clamp(dot(_47, fast::normalize(-LightSandboxBlock.LightDirection.xyz)), 0.0, 1.0));
+    for (int _71 = 0; _71 < _66; )
+    {
+        float3 _78 = LightSandboxPointLightBlock.PointLightPositionRange[_71].xyz - in.in_var_TEXCOORD1;
+        float _80 = precise::max(length(_78), 9.9999997473787516355514526367188e-05);
+        float _90 = fast::clamp(1.0 - (_80 / precise::max(LightSandboxPointLightBlock.PointLightPositionRange[_71].w, 0.001000000047497451305389404296875)), 0.0, 1.0);
+        _68 += (((LightSandboxPointLightBlock.PointLightColorIntensity[_71].xyz * LightSandboxPointLightBlock.PointLightColorIntensity[_71].w) * fast::clamp(dot(_47, _78 / float3(_80)), 0.0, 1.0)) * (_90 * _90));
+        _71++;
+        continue;
+    }
+    out.out_var_SV_Target0 = float4(fast::clamp(((in.in_var_TEXCOORD2.xyz * MaterialBlock.Albedo.xyz) * _68) + (MaterialBlock.Emissive.xyz * MaterialBlock.Emissive.w), float3(0.0), float3(1.0)), in.in_var_TEXCOORD2.w);
     return out;
 }
 

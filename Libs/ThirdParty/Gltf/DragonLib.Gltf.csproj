@@ -11,6 +11,8 @@
     <ProjectReference Include="..\..\Engine\Engine.csproj" />
     <ProjectReference Include="..\..\Foster\Framework\Foster.Framework.csproj" />
     <PackageReference Include="SharpGLTF.Core" Version="1.0.4" />
+    <!-- Toolkit（SceneBuilder/MeshBuilder）：程序化构建测试/Demo 用的蒙皮模型，离线构建期使用 -->
+    <PackageReference Include="SharpGLTF.Toolkit" Version="1.0.4" />
   </ItemGroup>
 
   <ItemGroup>

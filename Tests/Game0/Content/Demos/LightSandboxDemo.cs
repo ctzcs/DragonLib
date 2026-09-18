@@ -29,9 +29,6 @@ public sealed class LightSandboxDemoSystem : IEcsInit, IEcsDestroy, IUpdateSyste
         public Vector4 LightDirection;
         public Vector4 Ambient;
         public Vector4 Diffuse;
-        public Vector4 PointLightPosition;
-        public Vector4 PointLightColor;
-        public Vector4 PointLightParams;
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 4)]
@@ -50,6 +47,8 @@ public sealed class LightSandboxDemoSystem : IEcsInit, IEcsDestroy, IUpdateSyste
     private Mesh3D? _tealSphere;
     private Mesh3D? _purpleSphere;
     private Mesh3D? _glowSphere;
+    private Mesh3D? _glassRed;
+    private Mesh3D? _glassBlue;
     private RenderTarget3D? _renderTarget;
     private Renderer3D? _renderer;
     private bool _wasActive;
@@ -69,6 +68,12 @@ public sealed class LightSandboxDemoSystem : IEcsInit, IEcsDestroy, IUpdateSyste
     private bool _pointLightEnabled = true;
     private bool _animatePointLight = true;
     private bool _autoOrbit;
+    private bool _coolLightEnabled = true;
+    private bool _greenLightEnabled = true;
+    private Vector3 _coolLightColor = new(0.25f, 0.5f, 1.0f);
+    private Vector3 _greenLightColor = new(0.3f, 1.0f, 0.45f);
+    private readonly PointLight3D[] _pointLights = new PointLight3D[3];
+    private readonly float[] _packedPointLights = new float[PointLight3D.PackedFloatCount];
 
     public void Init()
     {
@@ -76,13 +81,13 @@ public sealed class LightSandboxDemoSystem : IEcsInit, IEcsDestroy, IUpdateSyste
             _game.GraphicsDevice,
             typeof(LightSandboxDemoSystem).Assembly,
             ShaderResourceBase,
-            new ShaderStageSpec(0, 2, "fragment_main"),
+            new ShaderStageSpec(0, 3, "fragment_main"),
             new ShaderStageSpec(0, 1, "vertex_main"));
         _glowShader = EmbeddedShaderMaterial.Load(
             _game.GraphicsDevice,
             typeof(LightSandboxDemoSystem).Assembly,
             ShaderResourceBase,
-            new ShaderStageSpec(0, 2, "fragment_main"),
+            new ShaderStageSpec(0, 3, "fragment_main"),
             new ShaderStageSpec(0, 1, "vertex_main"));
         _floor = Mesh3D.CreateCube(_game.GraphicsDevice, 1f, new Color(0x66727B), "Lighting Sandbox Floor");
         _wall = Mesh3D.CreateCube(_game.GraphicsDevice, 1f, new Color(0x3D4C5A), "Lighting Sandbox Wall");
@@ -91,6 +96,9 @@ public sealed class LightSandboxDemoSystem : IEcsInit, IEcsDestroy, IUpdateSyste
         _tealSphere = Mesh3D.CreateIcosphere(_game.GraphicsDevice, 1f, 2, 0.04f, new Color(0x78B8B0), 17, "Lighting Sandbox Teal");
         _purpleSphere = Mesh3D.CreateIcosphere(_game.GraphicsDevice, 1f, 2, 0.04f, new Color(0xA28CC8), 23, "Lighting Sandbox Purple");
         _glowSphere = Mesh3D.CreateIcosphere(_game.GraphicsDevice, 1f, 2, 0f, Color.White, 29, "Lighting Sandbox Glow");
+        // 半透明验证：两个重叠玻璃盒走透明队列（顶点色 alpha < 1，片元原样输出）。
+        _glassRed = Mesh3D.CreateCube(_game.GraphicsDevice, 1f, new Color(0xE0483E, 0.45f), "Lighting Sandbox Glass Red");
+        _glassBlue = Mesh3D.CreateCube(_game.GraphicsDevice, 1f, new Color(0x3E7FE0, 0.45f), "Lighting Sandbox Glass Blue");
         _renderTarget = new RenderTarget3D(_game.GraphicsDevice);
         _renderer = new Renderer3D(_game.GraphicsDevice);
     }
@@ -104,6 +112,8 @@ public sealed class LightSandboxDemoSystem : IEcsInit, IEcsDestroy, IUpdateSyste
         _tealSphere?.Dispose();
         _purpleSphere?.Dispose();
         _glowSphere?.Dispose();
+        _glassRed?.Dispose();
+        _glassBlue?.Dispose();
         _renderTarget?.Dispose();
         _renderer?.Dispose();
         _shader?.Dispose();
@@ -115,6 +125,8 @@ public sealed class LightSandboxDemoSystem : IEcsInit, IEcsDestroy, IUpdateSyste
         _tealSphere = null;
         _purpleSphere = null;
         _glowSphere = null;
+        _glassRed = null;
+        _glassBlue = null;
         _renderTarget = null;
         _renderer = null;
         _shader = null;
@@ -138,7 +150,8 @@ public sealed class LightSandboxDemoSystem : IEcsInit, IEcsDestroy, IUpdateSyste
         {
             if (_input.Mouse.RightDown)
             {
-                _yaw -= _input.Mouse.Delta.X * 0.008f;
+                // orbit 方向约定：向右拖 = 相机向右绕（看到物体右侧），固定点屏幕左移（锁定：CameraOrbitTests）。
+                _yaw += _input.Mouse.Delta.X * 0.008f;
                 _pitch = Math.Clamp(_pitch - _input.Mouse.Delta.Y * 0.008f, -0.1f, 1.2f);
             }
 
@@ -168,7 +181,8 @@ public sealed class LightSandboxDemoSystem : IEcsInit, IEcsDestroy, IUpdateSyste
     public void Render()
     {
         if (!_wasActive || _floor == null || _wall == null || _orangeCube == null || _goldCube == null ||
-            _tealSphere == null || _purpleSphere == null || _glowSphere == null || _renderTarget == null ||
+            _tealSphere == null || _purpleSphere == null || _glowSphere == null || _glassRed == null ||
+            _glassBlue == null || _renderTarget == null ||
             _renderer == null || _shader == null || _glowShader == null)
             return;
 
@@ -187,12 +201,21 @@ public sealed class LightSandboxDemoSystem : IEcsInit, IEcsDestroy, IUpdateSyste
             LightDirection = new Vector4(lightDirection, 0f),
             Ambient = new Vector4(_ambientColor * _ambientIntensity, 1f),
             Diffuse = new Vector4(_directionalColor * _directionalIntensity, 1f),
-            PointLightPosition = new Vector4(_pointLightPosition, 1f),
-            PointLightColor = new Vector4(_pointLightColor, 1f),
-            PointLightParams = new Vector4(_pointLightEnabled ? 1f : 0f, _pointLightIntensity, _pointLightRadius, 0f),
         };
         _shader.Material.Fragment.SetUniformBuffer(uniforms);
         _glowShader.Material.Fragment.SetUniformBuffer(uniforms);
+
+        // 点光收集：主光（位置可动画）+ 两个静态补光，打包进共享 cbuffer 布局（slot 2）。
+        var pointLightCount = 0;
+        if (_pointLightEnabled)
+            _pointLights[pointLightCount++] = new PointLight3D(_pointLightPosition, _pointLightRadius, _pointLightColor, _pointLightIntensity);
+        if (_coolLightEnabled)
+            _pointLights[pointLightCount++] = new PointLight3D(new Vector3(3.4f, 1.8f, 2.8f), 7f, _coolLightColor, 2.2f);
+        if (_greenLightEnabled)
+            _pointLights[pointLightCount++] = new PointLight3D(new Vector3(-3.2f, 0.6f, 3.0f), 5f, _greenLightColor, 1.6f);
+        PointLight3D.Pack(_pointLights.AsSpan(0, pointLightCount), _packedPointLights);
+        _shader.Material.Fragment.SetUniformBuffer(_packedPointLights.AsSpan(), 2);
+        _glowShader.Material.Fragment.SetUniformBuffer(_packedPointLights.AsSpan(), 2);
         _shader.Material.Fragment.SetUniformBuffer(new MaterialUniforms
         {
             Albedo = Vector4.One,
@@ -213,7 +236,12 @@ public sealed class LightSandboxDemoSystem : IEcsInit, IEcsDestroy, IUpdateSyste
         Draw(_tealSphere, Matrix4x4.CreateScale(1.45f) * Matrix4x4.CreateTranslation(3.2f, -0.65f, -0.15f));
         Draw(_purpleSphere, Matrix4x4.CreateScale(0.95f) * Matrix4x4.CreateTranslation(1.2f, -1.2f, -2.3f));
         if (_pointLightEnabled)
-            _renderer.Draw(_glowSphere, _glowShader.Material, Matrix4x4.CreateScale(0.38f) * Matrix4x4.CreateTranslation(_pointLightPosition));
+            _renderer.Draw(_glowSphere, _glowShader.Material, Matrix4x4.CreateScale(0.38f) * Matrix4x4.CreateTranslation(_pointLightPosition), RenderState3D.Opaque, _glowSphere.Bounds);
+        // 两个重叠半透明盒：透明队列 back-to-front 排序的肉眼验证，绕到对面看叠色应翻转。
+        _renderer.Draw(_glassRed, _shader.Material,
+            Matrix4x4.CreateScale(2.2f) * Matrix4x4.CreateTranslation(1.8f, 0.5f, 2.6f), RenderState3D.Transparent, _glassRed.Bounds);
+        _renderer.Draw(_glassBlue, _shader.Material,
+            Matrix4x4.CreateScale(1.5f) * Matrix4x4.CreateTranslation(2.7f, 0.8f, 1.9f), RenderState3D.Transparent, _glassBlue.Bounds);
         _renderer.End();
         _renderTarget.Composite(_batcher, width, height);
     }
@@ -223,7 +251,7 @@ public sealed class LightSandboxDemoSystem : IEcsInit, IEcsDestroy, IUpdateSyste
 
     private void Draw(Mesh3D mesh, in Matrix4x4 world)
     {
-        _renderer!.Draw(mesh, _shader.Material, world);
+        _renderer!.Draw(mesh, _shader.Material, world, RenderState3D.Opaque, mesh.Bounds);
     }
 
     private void DrawControls()
@@ -266,9 +294,17 @@ public sealed class LightSandboxDemoSystem : IEcsInit, IEcsDestroy, IUpdateSyste
         ImGui.Text($"Position: {_pointLightPosition.X:F1}, {_pointLightPosition.Y:F1}, {_pointLightPosition.Z:F1}");
 
         ImGui.Separator();
+        ImGui.TextUnformatted("Fill lights");
+        ImGui.Checkbox("Cool fill", ref _coolLightEnabled);
+        ImGui.SameLine();
+        ImGui.Checkbox("Green fill", ref _greenLightEnabled);
+        ImGui.ColorEdit3("Cool color", ref _coolLightColor);
+        ImGui.ColorEdit3("Green color", ref _greenLightColor);
+
+        ImGui.Separator();
         ImGui.Checkbox("Auto orbit camera", ref _autoOrbit);
         ImGui.Text($"Render FPS: {_game.RenderFramesPerSecond:F1}");
-        ImGui.Text("Objects: 8   Draw calls: 8");
+        ImGui.Text("Objects: 10   Draw calls: 10");
         ImGui.End();
     }
 
@@ -291,6 +327,10 @@ public sealed class LightSandboxDemoSystem : IEcsInit, IEcsDestroy, IUpdateSyste
         _animatePointLight = true;
         _autoOrbit = false;
         _pointLightPosition = new Vector3(-2.6f, 3.6f, 1.2f);
+        _coolLightEnabled = true;
+        _greenLightEnabled = true;
+        _coolLightColor = new Vector3(0.25f, 0.5f, 1.0f);
+        _greenLightColor = new Vector3(0.3f, 1.0f, 0.45f);
     }
 
     private void ApplyWarmPreset()

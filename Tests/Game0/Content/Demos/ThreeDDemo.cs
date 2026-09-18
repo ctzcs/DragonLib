@@ -170,7 +170,8 @@ public sealed class ThreeDDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, IRe
         {
             if (_input.Mouse.RightDown)
             {
-                _yaw -= _input.Mouse.Delta.X * 0.008f;
+                // orbit 方向约定：向右拖 = 相机向右绕（看到物体右侧），固定点屏幕左移（锁定：CameraOrbitTests）。
+                _yaw += _input.Mouse.Delta.X * 0.008f;
                 _pitch = Math.Clamp(_pitch - _input.Mouse.Delta.Y * 0.008f, -0.05f, 1.2f);
             }
 
@@ -231,7 +232,8 @@ public sealed class ThreeDDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, IRe
         _instancedShader.Material.Fragment.SetUniformBuffer(lightUniforms);
 
         _renderer.Begin(_renderTarget.Target, _camera);
-        _renderer.Draw(_planet, _shader.Material, Matrix4x4.CreateRotationY(_elapsed * 0.08f));
+        // 行星走视锥剔除；小行星带是实例化 draw（且轨道动画在顶点 shader 里），拿不到 bounds，不剔。
+        _renderer.Draw(_planet, _shader.Material, Matrix4x4.CreateRotationY(_elapsed * 0.08f), RenderState3D.Opaque, _planet.Bounds);
         _instancedShader.Material.Vertex.SetUniformBuffer(new OrbitUniforms
         {
             OrbitParams = new Vector4(_elapsed, 0f, 0f, 0f),

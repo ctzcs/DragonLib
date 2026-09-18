@@ -1,17 +1,13 @@
-using System;
-using System.IO;
-using Engine;
-using Engine.Assets;
 using Foster.Framework;
 
-namespace DragonLib.Gltf;
+namespace Engine.Assets.Dasset;
 
 /// <summary>
-/// 扫描模型目录（.glb/.gltf，含 FBX 经 Tools\FbxToGltf 转出的产物），加载后按
+/// 扫描模型目录（.dasset，Tools\FbxToGltf 的 DassetCompiler 烘焙产物），加载后按
 /// 「相对 nameRoot 的路径」作 name 登记进 <see cref="AssetDatabase"/>。
 /// 命名约定与 <see cref="ContentScanner"/> 一致（扩展名由 AssetId.Normalize 剥掉）。
 /// </summary>
-public static class GltfModelScanner
+public static class DassetModelScanner
 {
     public static int ScanInto(
         AssetDatabase assets,
@@ -29,21 +25,20 @@ public static class GltfModelScanner
         var count = 0;
         foreach (var path in storage.EnumerateDirectory(scanDir, "*", SearchOption.AllDirectories))
         {
-            var extension = Path.GetExtension(path).ToLowerInvariant();
-            if (extension != ".glb" && extension != ".gltf")
+            if (!string.Equals(Path.GetExtension(path), ".dasset", StringComparison.OrdinalIgnoreCase))
                 continue;
             if (!storage.FileExists(path))
                 continue;
 
             try
             {
-                var model = GltfModelLoader.Load(device, storage, path);
+                var model = DassetModelLoader.Load(device, storage, path);
                 assets.Register(RelativeName(path, nameRoot), model);
                 count++;
             }
             catch (Exception ex)
             {
-                Log.Warning($"GltfModelScanner: 加载 '{path}' 失败，已跳过。{ex.Message}");
+                Log.Warning($"DassetModelScanner: 加载 '{path}' 失败，已跳过。{ex.Message}");
             }
         }
         return count;

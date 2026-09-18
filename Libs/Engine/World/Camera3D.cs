@@ -154,6 +154,10 @@ public sealed class Camera3D : ICamera
 
     public Vector3 Right => Vector3.Normalize(Vector3.Cross(Forward, Up));
 
+    /// <summary>由当前 ViewProjection 提取的视锥（6 平面朝内），供视锥剔除使用。</summary>
+    public Frustum3D GetFrustum()
+        => Frustum3D.FromViewProjection(ViewProjection);
+
     public void Update()
     {
         if (_viewportSize.X <= 0 || _viewportSize.Y <= 0)

@@ -4,18 +4,21 @@ using Foster.Framework;
 namespace Engine.Rendering;
 
 /// <summary>
-/// 方向光的 shadow map：一个 [Color, Depth16] 的离屏 Target（Foster 要求至少一个颜色附件，
+/// 方向光的 shadow map：一个 [Color, Depth] 的离屏 Target（Foster 要求至少一个颜色附件，
 /// 颜色通道不使用），深度 pass 由 Renderer3D.SetShadowPass 写入，主 pass 用 Standard3D
-/// 采样 DepthTexture 做 PCF。
+/// 采样 DepthTexture 做 PCF。深度格式可配（默认 Depth32，不支持时退 Depth16）。
 /// </summary>
 public sealed class ShadowMap : IDisposable
 {
     private readonly GraphicsDevice _graphicsDevice;
+    private readonly TextureFormat _depthFormat;
     private Target? _target;
 
-    public ShadowMap(GraphicsDevice graphicsDevice, int size = 2048)
+    public ShadowMap(GraphicsDevice graphicsDevice, int size = 2048, TextureFormat depthFormat = TextureFormat.Depth32)
     {
         _graphicsDevice = graphicsDevice;
+        // 深度精度不足时 PCF 会出现条纹 acne；不支持所选格式时退回全平台可用的 Depth16。
+        _depthFormat = graphicsDevice.IsTextureFormatSupported(depthFormat) ? depthFormat : TextureFormat.Depth16;
         Size = size;
     }
 
@@ -40,7 +43,7 @@ public sealed class ShadowMap : IDisposable
             _graphicsDevice,
             size,
             size,
-            [TextureFormat.Color, TextureFormat.Depth16],
+            [TextureFormat.Color, _depthFormat],
             name: "Engine Shadow Map");
     }
 

@@ -10,6 +10,7 @@ namespace Engine.Rendering;
 public sealed class RenderTarget3D : IDisposable
 {
     private readonly GraphicsDevice _graphicsDevice;
+    private readonly TextureFormat _depthFormat;
     private Target? _target;
     private Subtexture _color;
 
@@ -23,9 +24,11 @@ public sealed class RenderTarget3D : IDisposable
     public int Width => _target?.Width ?? 0;
     public int Height => _target?.Height ?? 0;
 
-    public RenderTarget3D(GraphicsDevice graphicsDevice)
+    public RenderTarget3D(GraphicsDevice graphicsDevice, TextureFormat depthFormat = TextureFormat.Depth32)
     {
         _graphicsDevice = graphicsDevice;
+        // 默认 32 位深度（远距离场景 Depth16 精度不够会 z-fighting）；不支持时退回全平台可用的 Depth16。
+        _depthFormat = graphicsDevice.IsTextureFormatSupported(depthFormat) ? depthFormat : TextureFormat.Depth16;
     }
 
     public void Resize(int width, int height)
@@ -41,7 +44,7 @@ public sealed class RenderTarget3D : IDisposable
             _graphicsDevice,
             width,
             height,
-            [TextureFormat.Color, TextureFormat.Depth16],
+            [TextureFormat.Color, _depthFormat],
             name: "Engine 3D Target");
         _color = new Subtexture(_target.Attachments[0]);
     }

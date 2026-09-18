@@ -1,10 +1,10 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Numerics;
 using DCFApixels.DragonECS;
-using DragonLib.Gltf;
 using Engine;
 using Engine.Assets;
+using Engine.Assets.Dasset;
 using Engine.DearImGui;
 using Engine.ECS;
 using Engine.Paper;
@@ -130,8 +130,8 @@ public class MyGame : GameApp
             scanDir: "Resources/Prefabs", nameRoot: "Resources", options: PrefabSerializer.Options);
         Log.Info($"Loaded {loaded} prefab(s) from Resources/Prefabs.");
 
-        // 模型目录：.glb/.gltf（含 FbxToGltf 工具转出的产物），名字 = 相对 "Resources" 的路径（如 Models/testscene）。
-        int modelsLoaded = GltfModelScanner.ScanInto(
+        // 模型目录：.dasset（FbxToGltf 的 cook.bat 烘焙产物），名字 = 相对 "Resources" 的路径（如 Models/testscene）。
+        int modelsLoaded = DassetModelScanner.ScanInto(
             _assets, GraphicsDevice, StorageUtils.GetDevGameRoot,
             scanDir: "Resources/Models", nameRoot: "Resources");
         Log.Info($"Loaded {modelsLoaded} model(s) from Resources/Models.");

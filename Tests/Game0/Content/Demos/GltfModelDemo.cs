@@ -1,8 +1,8 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
 using DCFApixels.DragonECS;
-using DragonLib.Gltf;
 using Engine.Assets;
+using Engine.Assets.Dasset;
 using Engine.ECS;
 using Engine.Rendering;
 using Engine.World;
@@ -12,8 +12,9 @@ using ImGuiNET;
 namespace Game0.Content.Demos;
 
 /// <summary>
-/// Renders a glTF model loaded through GltfModelScanner with the Standard3D
-/// shader (albedo + normal map sampling, directional lambert light).
+/// Renders a .dasset model (baked from glTF by Tools/FbxToGltf cook) loaded through
+/// DassetModelScanner with the Standard3D shader (albedo + normal map sampling,
+/// directional lambert light).
 /// </summary>
 public sealed class GltfModelDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, IRenderSystem
 {
@@ -31,7 +32,7 @@ public sealed class GltfModelDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, 
     private Renderer3D? _renderer;
     private RenderTarget3D? _renderTarget;
     private Texture? _whiteTexture;
-    private readonly List<(Mesh Mesh, Material Material)> _drawList = [];
+    private readonly List<(Mesh Mesh, Material Material, RenderState3D State, DassetBounds Bounds)> _drawList = [];
     private bool _wasActive;
 
     private float _yaw = 0.9f;
@@ -47,6 +48,7 @@ public sealed class GltfModelDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, 
     private float _ambientLightIntensity = 1f;
     private float _diffuseLightIntensity = 1f;
     private float _normalStrength = 1f;
+    private readonly float[] _packedPointLights = new float[PointLight3D.PackedFloatCount];
 
     [StructLayout(LayoutKind.Sequential, Pack = 4)]
     private struct LightUniforms
@@ -54,13 +56,16 @@ public sealed class GltfModelDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, 
         public Vector4 LightDirection;
         public Vector4 Ambient;
         public Vector4 Diffuse;
+        public Vector4 CameraPosition; // xyz: 相机世界位置（PBR 镜面项要 view 方向）
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 4)]
     private struct MaterialUniforms
     {
         public Vector4 BaseColorFactor;
-        public Vector4 Flags; // x: has albedo, y: has normal map, z: normal strength, w: unused
+        public Vector4 Flags; // x: has albedo, y: has normal map, z: normal strength, w: alpha mode (0/1/2)
+        public Vector4 AlphaParams; // x: alpha cutoff（Mask 模式）
+        public Vector4 PbrParams; // x: metallic, y: roughness
     }
 
     public void Init()
@@ -69,32 +74,39 @@ public sealed class GltfModelDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, 
             _game.GraphicsDevice,
             typeof(GltfModelDemoSystem).Assembly,
             ShaderResourceBase,
-            new ShaderStageSpec(3, 3, "fragment_main"),
+            new ShaderStageSpec(3, 4, "fragment_main"),
             new ShaderStageSpec(0, 2, "vertex_main"));
 
         _whiteTexture = new Texture(_game.GraphicsDevice, 1, 1, [Color.White], name: "White 1x1");
         _renderTarget = new RenderTarget3D(_game.GraphicsDevice);
         _renderer = new Renderer3D(_game.GraphicsDevice);
 
-        var model = _assets.Get<GltfModelAsset>(ModelAssetName);
+        var model = _assets.Get<DassetModelAsset>(ModelAssetName);
         foreach (var primitive in model.Primitives)
         {
+            var albedo = ResolveTexture(model, primitive.Material.AlbedoTextureIndex);
+            var normal = ResolveTexture(model, primitive.Material.NormalTextureIndex);
             var material = _shader.Material.Clone();
             var sampler = new TextureSampler(TextureFilter.Linear, TextureWrap.Repeat);
-            material.Fragment.Samplers[0] = new BoundSampler(primitive.Material.AlbedoTexture ?? _whiteTexture, sampler);
-            material.Fragment.Samplers[1] = new BoundSampler(primitive.Material.NormalTexture ?? _whiteTexture, sampler);
+            material.Fragment.Samplers[0] = new BoundSampler(albedo ?? _whiteTexture, sampler);
+            material.Fragment.Samplers[1] = new BoundSampler(normal ?? _whiteTexture, sampler);
             material.Fragment.SetUniformBuffer(new MaterialUniforms
             {
                 BaseColorFactor = primitive.Material.BaseColorFactor,
                 Flags = new Vector4(
-                    primitive.Material.AlbedoTexture != null ? 1f : 0f,
-                    primitive.Material.NormalTexture != null ? 1f : 0f,
+                    albedo != null ? 1f : 0f,
+                    normal != null ? 1f : 0f,
                     _normalStrength,
-                    0f),
+                    (float)primitive.Material.AlphaMode),
+                AlphaParams = new Vector4(primitive.Material.AlphaCutoff, 0f, 0f, 0f),
+                PbrParams = new Vector4(primitive.Material.Metallic, primitive.Material.Roughness, 0f, 0f),
             }, 1);
-            _drawList.Add((primitive.Mesh, material));
+            _drawList.Add((primitive.Mesh, material, primitive.Material.ToRenderState(), primitive.Bounds));
         }
     }
+
+    private static Texture? ResolveTexture(DassetModelAsset model, int index)
+        => index >= 0 && index < model.Textures.Count ? model.Textures[index] : null;
 
     public void Destroy()
     {
@@ -130,7 +142,8 @@ public sealed class GltfModelDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, 
         {
             if (_input.Mouse.RightDown)
             {
-                _yaw -= _input.Mouse.Delta.X * 0.008f;
+                // orbit 方向约定：向右拖 = 相机向右绕（看到物体右侧），固定点屏幕左移（锁定：CameraOrbitTests）。
+                _yaw += _input.Mouse.Delta.X * 0.008f;
                 _pitch = Math.Clamp(_pitch - _input.Mouse.Delta.Y * 0.008f, -0.05f, 1.2f);
             }
 
@@ -168,23 +181,29 @@ public sealed class GltfModelDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, 
             LightDirection = new Vector4(lightDirection, 0f),
             Ambient = new Vector4(_ambientLightColor * _ambientLightIntensity, 1f),
             Diffuse = new Vector4(_diffuseLightColor * _diffuseLightIntensity, 1f),
+            CameraPosition = new Vector4(_camera.Position, 1f),
         };
 
         var world = Matrix4x4.CreateRotationY(_elapsed * 0.2f);
         _renderer.Begin(_renderTarget.Target, _camera);
-        foreach (var (mesh, material) in _drawList)
+        foreach (var (mesh, material, state, bounds) in _drawList)
         {
+            var materialUniforms = material.Fragment.GetUniformBuffer<MaterialUniforms>(1);
             material.Fragment.SetUniformBuffer(lightUniforms);
             material.Fragment.SetUniformBuffer(new MaterialUniforms
             {
-                BaseColorFactor = material.Fragment.GetUniformBuffer<MaterialUniforms>(1).BaseColorFactor,
+                BaseColorFactor = materialUniforms.BaseColorFactor,
                 Flags = new Vector4(
-                    material.Fragment.GetUniformBuffer<MaterialUniforms>(1).Flags.X,
-                    material.Fragment.GetUniformBuffer<MaterialUniforms>(1).Flags.Y,
+                    materialUniforms.Flags.X,
+                    materialUniforms.Flags.Y,
                     _normalStrength,
-                    0f),
+                    materialUniforms.Flags.W),
+                AlphaParams = materialUniforms.AlphaParams,
+                PbrParams = materialUniforms.PbrParams,
             }, 1);
-            _renderer.Draw(mesh, material, world);
+            // 本 demo 不开点光：零值 buffer（count=0）也要绑上，cbuffer 不能空槽。
+            material.Fragment.SetUniformBuffer(_packedPointLights.AsSpan(), 3);
+            _renderer.Draw(mesh, material, world, state, bounds);
         }
         _renderer.End();
 

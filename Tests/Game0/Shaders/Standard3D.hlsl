@@ -1,5 +1,8 @@
 // Standard3D: PositionNormalUvVertex (Position TEXCOORD0 / Normal TEXCOORD1 /
 // Uv TEXCOORD2 / Tangent TEXCOORD3) + albedo/normal map sampling.
+// Lighting: Cook-Torrance GGX (NDF: Trowbridge-Reitz, Geometry: Smith Schlick-GGX,
+// Fresnel: Schlick) — 1 directional light with PCF shadow + up to 16 point lights.
+// 光照强度是美术参数（不做 1/π 归一），metallic=0/roughness=1 时观感接近 Lambert。
 // Vertex uniforms match Renderer3D's DirectVertexUniforms (WVP + World).
 // Each texture gets its OWN SamplerState: shadercross classifies textures
 // that share one SamplerState as storage textures, which Foster never binds.
@@ -20,17 +23,30 @@ cbuffer Standard3DLightBlock : register(b0, space3)
     float4 LightDirection;
     float4 Ambient;
     float4 Diffuse;
+    float4 CameraPosition; // xyz: 相机世界位置（镜面项要 view 方向）
 };
 
 cbuffer Standard3DMaterialBlock : register(b1, space3)
 {
     float4 BaseColorFactor;
-    float4 MaterialFlags; // x: has albedo, y: has normal map, z: normal strength, w: unused
+    float4 MaterialFlags; // x: has albedo, y: has normal map, z: normal strength, w: alpha mode (0 opaque, 1 mask, 2 blend)
+    float4 AlphaParams;   // x: alpha cutoff (mask mode)
+    float4 PbrParams;     // x: metallic, y: roughness
 };
 
 cbuffer Standard3DShadowBlock : register(b2, space3)
 {
     float4 ShadowSettings; // x: enabled, y: texel size, z: bias, w: darkness
+};
+
+#define MAX_POINT_LIGHTS 16
+
+// 与 C# 侧 PointLight3D.Pack 的布局一致。
+cbuffer Standard3DPointLightBlock : register(b3, space3)
+{
+    float4 PointLightMeta; // x: count
+    float4 PointLightPositionRange[MAX_POINT_LIGHTS];  // xyz: position, w: range
+    float4 PointLightColorIntensity[MAX_POINT_LIGHTS]; // xyz: color, w: intensity
 };
 
 Texture2D AlbedoTexture : register(t0, space2);
@@ -56,6 +72,7 @@ struct VsOutput
     float4 Tangent : TEXCOORD1;
     float2 Uv : TEXCOORD2;
     float4 ShadowPosition : TEXCOORD3;
+    float3 WorldPosition : TEXCOORD4;
     float4 Position : SV_Position;
 };
 
@@ -67,6 +84,7 @@ VsOutput vertex_main(VsInput input)
     output.Tangent = float4(normalize(mul((float3x3)World, input.Tangent.xyz)), input.Tangent.w);
     output.Uv = input.Uv;
     float3 worldPosition = mul(World, float4(input.Position, 1.0)).xyz;
+    output.WorldPosition = worldPosition;
     output.ShadowPosition = mul(LightViewProjection, float4(worldPosition, 1.0));
     return output;
 }
@@ -101,11 +119,57 @@ float ComputeShadow(VsOutput input)
     return 1.0 - darkness * (1.0 - shadow);
 }
 
+// Cook-Torrance GGX 三件：NDF / Geometry / Fresnel。
+float DistributionGGX(float3 normal, float3 halfVector, float roughness)
+{
+    float a = roughness * roughness;
+    float a2 = a * a;
+    float nDotH = saturate(dot(normal, halfVector));
+    float denom = nDotH * nDotH * (a2 - 1.0) + 1.0;
+    return a2 / (3.14159265 * denom * denom);
+}
+
+float GeometrySchlickGGX(float nDotV, float roughness)
+{
+    float k = roughness + 1.0;
+    k = k * k / 8.0;
+    return nDotV / (nDotV * (1.0 - k) + k);
+}
+
+float3 FresnelSchlick(float cosTheta, float3 f0)
+{
+    return f0 + (1.0 - f0) * pow(1.0 - cosTheta, 5.0);
+}
+
+// 单个光源的 Cook-Torrance 贡献。radiance 已含衰减/阴影；漫反射不除 π，
+// 光照强度直接当亮度参数用（metallic=0/roughness=1 时 ≈ 原 Lambert 观感）。
+float3 ShadeCookTorrance(
+    float3 normal, float3 viewDir, float3 lightDir, float3 radiance,
+    float3 albedo, float metallic, float roughness)
+{
+    float3 halfVector = normalize(viewDir + lightDir);
+    float nDotL = saturate(dot(normal, lightDir));
+    float nDotV = saturate(dot(normal, viewDir));
+
+    float3 f0 = lerp(float3(0.04, 0.04, 0.04), albedo, metallic);
+    float3 f = FresnelSchlick(saturate(dot(halfVector, viewDir)), f0);
+    float d = DistributionGGX(normal, halfVector, roughness);
+    float g = GeometrySchlickGGX(nDotV, roughness) * GeometrySchlickGGX(nDotL, roughness);
+    float3 specular = d * g * f / max(4.0 * nDotV * nDotL, 1e-4);
+
+    float3 diffuse = (1.0 - f) * (1.0 - metallic) * albedo;
+    return (diffuse + specular) * radiance * nDotL;
+}
+
 float4 fragment_main(VsOutput input) : SV_Target0
 {
     float4 baseColor = BaseColorFactor;
     if (MaterialFlags.x > 0.5)
         baseColor *= AlbedoTexture.Sample(AlbedoSampler, input.Uv);
+
+    // alpha cutout：mask 模式下低于 cutoff 的像素直接丢弃（仍在不透明队列，正常写深度）。
+    if (MaterialFlags.w > 0.5 && MaterialFlags.w < 1.5)
+        clip(baseColor.a - AlphaParams.x);
 
     float3 normal = normalize(input.Normal);
     if (MaterialFlags.y > 0.5)
@@ -120,9 +184,30 @@ float4 fragment_main(VsOutput input) : SV_Target0
         normal = normalize(mul(sampled, tbn));
     }
 
+    float3 albedo = baseColor.rgb;
+    float metallic = saturate(PbrParams.x);
+    float roughness = clamp(PbrParams.y, 0.05, 1.0);
+    float3 viewDir = normalize(CameraPosition.xyz - input.WorldPosition);
+
+    // 方向光（带 PCF 阴影）。
     float shadow = ComputeShadow(input);
-    float3 light = normalize(-LightDirection.xyz);
-    float intensity = saturate(dot(normal, light)) * shadow;
-    float3 color = baseColor.rgb * (Ambient.rgb + Diffuse.rgb * intensity);
+    float3 lightDir = normalize(-LightDirection.xyz);
+    float3 color = ShadeCookTorrance(normal, viewDir, lightDir, Diffuse.rgb * shadow, albedo, metallic, roughness);
+
+    // 点光（无阴影）：smooth window 衰减，range 外为 0。
+    int pointLightCount = min((int)PointLightMeta.x, MAX_POINT_LIGHTS);
+    for (int i = 0; i < pointLightCount; i++)
+    {
+        float3 toLight = PointLightPositionRange[i].xyz - input.WorldPosition;
+        float distance = length(toLight);
+        float range = max(PointLightPositionRange[i].w, 0.001);
+        float attenuation = saturate(1.0 - distance / range);
+        attenuation *= attenuation;
+        float3 pointRadiance = PointLightColorIntensity[i].rgb * PointLightColorIntensity[i].a * attenuation;
+        color += ShadeCookTorrance(normal, viewDir, toLight / max(distance, 0.0001), pointRadiance, albedo, metallic, roughness);
+    }
+
+    // 环境光：无 IBL，平面环境项。
+    color += Ambient.rgb * albedo;
     return float4(saturate(color), baseColor.a);
 }

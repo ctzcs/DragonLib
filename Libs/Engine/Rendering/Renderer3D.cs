@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Engine.Assets.Dasset;
 using Engine.World;
 using Foster.Framework;
 
@@ -35,11 +36,51 @@ public sealed class Renderer3D : IDisposable
         public required Mesh Mesh;
         public required Material Material;
         public Matrix4x4 World;
+        public RenderState3D State;
+
+        /// <summary>局部空间 AABB；null 表示不做视锥剔除（实例化 draw 等拿不到 bounds 的场景，保守提交）。</summary>
+        public DassetBounds? LocalBounds;
+
+        /// <summary>蒙皮 draw 的 joint palette（非 null 即蒙皮），提交时写入材质 vertex uniform slot 2。</summary>
+        public Matrix4x4[]? JointPalette;
         public VertexBuffer? InstanceBuffer;
         public int InstanceCount;
         public int Sequence;
 
+        /// <summary>透明队排序用：world 平移分量到相机位置的平方距离，End() 分队后填入。</summary>
+        public float DistanceSq;
+
         public bool IsInstanced => InstanceBuffer != null;
+    }
+
+    /// <summary>不透明队比较器：材质 → mesh → 是否实例化 → 提交顺序（hash 分组减少管线状态切换）。</summary>
+    private sealed class OpaqueDrawComparer : IComparer<DrawItem>
+    {
+        public static readonly OpaqueDrawComparer Instance = new();
+
+        public int Compare(DrawItem? left, DrawItem? right)
+        {
+            var materialOrder = RuntimeHelpers.GetHashCode(left!.Material)
+                .CompareTo(RuntimeHelpers.GetHashCode(right!.Material));
+            if (materialOrder != 0)
+                return materialOrder;
+
+            var meshOrder = RuntimeHelpers.GetHashCode(left.Mesh)
+                .CompareTo(RuntimeHelpers.GetHashCode(right.Mesh));
+            if (meshOrder != 0)
+                return meshOrder;
+
+            var instanceOrder = left.IsInstanced.CompareTo(right.IsInstanced);
+            return instanceOrder != 0 ? instanceOrder : left.Sequence.CompareTo(right.Sequence);
+        }
+    }
+
+    private sealed class TransparentDrawComparer : IComparer<DrawItem>
+    {
+        public static readonly TransparentDrawComparer Instance = new();
+
+        public int Compare(DrawItem? left, DrawItem? right)
+            => CompareBackToFront(left!.DistanceSq, left.Sequence, right!.DistanceSq, right.Sequence);
     }
 
     private interface IInstanceBufferPool : IDisposable
@@ -97,6 +138,9 @@ public sealed class Renderer3D : IDisposable
 
     public bool IsActive => _target != null;
 
+    /// <summary>上一帧 End() 中被视锥剔除跳过的 draw 数（诊断/UI 用）。</summary>
+    public int LastFrameCulledCount { get; private set; }
+
     public Renderer3D(GraphicsDevice graphicsDevice)
     {
         _graphicsDevice = graphicsDevice;
@@ -149,6 +193,14 @@ public sealed class Renderer3D : IDisposable
     /// Queues one mesh transform for a direct draw shader.
     /// </summary>
     public void Draw(Mesh mesh, Material material, in Matrix4x4 world)
+        => Draw(mesh, material, world, RenderState3D.Opaque);
+
+    /// <summary>
+    /// Queues one mesh transform for a direct draw shader, with an explicit render state
+    /// （透明状态会进透明队列，End() 时按 back-to-front 在不透明队之后提交）。
+    /// <paramref name="localBounds"/> 提供局部空间 AABB 时做视锥剔除；无 bounds 的 draw 保守地总是提交。
+    /// </summary>
+    public void Draw(Mesh mesh, Material material, in Matrix4x4 world, in RenderState3D state, in DassetBounds? localBounds = null)
     {
         EnsureActive();
         ArgumentNullException.ThrowIfNull(mesh);
@@ -160,6 +212,33 @@ public sealed class Renderer3D : IDisposable
             Mesh = mesh,
             Material = material,
             World = world,
+            State = state,
+            LocalBounds = localBounds,
+            Sequence = _sequence++
+        });
+    }
+
+    /// <summary>
+    /// Queues one skinned mesh transform for a direct draw shader：joint palette 随 draw 拷贝一份
+    /// （调用侧的数组可能被后续帧复用）。材质须用蒙皮变体 shader（Standard3DSkinned），
+    /// palette 在提交时写入 vertex uniform slot 2。
+    /// </summary>
+    public void Draw(Mesh mesh, Material material, in Matrix4x4 world, in RenderState3D state,
+        ReadOnlySpan<Matrix4x4> jointPalette, in DassetBounds? localBounds = null)
+    {
+        EnsureActive();
+        ArgumentNullException.ThrowIfNull(mesh);
+        ArgumentNullException.ThrowIfNull(material);
+        EnsureMeshDevice(mesh);
+
+        _items.Add(new DrawItem
+        {
+            Mesh = mesh,
+            Material = material,
+            World = world,
+            State = state,
+            LocalBounds = localBounds,
+            JointPalette = jointPalette.ToArray(),
             Sequence = _sequence++
         });
     }
@@ -169,6 +248,19 @@ public sealed class Renderer3D : IDisposable
     /// </summary>
     public void Draw(Mesh3D mesh, Material material, in Matrix4x4 world)
         => Draw(mesh.Geometry, material, world);
+
+    /// <summary>
+    /// Queues one mesh transform for a direct draw shader, with an explicit render state.
+    /// </summary>
+    public void Draw(Mesh3D mesh, Material material, in Matrix4x4 world, in RenderState3D state)
+        => Draw(mesh.Geometry, material, world, state);
+
+    /// <summary>
+    /// Queues one mesh transform for a direct draw shader, with an explicit render state
+    /// and a local-space AABB for frustum culling（通常传 <see cref="Mesh3D.Bounds"/>）。
+    /// </summary>
+    public void Draw(Mesh3D mesh, Material material, in Matrix4x4 world, in RenderState3D state, in DassetBounds localBounds)
+        => Draw(mesh.Geometry, material, world, state, localBounds);
 
     /// <summary>
     /// Uploads arbitrary instance data to a renderer-managed transient buffer
@@ -245,10 +337,12 @@ public sealed class Renderer3D : IDisposable
         VertexBuffer instanceBuffer,
         int instanceCount)
     {
+        // 实例化 draw 本期固定不透明：不走透明队列，也不进阴影 pass。
         _items.Add(new DrawItem
         {
             Mesh = mesh,
             Material = material,
+            State = RenderState3D.Opaque,
             InstanceBuffer = instanceBuffer,
             InstanceCount = instanceCount,
             Sequence = _sequence++
@@ -256,7 +350,34 @@ public sealed class Renderer3D : IDisposable
     }
 
     /// <summary>
-    /// Sorts and submits the collected draw requests.
+    /// 稳定分队：把 <paramref name="items"/> 重排为 [不透明…][透明…]，两段各自保持原相对顺序，
+    /// 返回透明队起始下标。抽成纯静态方法供单元测试（参照 Transform3DSystem.Run）。
+    /// </summary>
+    public static int PartitionByTransparency<T>(List<T> items, Func<T, bool> isTransparent)
+    {
+        var opaque = new List<T>(items.Count);
+        var transparent = new List<T>();
+        foreach (var item in items)
+            (isTransparent(item) ? transparent : opaque).Add(item);
+
+        items.Clear();
+        items.AddRange(opaque);
+        items.AddRange(transparent);
+        return opaque.Count;
+    }
+
+    /// <summary>
+    /// 透明队比较器：到相机距离平方大的（远的）排前面（back-to-front），同距按提交顺序，保证确定性。
+    /// </summary>
+    public static int CompareBackToFront(float leftDistanceSq, int leftSequence, float rightDistanceSq, int rightSequence)
+    {
+        var order = rightDistanceSq.CompareTo(leftDistanceSq);
+        return order != 0 ? order : leftSequence.CompareTo(rightSequence);
+    }
+
+    /// <summary>
+    /// Sorts and submits the collected draw requests: opaque queue first (grouped by
+    /// material/mesh), then the transparent queue sorted back-to-front from the camera.
     /// </summary>
     public void End()
     {
@@ -269,30 +390,39 @@ public sealed class Renderer3D : IDisposable
             camera.ViewportSize = new Point2(target.WidthInPixels, target.HeightInPixels);
             camera.Update();
 
-            _items.Sort(static (left, right) =>
-            {
-                var materialOrder = RuntimeHelpers.GetHashCode(left.Material)
-                    .CompareTo(RuntimeHelpers.GetHashCode(right.Material));
-                if (materialOrder != 0)
-                    return materialOrder;
+            // 分队：不透明队维持原排序（减少状态切换），透明队按到相机距离从远到近（back-to-front）。
+            var transparentStart = PartitionByTransparency(_items, static item => item.State.IsTransparent);
+            _items.Sort(0, transparentStart, OpaqueDrawComparer.Instance);
 
-                var meshOrder = RuntimeHelpers.GetHashCode(left.Mesh)
-                    .CompareTo(RuntimeHelpers.GetHashCode(right.Mesh));
-                if (meshOrder != 0)
-                    return meshOrder;
+            var cameraPosition = camera.Position;
+            for (var i = transparentStart; i < _items.Count; i++)
+                _items[i].DistanceSq = Vector3.DistanceSquared(_items[i].World.Translation, cameraPosition);
+            _items.Sort(transparentStart, _items.Count - transparentStart, TransparentDrawComparer.Instance);
 
-                var instanceOrder = left.IsInstanced.CompareTo(right.IsInstanced);
-                return instanceOrder != 0 ? instanceOrder : left.Sequence.CompareTo(right.Sequence);
-            });
+            var frustum = camera.GetFrustum();
+            LastFrameCulledCount = 0;
 
             if (_shadowTarget != null && _shadowMaterial != null)
             {
-                foreach (var item in _items)
-                    SubmitShadow(_shadowTarget, item);
+                // 阴影 pass 只看不透明队：半透明写深度图会得到错误的实心影子，本期不进。
+                for (var i = 0; i < transparentStart; i++)
+                    SubmitShadow(_shadowTarget, _items[i]);
             }
 
             foreach (var item in _items)
             {
+                // 视锥剔除只作用于颜色 pass：屏外物体仍可能把阴影投进画面，阴影 pass 不剔。
+                // 无 bounds 的 draw（实例化等）保守地总是提交。
+                if (item.LocalBounds is { } localBounds)
+                {
+                    var worldBounds = localBounds.Transformed(item.World);
+                    if (!frustum.IntersectsAabb(worldBounds.Min, worldBounds.Max))
+                    {
+                        LastFrameCulledCount++;
+                        continue;
+                    }
+                }
+
                 if (item.IsInstanced)
                     SubmitInstances(target, camera, item);
                 else
@@ -317,13 +447,16 @@ public sealed class Renderer3D : IDisposable
             World = item.World,
         });
 
+        if (item.JointPalette != null)
+            item.Material.Vertex.SetUniformBuffer(MemoryMarshal.AsBytes(item.JointPalette.AsSpan()), 2);
+
         item.Mesh.GraphicsDevice.Draw(new DrawCommand(target, item.Mesh, item.Material)
         {
-            BlendMode = BlendMode.NonPremultiplied,
-            CullMode = CullMode.Back,
+            BlendMode = item.State.Blend,
+            CullMode = item.State.Cull,
             DepthCompare = DepthCompare.LessOrEqual,
             DepthTestEnabled = true,
-            DepthWriteEnabled = true,
+            DepthWriteEnabled = item.State.DepthWrite,
         });
     }
 
@@ -340,21 +473,25 @@ public sealed class Renderer3D : IDisposable
         var command = new DrawCommand(target, item.Mesh, item.Material);
         command.VertexBuffers.Add((item.InstanceBuffer!, true));
         command.InstanceCount = item.InstanceCount;
-        command.BlendMode = BlendMode.NonPremultiplied;
-        command.CullMode = CullMode.Back;
+        command.BlendMode = item.State.Blend;
+        command.CullMode = item.State.Cull;
         command.DepthCompare = DepthCompare.LessOrEqual;
         command.DepthTestEnabled = true;
-        command.DepthWriteEnabled = true;
+        command.DepthWriteEnabled = item.State.DepthWrite;
         item.Mesh.GraphicsDevice.Draw(command);
     }
 
     /// <summary>
     /// 阴影深度 pass。面剔除翻转为 Front 消除自遮挡 acne；深度比较用 Less（深度图每帧清理）。
-    /// 实例化 draw 暂不进阴影 pass（DepthOnly 着色器不读实例缓冲，进来了也是错的）。
+    /// 实例化 draw 不进阴影 pass：实例缓冲布局由调用侧 shader 自定义（TInstance : IVertex），
+    /// 且实例的顶点动画（如 Basic3DInstanced 的轨道旋转）只存在于颜色 pass 的顶点 shader 里，
+    /// 通用实例化深度变体画出的剪影是错的。要支持需按 shader 配套深度变体，本期不做。
+    /// 蒙皮 draw 同样不进：DepthOnly 不读 joint palette，画出来的是 bind pose 的剪影；
+    /// 后续路径是 DepthOnly 的蒙皮顶点变体（读同一个 palette cbuffer）。
     /// </summary>
     private void SubmitShadow(IDrawableTarget shadowTarget, DrawItem item)
     {
-        if (item.IsInstanced)
+        if (item.IsInstanced || item.JointPalette != null)
             return;
 
         _shadowMaterial!.Vertex.SetUniformBuffer(new ShadowDirectVertexUniforms

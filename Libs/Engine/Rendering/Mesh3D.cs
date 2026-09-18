@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
+using Engine.Assets.Dasset;
 using Foster.Framework;
 
 namespace Engine.Rendering;
@@ -38,6 +39,9 @@ public sealed class Mesh3D : IDisposable
 {
     public Mesh<PositionNormalColorVertex, uint> Geometry { get; }
 
+    /// <summary>局部空间 AABB（构造时由顶点算出），视锥剔除用。</summary>
+    public DassetBounds Bounds { get; }
+
     public Mesh3D(
         GraphicsDevice graphicsDevice,
         ReadOnlySpan<PositionNormalColorVertex> vertices,
@@ -47,6 +51,11 @@ public sealed class Mesh3D : IDisposable
         Geometry = new Mesh<PositionNormalColorVertex, uint>(graphicsDevice, name);
         Geometry.SetVertices(vertices);
         Geometry.SetIndices(indices);
+
+        var bounds = DassetBounds.Empty;
+        foreach (var vertex in vertices)
+            bounds.Encapsulate(vertex.Position);
+        Bounds = bounds;
     }
 
     public static Mesh3D CreateCube(
@@ -166,9 +175,10 @@ public sealed class Mesh3D : IDisposable
             vertices.Add(new(a, normal, faceColor));
             vertices.Add(new(b, normal, faceColor));
             vertices.Add(new(c, normal, faceColor));
+            // 法线已保证朝外，(a,b,c) 叉积与法线同向：外侧 CCW 即正面，索引保持顶点序。
             indices.Add(start);
-            indices.Add(start + 2);
             indices.Add(start + 1);
+            indices.Add(start + 2);
         }
 
         return new Mesh3D(graphicsDevice, CollectionsMarshal.AsSpan(vertices), CollectionsMarshal.AsSpan(indices), name);
@@ -202,17 +212,18 @@ public sealed class Mesh3D : IDisposable
         Vector3 d,
         Color color)
     {
+        // 正面 = 从外侧看逆时针（CCW）：(a,b,c) 的叉积与面法线同向（见 GltfModelCooker 头部注释的约定推导）。
         var start = (uint)vertices.Count;
         vertices.Add(new(a, normal, color));
         vertices.Add(new(b, normal, color));
         vertices.Add(new(c, normal, color));
         vertices.Add(new(d, normal, color));
         indices.Add(start);
-        indices.Add(start + 2);
         indices.Add(start + 1);
-        indices.Add(start);
-        indices.Add(start + 3);
         indices.Add(start + 2);
+        indices.Add(start);
+        indices.Add(start + 2);
+        indices.Add(start + 3);
     }
 
     public void Dispose()

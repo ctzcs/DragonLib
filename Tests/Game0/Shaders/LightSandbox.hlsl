@@ -9,15 +9,22 @@ cbuffer LightSandboxBlock : register(b0, space3)
     float4 LightDirection;
     float4 Ambient;
     float4 Diffuse;
-    float4 PointLightPosition;
-    float4 PointLightColor;
-    float4 PointLightParams;
 };
 
 cbuffer MaterialBlock : register(b1, space3)
 {
     float4 Albedo;
     float4 Emissive;
+};
+
+#define MAX_POINT_LIGHTS 16
+
+// 与 C# 侧 PointLight3D.Pack 的布局一致（同 Standard3D）。
+cbuffer LightSandboxPointLightBlock : register(b2, space3)
+{
+    float4 PointLightMeta; // x: count
+    float4 PointLightPositionRange[MAX_POINT_LIGHTS];  // xyz: position, w: range
+    float4 PointLightColorIntensity[MAX_POINT_LIGHTS]; // xyz: color, w: intensity
 };
 
 struct VsInput
@@ -50,17 +57,22 @@ float4 fragment_main(VsOutput input) : SV_Target0
     float3 normal = normalize(input.Normal);
     float3 directional = normalize(-LightDirection.xyz);
     float directAmount = saturate(dot(normal, directional));
-    float3 pointVector = PointLightPosition.xyz - input.WorldPosition;
-    float distanceToPoint = max(length(pointVector), 0.001);
-    float3 pointDirection = pointVector / distanceToPoint;
-    float pointAmount = saturate(dot(normal, pointDirection));
-    float radius = max(PointLightParams.z, 0.01);
-    float attenuation = saturate(1.0 - distanceToPoint / radius);
-    attenuation *= attenuation;
-    float pointEnabled = PointLightParams.x;
-    float pointIntensity = PointLightParams.y;
     float3 lighting = Ambient.rgb + Diffuse.rgb * directAmount;
-    lighting += PointLightColor.rgb * pointAmount * attenuation * pointIntensity * pointEnabled;
+
+    // 点光（无阴影）：smooth window 衰减，range 外为 0。
+    int pointLightCount = min((int)PointLightMeta.x, MAX_POINT_LIGHTS);
+    for (int i = 0; i < pointLightCount; i++)
+    {
+        float3 toLight = PointLightPositionRange[i].xyz - input.WorldPosition;
+        float distanceToPoint = max(length(toLight), 0.0001);
+        float range = max(PointLightPositionRange[i].w, 0.001);
+        float pointAmount = saturate(dot(normal, toLight / distanceToPoint));
+        float attenuation = saturate(1.0 - distanceToPoint / range);
+        attenuation *= attenuation;
+        lighting += PointLightColorIntensity[i].rgb * PointLightColorIntensity[i].a
+            * pointAmount * attenuation;
+    }
+
     float3 color = input.Color.rgb * Albedo.rgb * lighting + Emissive.rgb * Emissive.a;
     return float4(saturate(color), input.Color.a);
 }

@@ -1,0 +1,65 @@
+using Engine.Rendering;
+using Foster.Framework;
+
+namespace Engine.Assets.Dasset;
+
+/// <summary>
+/// 把 .dasset 加载成 <see cref="DassetModelAsset"/>：<see cref="DassetReader"/> 读回纯数据，
+/// 逐贴图 Foster Image 解码并上传 GPU，逐 primitive 建 Mesh——GPU 上传只发生在这一层，
+/// 解析本身是二进制直读，不经过 SharpGLTF。
+/// </summary>
+public static class DassetModelLoader
+{
+    public static DassetModelAsset Load(GraphicsDevice device, LocalStorage storage, string path)
+    {
+        ArgumentNullException.ThrowIfNull(storage);
+        var fullPath = Path.IsPathRooted(path) ? path : Path.Combine(storage.RootPath, path);
+        return Load(device, fullPath, path);
+    }
+
+    public static DassetModelAsset Load(GraphicsDevice device, string filePath, string? assetName = null)
+    {
+        var model = DassetReader.Read(filePath);
+        return Load(device, model, assetName ?? Path.GetFileName(filePath));
+    }
+
+    public static DassetModelAsset Load(GraphicsDevice device, DassetModel model, string assetName)
+    {
+        ArgumentNullException.ThrowIfNull(device);
+        ArgumentNullException.ThrowIfNull(model);
+
+        var asset = new DassetModelAsset { Name = assetName };
+
+        // 贴图表按下标原样上传，材质里的索引才能对齐。cook 端只收 PNG/JPG（Foster Image 能处理的格式）。
+        foreach (var entry in model.Textures)
+        {
+            using var image = new Image(entry.Bytes);
+            asset.AddTexture(new Texture(device, image, name: $"dasset:{assetName}:{entry.Name}"));
+        }
+
+        foreach (var skeleton in model.Skeletons)
+            asset.AddSkeleton(skeleton);
+        foreach (var clip in model.Clips)
+            asset.AddClip(clip);
+
+        foreach (var primitive in model.Primitives)
+        {
+            if (primitive.SkinVertices is { } skinVertices)
+            {
+                var skinnedMesh = new Mesh<PositionNormalUvSkinVertex, uint>(device, $"dasset:{assetName}");
+                skinnedMesh.SetVertices(skinVertices);
+                skinnedMesh.SetIndices(primitive.Indices);
+                asset.Add(new DassetMeshPrimitive { Mesh = skinnedMesh, Material = primitive.Material, Bounds = primitive.Bounds, SkinIndex = primitive.SkinIndex });
+            }
+            else
+            {
+                var mesh = new Mesh<PositionNormalUvVertex, uint>(device, $"dasset:{assetName}");
+                mesh.SetVertices(primitive.Vertices);
+                mesh.SetIndices(primitive.Indices);
+                asset.Add(new DassetMeshPrimitive { Mesh = mesh, Material = primitive.Material, Bounds = primitive.Bounds });
+            }
+        }
+
+        return asset;
+    }
+}

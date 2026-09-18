@@ -40,7 +40,7 @@ public struct Parent3DComp : IEcsComponent
 }
 
 /// <summary>
-/// 3D 网格渲染（配置层）：引用一个模型资产（当前为 DragonLib.Gltf 的 GltfModelAsset，按名字解析，
+/// 3D 网格渲染（配置层）：引用一个模型资产（当前为 Engine.Assets.Dasset 的 DassetModelAsset，按名字解析，
 /// 如 "Models/testscene"）。MeshIndex = -1 表示绘制模型的全部 primitive。
 /// </summary>
 public struct MeshRendererComp : IEcsComponent

@@ -1,15 +1,22 @@
-# FbxToGltf — FBX 离线转换工具
+# FbxToGltf — 模型资产烘焙管线
 
-DragonLib 运行时**只加载 glTF**（.glb/.gltf，见 `Libs/ThirdParty/Gltf`）。FBX 是
-Autodesk 私有格式、没有官方 .NET SDK，因此按业界惯例在**导入期**转成 glTF，
-产物 .glb 放在 FBX 同目录，`GltfModelScanner` 启动时会自动注册（资产名 = 相对
-`Resources` 的路径去扩展名，如 `Models/character`）。
+DragonLib 运行时**只加载 `.dasset`**（引擎私有二进制，见 `Libs/Engine/Assets/Dasset`）。
+完整管线是两级离线转换：
 
-## 依赖
+```
+fbx →(Blender, convert)→ .glb →(DassetCompiler, cook)→ .dasset → 运行时二进制直读
+```
 
-- Blender 3.6+（自带 FBX 导入器与 glTF 导出器，无需额外插件）。
+- FBX 是 Autodesk 私有格式、没有官方 .NET SDK，按业界惯例在导入期转成 glTF；
+- SharpGLTF 不进运行时热路径：`.glb` 再被 cook 成 `.dasset`（顶点/索引整块二进制 +
+  贴图原始 PNG/JPG 字节 + 材质参数 + AABB），运行时 `DassetModelScanner` 直读上传 GPU。
+
+两级产物都放在源文件同目录，`DassetModelScanner` 启动时会自动注册（资产名 =
+相对 `Resources` 的路径去扩展名，如 `Models/character`）。
 
 ## 用法
+
+一条命令跑全链（先 convert 再 cook，各自增量跳过）：
 
 ```bash
 # 任选一种方式让脚本找到 Blender：
@@ -17,24 +24,45 @@ Autodesk 私有格式、没有官方 .NET SDK，因此按业界惯例在**导入
 #   2) 设置环境变量 BLENDER 指向 blender.exe
 #   3) 直接传路径（Windows 会额外探测 Program Files\Blender Foundation\*\blender.exe）
 
-Tools/FbxToGltf/convert.bat                        # Windows
-Tools/FbxToGltf/convert.bat "C:\...\blender.exe"   # Windows，显式路径
-Tools/FbxToGltf/convert.sh                         # Linux/macOS/Git Bash
+Tools/FbxToGltf/cook.bat                        # Windows
+Tools/FbxToGltf/cook.bat "C:\...\blender.exe"   # Windows，显式路径
+Tools/FbxToGltf/cook.sh                         # Linux/macOS/Git Bash
 ```
 
-脚本遍历 `Tests/Game0/Resources/Models/**\*.fbx`：
+没有 Blender 也能单独跑第二级（glb→dasset 是纯 C#，convert 失败会继续 cook）：
 
-- `.glb` 不存在、或比 `.fbx` 旧 → 重新转换（Blender headless，贴图内嵌、带切线）；
-- 否则跳过。时间戳比较是"分"级精度（批处理 `%~t` 的固有限制）。
+```bash
+dotnet run --project Tools/FbxToGltf/Program/DassetCompiler.csproj -- --scan Tests/Game0/Resources/Models
+```
 
-## 工作流建议
+DassetCompiler 也支持单文件模式：
 
-放入新 FBX 后跑一次脚本即可；也可以挂到构建前事件，或每次手动跑——增量判断
-保证没有变化的文件不会重转。要强制重转，删掉对应的 .glb。
+```bash
+dassetcompiler <input.glb|gltf> <output.dasset>   # 单文件
+dassetcompiler --scan <dir>                        # 目录递归，增量
+```
+
+## 增量行为
+
+- convert（`.fbx → .glb`）：`.glb` 不存在或比 `.fbx` 旧才重转。时间戳比较是
+  "分"级精度（批处理 `%~t` 的固有限制）。
+- cook（`.glb → .dasset`）：`.dasset` 不存在或比 `.glb` 旧才重转（UTC 时间戳比较）。
+- 要强制重转，删掉对应产物文件即可。
+
+## 依赖
+
+- Blender 3.6+（仅第一级需要；自带 FBX 导入器与 glTF 导出器，无需额外插件）；
+- 第二级是 `Program/` 下的 .NET 控制台项目（引用 DragonLib.Gltf + Engine）。
 
 ## 已知取舍
 
 - 转换质量取决于 Blender 的 FBX 导入器（社区长期维护，覆盖二进制 FBX 7.x 的
-  绝大多数导出；动画/蒙皮会随 glTF 导出，但 DragonLib 加载端本期只消费静态网格）。
-- 若需要运行时直读更多格式（OBJ/DAE 等），后续可评估 AssimpNet（原生 assimp.dll），
-  当前刻意不引入运行时原生依赖。
+  绝大多数导出；静态节点的变换烘焙进顶点；蒙皮/动画由 .dasset v2 消费：
+  skin/剪辑进入骨架表与剪辑表，蒙皮 primitive 顶点保持 bind 空间）。
+- 贴图只收 PNG/JPG 原始字节（运行时 Foster Image 解码路径不变）；webp/dds/ktx2
+  在 cook 时跳过并警告。
+- 材质的 AlphaMode/AlphaCutoff 会写进 .dasset；渲染端 Opaque/Mask 走不透明队列
+  （Mask 由 shader clip），Blend 走透明队列（back-to-front、不写深度）。
+
+渲染侧约定（正面绕序/矩阵/法线变换/蒙皮 palette）的权威文档在
+`Libs/Engine/Rendering/README.md`——cooker 改动涉及顶点/索引/法线/蒙皮前必读。

@@ -13,6 +13,7 @@ public class SceneModule : EcsModule<SceneModule>
     {
         b.Add(new SceneLauncherSystem());
         b.Add(new Transform3DSystem());
+        b.Add(new AnimationSystem());
         b.Add(new DreamBlockDemoSystem());
         b.Add(new FishSdfDemoSystem());
         b.Add(new MachineGunSdfDemoSystem());
@@ -24,6 +25,7 @@ public class SceneModule : EcsModule<SceneModule>
         b.Add(new GltfSceneDemoSystem());
         b.Add(new LightSandboxDemoSystem());
         b.Add(new RadianceCascadesDemoSystem());
+        b.Add(new SkinningDemoSystem());
         b.Add(new EntitiesDemo());
     }
 }
@@ -42,6 +44,7 @@ public enum RuntimeScene
     GltfScene,
     LightSandbox,
     RadianceCascades2D,
+    Skinning,
 }
 
 public sealed class SceneLauncherSystem : IUpdateSystem
@@ -88,6 +91,9 @@ public sealed class SceneLauncherSystem : IUpdateSystem
 
             if (ImGui.Button("Radiance Cascades 2D"))
                 _sceneRouter.SwitchTo(RuntimeScene.RadianceCascades2D);
+
+            if (ImGui.Button("Skinning (GPU + ECS)"))
+                _sceneRouter.SwitchTo(RuntimeScene.Skinning);
         }
         else if (ImGui.Button("Back to Main"))
         {

@@ -207,6 +207,7 @@ foreach (int e in world.Entities)
 | `AssetRegistry.cs` | 运行期 `AssetId → object` 映射（纯存取） |
 | `AssetDatabase.cs` | 门面：登记 / 类型化解析 / 反向名字表 / 哈希碰撞检测 |
 | `AssetRefDrawer.cs` | `AssetRef<T>` 的 ImGui 下拉绘制器 |
+| `Dasset/` | `.dasset 模型资产：二进制格式与读写（`DassetFormat`/`DassetModel`/`DassetWriter`/`DassetReader`）、运行时加载与目录扫描（`DassetModelAsset`/`DassetModelLoader`/`DassetModelScanner`）。烘焙端见 `Tools/FbxToGltf`。渲染侧约定（绕序/矩阵/法线/蒙皮）见 `Libs/Engine/Rendering/README.md` |
 
 ---
 

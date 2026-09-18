@@ -1,9 +1,9 @@
 using System.Numerics;
 using System.Text.Json;
 using DCFApixels.DragonECS;
-using DragonLib.Gltf;
 using Engine;
 using Engine.Assets;
+using Engine.Assets.Dasset;
 using Engine.ECS;
 using Engine.Rendering;
 using Engine.World;
@@ -37,7 +37,7 @@ public sealed class GltfSceneDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, 
     private Renderer3D? _renderer;
     private RenderTarget3D? _renderTarget;
     private Texture? _whiteTexture;
-    private readonly Dictionary<AssetId, List<Material>> _materialCache = [];
+    private readonly Dictionary<AssetId, List<(Material Material, RenderState3D State)>> _materialCache = [];
     private readonly List<entlong> _loadedEntities = [];
     private bool _wasActive;
     private int _drawnInstances;
@@ -55,6 +55,9 @@ public sealed class GltfSceneDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, 
     private float _lightElevation = 0.9f;
     private Vector3 _ambientLightColor = new(0.36f, 0.39f, 0.46f);
     private Vector3 _diffuseLightColor = new(1.00f, 0.95f, 0.88f);
+    private bool _pointLightsEnabled = true;
+    private readonly PointLight3D[] _pointLights = new PointLight3D[PointLight3D.MaxCount];
+    private readonly float[] _packedPointLights = new float[PointLight3D.PackedFloatCount];
 
     public void Init()
     {
@@ -62,7 +65,7 @@ public sealed class GltfSceneDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, 
             _game.GraphicsDevice,
             typeof(GltfSceneDemoSystem).Assembly,
             ShaderResourceBase,
-            new ShaderStageSpec(3, 3, "fragment_main"),
+            new ShaderStageSpec(3, 4, "fragment_main"),
             new ShaderStageSpec(0, 2, "vertex_main"));
 
         _depthShader = EmbeddedShaderMaterial.Load(
@@ -118,7 +121,8 @@ public sealed class GltfSceneDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, 
         {
             if (_input.Mouse.RightDown)
             {
-                _yaw -= _input.Mouse.Delta.X * 0.008f;
+                // orbit 方向约定：向右拖 = 相机向右绕（看到物体右侧），固定点屏幕左移（锁定：CameraOrbitTests）。
+                _yaw += _input.Mouse.Delta.X * 0.008f;
                 _pitch = Math.Clamp(_pitch - _input.Mouse.Delta.Y * 0.008f, -0.05f, 1.2f);
             }
 
@@ -157,7 +161,17 @@ public sealed class GltfSceneDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, 
             LightDirection = new Vector4(lightDirection, 0f),
             Ambient = new Vector4(_ambientLightColor, 1f),
             Diffuse = new Vector4(_diffuseLightColor, 1f),
+            CameraPosition = new Vector4(_camera.Position, 1f),
         };
+
+        // 两个固定点光展示 PBR 高光：一暖一冷。
+        var pointLightCount = 0;
+        if (_pointLightsEnabled)
+        {
+            _pointLights[pointLightCount++] = new PointLight3D(new Vector3(2.5f, 2.2f, 1.8f), 6f, new Vector3(1.0f, 0.55f, 0.25f), 2.5f);
+            _pointLights[pointLightCount++] = new PointLight3D(new Vector3(-2.2f, 1.6f, -1.5f), 5f, new Vector3(0.3f, 0.55f, 1.0f), 2.0f);
+        }
+        PointLight3D.Pack(_pointLights.AsSpan(0, pointLightCount), _packedPointLights);
 
         // 光照正交框覆盖整个摆放区域。
         _shadowMap.Resize(_shadowMap.Size);
@@ -189,20 +203,24 @@ public sealed class GltfSceneDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, 
             var meshRenderer = meshPool.Get(e);
             var world = localToWorldPool.Get(e).Value;
 
-            var model = _assets.Get<GltfModelAsset>(meshRenderer.Model);
+            var model = _assets.Get<DassetModelAsset>(meshRenderer.Model);
             if (model == null) continue;
 
             var materials = GetMaterials(model);
             for (var i = 0; i < model.Primitives.Count && i < materials.Count; i++)
             {
                 if (meshRenderer.MeshIndex >= 0 && i != meshRenderer.MeshIndex) continue;
-                var material = materials[i];
+                // 蒙皮 primitive 需要 palette（AnimationSystem/SkinPaletteComp）与蒙皮 shader 变体，
+                // 本 demo 的管线不演示蒙皮（见 SkinningDemo），遇到跳过。
+                if (model.Primitives[i].IsSkinned) continue;
+                var (material, state) = materials[i];
                 material.Fragment.SetUniformBuffer(lightUniforms);
                 material.Vertex.SetUniformBuffer(shadowUniforms, 1);
                 material.Fragment.SetUniformBuffer(shadowSettings, 2);
+                material.Fragment.SetUniformBuffer(_packedPointLights.AsSpan(), 3);
                 if (_shadowsEnabled)
                     material.Fragment.Samplers[2] = shadowSampler;
-                _renderer.Draw(model.Primitives[i].Mesh, material, world);
+                _renderer.Draw(model.Primitives[i].Mesh, material, world, state, model.Primitives[i].Bounds);
             }
 
             _drawnInstances++;
@@ -212,33 +230,42 @@ public sealed class GltfSceneDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, 
         _renderTarget.Composite(_batcher, width, height);
     }
 
-    private List<Material> GetMaterials(GltfModelAsset model)
+    private List<(Material Material, RenderState3D State)> GetMaterials(DassetModelAsset model)
     {
         if (_materialCache.TryGetValue(model.Id, out var cached))
             return cached;
 
         var sampler = new TextureSampler(TextureFilter.Linear, TextureWrap.Repeat);
-        var materials = new List<Material>(model.Primitives.Count);
+        var materials = new List<(Material, RenderState3D)>(model.Primitives.Count);
         foreach (var primitive in model.Primitives)
         {
+            // AlphaMode 生效：Opaque/Mask 走不透明队列（Mask 由 shader 按 AlphaCutoff clip），
+            // Blend 走透明队列（back-to-front、不写深度）。本期资产还没有真透明的。
+            var albedo = ResolveTexture(model, primitive.Material.AlbedoTextureIndex);
+            var normal = ResolveTexture(model, primitive.Material.NormalTextureIndex);
             var material = _shader!.Material.Clone();
-            material.Fragment.Samplers[0] = new BoundSampler(primitive.Material.AlbedoTexture ?? _whiteTexture, sampler);
-            material.Fragment.Samplers[1] = new BoundSampler(primitive.Material.NormalTexture ?? _whiteTexture, sampler);
+            material.Fragment.Samplers[0] = new BoundSampler(albedo ?? _whiteTexture, sampler);
+            material.Fragment.Samplers[1] = new BoundSampler(normal ?? _whiteTexture, sampler);
             material.Fragment.SetUniformBuffer(new MaterialUniforms
             {
                 BaseColorFactor = primitive.Material.BaseColorFactor,
                 Flags = new Vector4(
-                    primitive.Material.AlbedoTexture != null ? 1f : 0f,
-                    primitive.Material.NormalTexture != null ? 1f : 0f,
+                    albedo != null ? 1f : 0f,
+                    normal != null ? 1f : 0f,
                     1f,
-                    0f),
+                    (float)primitive.Material.AlphaMode),
+                AlphaParams = new Vector4(primitive.Material.AlphaCutoff, 0f, 0f, 0f),
+                PbrParams = new Vector4(primitive.Material.Metallic, primitive.Material.Roughness, 0f, 0f),
             }, 1);
-            materials.Add(material);
+            materials.Add((material, primitive.Material.ToRenderState()));
         }
 
         _materialCache.Add(model.Id, materials);
         return materials;
     }
+
+    private static Texture? ResolveTexture(DassetModelAsset model, int index)
+        => index >= 0 && index < model.Textures.Count ? model.Textures[index] : null;
 
     private void ReloadLevel()
     {
@@ -286,6 +313,8 @@ public sealed class GltfSceneDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, 
         ImGui.TextUnformatted("RMB drag: orbit   Wheel: zoom");
         ImGui.TextUnformatted(_status);
         ImGui.TextUnformatted($"drawn instances: {_drawnInstances}");
+        if (_renderer != null)
+            ImGui.TextUnformatted($"frustum culled: {_renderer.LastFrameCulledCount}");
         ImGui.Separator();
         if (ImGui.Button("Reload level"))
             ReloadLevel();
@@ -299,6 +328,7 @@ public sealed class GltfSceneDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, 
         ImGui.Checkbox("Shadows", ref _shadowsEnabled);
         ImGui.SliderFloat("Shadow bias", ref _shadowBias, 0f, 0.01f);
         ImGui.SliderFloat("Shadow darkness", ref _shadowDarkness, 0f, 1f);
+        ImGui.Checkbox("Point lights", ref _pointLightsEnabled);
         ImGui.Separator();
         ImGui.SliderFloat("Light azimuth", ref _lightAzimuth, -MathF.PI, MathF.PI);
         ImGui.SliderFloat("Light elevation", ref _lightElevation, 0.2f, 1.5f);
@@ -313,13 +343,16 @@ public sealed class GltfSceneDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, 
         public Vector4 LightDirection;
         public Vector4 Ambient;
         public Vector4 Diffuse;
+        public Vector4 CameraPosition; // xyz: 相机世界位置（PBR 镜面项要 view 方向）
     }
 
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, Pack = 4)]
     private struct MaterialUniforms
     {
         public Vector4 BaseColorFactor;
-        public Vector4 Flags;
+        public Vector4 Flags; // x: has albedo, y: has normal map, z: normal strength, w: alpha mode (0/1/2)
+        public Vector4 AlphaParams; // x: alpha cutoff（Mask 模式）
+        public Vector4 PbrParams; // x: metallic, y: roughness
     }
 
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, Pack = 4)]
