@@ -26,11 +26,18 @@ internal static class Program
     public static void Main(string[] args)
     {
         //这里设置的是窗口大小
-        using var gameContent = new MyGame(new AppConfig(
+        //--no-focus:窗口显示时不抢前台焦点;--cli:启动 CLI 后台调试控制台(终端里敲命令)
+        using var gameContent = new MyGame(GameApp.ApplyCliArgs(new AppConfig(
             "Game",
             "Game",
             2560,
-            1440, Flags: AppFlags.GraphicsDebugging));
+            1440, Flags: AppFlags.GraphicsDebugging), args));
+
+        if (GameApp.HasArg(args, "--cli"))
+            gameContent.EnableCli()
+                .Register("fps", "打印当前渲染帧率",
+                    _ => Log.Info($"[cli] Render FPS: {gameContent.RenderFramesPerSecond:F1}"));
+
         gameContent.Run();
 
     }
