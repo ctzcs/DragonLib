@@ -6,11 +6,45 @@ DragonLib 里的 **Paper**（Prowl.PaperUI）是一套即时模式（immediate-m
 
 配套文件：
 
+**字体默认使用 MSDF**：所有 Paper/Origami 控件共享 Quill → Scribe 的动态
+MSDF 字体图集，现有 `.Text(...)`、输入框和富文本 API 不需要修改。
+字体仍从 TTF 加载，中文按需生成，并复用同一套字形度量、换行和光标定位。
+本项目使用 `Libs/ThirdParty/Prowl` 中的 Scribe/Quill 2.7.0 扩展版。
+
+```csharp
+var fontSettings = new FontAtlasSettings
+{
+    DistanceFieldMode = FontDistanceFieldMode.Msdf, // 默认
+    DistanceRange = 4f, // 图集像素；后端自动读取，不要在 shader 写死
+};
+```
+
+`DistanceRange` 应在创建字形之前配置。需要更精细的图集时可给元素设置
+`.TextQuality(FontQuality.High)`，代价是更多生成时间和图集空间。
+`TextAntialiasWidth` 继续控制屏幕像素上的边缘过渡。
+
+Windows x64 原生生成库会自动复制到输出目录。其他平台需自行编译部署，见
+[原生库说明](../../ThirdParty/Msdfgen/README.md)。修改 shader 后运行
+`Paper/Shaders/build.ps1` 更新 DXIL、SPIR-V、MSL；仅修改 HLSL 不会改变运行时效果。
+生成库重建脚本为 `Libs/ThirdParty/Msdfgen/build.ps1`。
+
+验证命令（在仓库根目录运行）：
+
+```powershell
+dotnet test Tests/Paper.Msdf.Tests
+dotnet run --project Tests/Paper.Msdf.Smoke -- .codex-build/paper-msdf.png
+dotnet run --project Tests/Paper.Msdf.Smoke -- .codex-build/paper-msdf-2x.png 2
+```
+
+GPU 示例会短暂创建窗口，绘制按钮、输入框、富文本、不同字号和换行文字，
+读取离屏目标并自动退出。检查包含输入框文字区域，可检测 DPI 裁剪错误。
+后端会把 Quill 的像素裁剪半径和逻辑坐标变换统一转换为物理像素。
+
 | 文件 | 职责 |
 | --- | --- |
 | `FosterCanvasRenderer.cs` | Prowl.Quill → Foster 画布后端（顶点 / 纹理 / shader 上传） |
 | `PaperInput.cs` | 把 Foster 的鼠标 / 键盘输入转发给 Paper |
-| `Shaders/QuillCanvas.hlsl` | 画布 shader 源码（纯色 / 图片 brush / SDF 文字三条路径） |
+| `Shaders/QuillCanvas.hlsl` | 画布 shader 源码（纯色 / 图片 brush / MSDF 文字三条路径） |
 | `Shaders/Compiled/**` | 预编译 shader，随程序集以 `EmbeddedResource` 内嵌 |
 
 ---
@@ -472,7 +506,8 @@ public class MyUiSystem : IUpdateSystem
 - **纯色 / 矢量**：无纹理时绑定 1×1 白纹理，`color × white = color`。
 - **图片 brush**：**不走逐顶点 UV**，而是用 `BrushTextureMatrix × 片元屏幕坐标`
   反算纹理 UV。
-- **SDF 文字**：Quill 把文字 UV 加了 `+2` 偏移作标记，shader 据此走单通道 SDF 解码。
+- **MSDF 文字**：Quill 把文字 UV 加了 `+2` 偏移作标记，shader 取 RGB 中位数，
+  配合字体系统的 `DistanceRange` 和屏幕导数还原覆盖率。旧 SDF 的 RGB 相等，仍可兼容。
 
 > ⚠️ **已知坑（已修复）**：Prowl 的 `Brush.TextureMatrix` 是**列向量约定**
 > （平移在第 4 列），而本管线走「C# 行主序上传 → HLSL 列主序读取」隐含一次转置。

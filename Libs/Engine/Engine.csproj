@@ -12,6 +12,7 @@
       <ProjectReference Include="..\DragonECS-main\DragonECS.csproj" />
       <ProjectReference Include="..\Foster.Audio\Foster.Audio\Foster.Audio.csproj" />
       <ProjectReference Include="..\Foster\Framework\Foster.Framework.csproj" />
+      <ProjectReference Include="..\ThirdParty\Prowl\Quill\Quill.csproj" />
     </ItemGroup>
 
     <ItemGroup>

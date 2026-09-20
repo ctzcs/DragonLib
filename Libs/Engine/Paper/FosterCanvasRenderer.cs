@@ -13,14 +13,13 @@ namespace Engine.Paper;
 /// <summary>
 /// Prowl.Quill → Foster 画布后端。
 /// <para>
-/// Quill / Scribe 文字图集是 <b>单通道 SDF</b>（R=G=B=distance，A=255）。
+/// Quill / Scribe 默认生成 <b>MSDF</b>（RGB 多通道距离，A=255），兼容单通道 SDF。
 /// 普通纹理与字体图集使用独立 sampler；UV +2 的文字标记保留到 fragment shader。
 /// </para>
 /// UV：纯色 AA 为 0/1；字形由 TextRenderer 做了 +2，并由专用 shader 解码。
 /// </summary>
 public sealed class FosterCanvasRenderer : ICanvasRenderer
 {
-	private const float DefaultSdfDistanceRange = 4f;
 
 	[StructLayout(LayoutKind.Sequential)]
 	private struct FragmentUniformData
@@ -28,7 +27,8 @@ public sealed class FosterCanvasRenderer : ICanvasRenderer
 		public Matrix4x4 BrushTextureMatrix;
 		public float DistanceRange;
 		public float DpiScale;
-		public Vector2 Padding;
+		public float TextAntialiasWidth;
+		public float Padding;
 	}
 
 	private readonly GraphicsDevice _device;
@@ -36,7 +36,15 @@ public sealed class FosterCanvasRenderer : ICanvasRenderer
 	private readonly Material _material;
 	private readonly Texture _whiteTexture;
 	private readonly List<Texture> _ownedTextures = [];
-	private readonly TextureSampler _sampler = new(TextureFilter.Linear, TextureWrap.Clamp, TextureWrap.Clamp);
+	private readonly TextureSampler _fontSampler = new(TextureFilter.Linear, TextureWrap.Clamp, TextureWrap.Clamp);
+
+	/// <summary>Image/brush sampling, independent of the SDF font sampler.
+	/// Pixel-art UIs should select Nearest; the default preserves smooth-image UIs.</summary>
+	public TextureSampler ImageSampler { get; set; } = new(TextureFilter.Linear, TextureWrap.Clamp, TextureWrap.Clamp);
+
+	/// <summary>SDF edge transition in screen pixels. 1 preserves standard antialiasing;
+	/// smaller values give compact game UI text a crisper edge without nearest-sampling the atlas.</summary>
+	public float TextAntialiasWidth { get; set; } = 1f;
 
 	private PosTexColVertex[] _vertexScratch = [];
 	private uint[] _indexScratch = [];
@@ -130,8 +138,8 @@ public sealed class FosterCanvasRenderer : ICanvasRenderer
 			}
 
 			// 官方 Quill renderer 使用两个独立 sampler：普通 brush 与 font atlas。
-			pass.FragmentSamplers[0] = new BoundSampler(call.Texture as Texture ?? _whiteTexture, _sampler);
-			pass.FragmentSamplers[1] = new BoundSampler(call.FontAtlas as Texture ?? _whiteTexture, _sampler);
+			pass.FragmentSamplers[0] = new BoundSampler(call.Texture as Texture ?? _whiteTexture, ImageSampler);
+			pass.FragmentSamplers[1] = new BoundSampler(call.FontAtlas as Texture ?? _whiteTexture, _fontSampler);
 
 			_material.Fragment.SetUniformBuffer(new FragmentUniformData
 			{
@@ -140,12 +148,13 @@ public sealed class FosterCanvasRenderer : ICanvasRenderer
 				// 行向量约定）恰好抵消正确，但对这个列向量矩阵会被转错，导致 brush UV 丢失平移、
 				// 图片被挤到 [0,1] 之外。上传前显式转置一次抵消。
 				BrushTextureMatrix = Matrix4x4.Transpose(call.Brush.TextureMatrix),
-				DistanceRange = DefaultSdfDistanceRange,
+				DistanceRange = canvas.Text.FontEngine.DistanceRange,
+				TextAntialiasWidth = float.IsFinite(TextAntialiasWidth) ? Math.Clamp(TextAntialiasWidth, 0.5f, 2f) : 1f,
 				DpiScale = MathF.Max(canvas.FramebufferScale, 0.000001f),
 			});
 			pass.IndexOffset = indexOffset;
 			pass.IndexCount = elementCount;
-			pass.Scissor = TryGetScissor(call, size);
+			pass.Scissor = TryGetScissor(call, size, canvas.FramebufferScale);
 
 			_device.Draw(pass);
 			indexOffset += elementCount;
@@ -214,13 +223,16 @@ public sealed class FosterCanvasRenderer : ICanvasRenderer
 				name: "QuillCanvasFragment"));
 	}
 
-	private static RectInt? TryGetScissor(in DrawCall call, Point2 targetSize)
+	private static RectInt? TryGetScissor(in DrawCall call, Point2 targetSize, float framebufferScale)
 	{
 		call.GetScissor(out var invMatrix, out var extent);
 		if (extent.X < 0 || extent.Y < 0)
 			return null;
 
 		var toScreen = invMatrix.Invert();
+		// Quill stores extents in pixels but its scissor transform in logical units.
+		// Transform logical corners first, then convert the complete position to pixels.
+		extent /= framebufferScale;
 		Span<Vector2> corners =
 		[
 			TransformPoint(toScreen, -extent.X, -extent.Y),
@@ -228,6 +240,8 @@ public sealed class FosterCanvasRenderer : ICanvasRenderer
 			TransformPoint(toScreen, extent.X, extent.Y),
 			TransformPoint(toScreen, -extent.X, extent.Y),
 		];
+		for (var i = 0; i < corners.Length; i++)
+			corners[i] *= framebufferScale;
 
 		var minX = corners[0].X;
 		var minY = corners[0].Y;

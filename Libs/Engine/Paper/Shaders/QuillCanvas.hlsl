@@ -8,7 +8,8 @@ cbuffer FragmentUniformBlock : register(b0, space3)
     float4x4 BrushTextureMatrix;
     float DistanceRange;
     float DpiScale;
-    float2 FragmentPadding;
+    float TextAntialiasWidth;
+    float FragmentPadding;
 };
 
 Texture2D BrushTexture : register(t0, space2);
@@ -56,9 +57,11 @@ float4 fragment_main(VsOutput input) : SV_Target0
     if (input.TexCoord.x >= 2.0)
     {
         float2 uv = input.TexCoord - float2(2.0, 2.0);
-        float signedDistance = FontTexture.Sample(FontSampler, uv).r;
+        float3 distances = FontTexture.Sample(FontSampler, uv).rgb;
+        // Median reconstructs MSDF corners; replicated RGB also supports legacy SDF.
+        float signedDistance = max(min(distances.r, distances.g), min(max(distances.r, distances.g), distances.b));
         float screenDistance = sdfScreenPxRange(uv) * (signedDistance - 0.5);
-        float coverage = saturate(screenDistance + 0.5);
+        float coverage = saturate(screenDistance / max(TextAntialiasWidth, 0.5) + 0.5);
         return input.Color * coverage;
     }
 
