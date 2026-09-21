@@ -17,6 +17,7 @@ public class Renderer : IDisposable
 	private readonly Material material;
 	private readonly Texture fontTexture;
 	private readonly List<Texture> boundTextures = [];
+	private readonly HashSet<int> premultipliedTextureIds = [];
 	// Per-texture sampler overrides for user textures (default: Linear/Clamp, the
 	// historical behavior). Apps register e.g. pixel-art atlases with Nearest.
 	private readonly Dictionary<Texture, TextureSampler> samplerOverrides = [];
@@ -296,6 +297,7 @@ public class Renderer : IDisposable
 
 		// clear textures for the next frame
 		boundTextures.Clear();
+		premultipliedTextureIds.Clear();
 
 		// clear batches
 		batchersStack.Clear();
@@ -499,6 +501,11 @@ public class Renderer : IDisposable
 				else
 				{
 					var textureIndex = cmd->TextureId.ToInt32();
+					// Render targets such as Paper HUD already contain premultiplied RGB.
+					// Select per draw so the following regular ImGui texture restores straight alpha.
+					pass.BlendMode = premultipliedTextureIds.Contains(textureIndex)
+						? BlendMode.Premultiply
+						: new BlendMode(BlendOp.Add, BlendFactor.SrcAlpha, BlendFactor.OneMinusSrcAlpha);
 					if (textureIndex < boundTextures.Count)
 					{
 						var bound = boundTextures[textureIndex];
@@ -526,11 +533,14 @@ public class Renderer : IDisposable
 	/// <summary>
 	/// Gets a Texture ID to draw in ImGui
 	/// </summary>
-	public IntPtr GetTextureID(Texture? texture)
+	public IntPtr GetTextureID(Texture? texture, bool premultiplied = false)
 	{
 		var id = new IntPtr(boundTextures.Count);
 		if (texture != null)
+		{
 			boundTextures.Add(texture);
+			if (premultiplied) premultipliedTextureIds.Add(id.ToInt32());
+		}
 		return id;
 	}
 
