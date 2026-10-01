@@ -9,11 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\Libs\Engine\Engine.csproj" />
-    <ProjectReference Include="..\..\..\Libs\Engine.ECS\Engine.ECS.csproj" />
-    <ProjectReference Include="..\..\..\Libs\ThirdParty\Box2D\DragonLib.Box2D.csproj" />
-    <ProjectReference Include="..\..\..\Libs\ThirdParty\Gltf\DragonLib.Gltf.csproj" />
-    <ProjectReference Include="..\..\..\Libs\ThirdParty\Spine\DragonLib.Spine.csproj" />
+    <ProjectReference Include="..\..\Libs\Engine\Engine.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="xunit" Version="2.4.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.4.5">

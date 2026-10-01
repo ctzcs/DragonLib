@@ -1,5 +1,7 @@
 # Assets 资源库
 
+资源库属于 Engine，可在没有 ECS 的游戏中使用。下文的 ECS 组件、`PrefabSerializer`、`LevelSerializer` 和 `EcsInspectorSystem` 示例需要额外引用 `Libs/Engine.ECS/Engine.ECS.csproj`；模块边界与迁移方式见 [Engine README](../README.md)。
+
 一套为编辑器与运行时共用的轻量资源系统。核心思想借鉴 Celeste 作者 Noel 与 Godot：
 **资源的"名字"（相对路径）才是唯一真相，id 只是名字的确定性哈希投影。**
 因此不需要中央 id 表 / sidecar：运行期扫描目录时凭路径重建映射即可。

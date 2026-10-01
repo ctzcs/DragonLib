@@ -33,6 +33,7 @@
 
     <ItemGroup>
       <ProjectReference Include="..\..\Libs\Engine\Engine.csproj" />
+      <ProjectReference Include="..\..\Libs\Engine.ECS\Engine.ECS.csproj" />
       <ProjectReference Include="..\..\Libs\ThirdParty\Box2D\DragonLib.Box2D.csproj" />
       <ProjectReference Include="..\..\Libs\ThirdParty\Spine\DragonLib.Spine.csproj" />
       <ProjectReference Include="..\..\Libs\ThirdParty\Gltf\DragonLib.Gltf.csproj" />

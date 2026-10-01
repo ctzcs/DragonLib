@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace Engine.ECS;
+namespace Engine.World;
 
 /// <summary>
 /// 轻量场景/屏幕路由：只负责记录“当前是哪个屏幕”、切换、以及切换过程的计时进度，

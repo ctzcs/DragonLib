@@ -1,44 +1,27 @@
-using System;
-using System.Collections.Generic;
-using System.Runtime.InteropServices;
 using DCFApixels.DragonECS;
+using Engine.Messaging;
 
 namespace Engine.ECS;
 
-/// <summary>
-/// 多消费者模型，延迟一帧处理，确定性高，所有消费者读到的事件一样，最终统一销毁
-/// A strict double-buffered broadcast channel. Messages published during one
-/// update become visible to every consumer at the start of the next update.
-/// </summary>
-/// <remarks>This type is intended for the single-threaded ECS update loop.</remarks>
-public sealed class BroadcastChannel<TMessage>
+public static class CommandQueuePipelineExtensions
 {
-    private List<TMessage> _current = new();
-    private List<TMessage> _pending = new();
-
-    /// <summary>The immutable batch visible during the current update.</summary>
-    public ReadOnlySpan<TMessage> Messages => CollectionsMarshal.AsSpan(_current);
-
-    public int Count => _current.Count;
-    public int PendingCount => _pending.Count;
-
-    /// <summary>Publishes a message for the next update.</summary>
-    public void Publish(TMessage message) => _pending.Add(message);
-
-    /// <summary>
-    /// Makes the pending batch current and discards the previously visible batch.
-    /// Normally called automatically by <see cref="AddBroadcastChannel{TMessage}(EcsPipeline.Builder, BroadcastChannel{TMessage}, string)"/>.
-    /// </summary>
-    public void AdvanceFrame()
+    /// <summary>Registers an existing command queue for pipeline injection.</summary>
+    public static EcsPipeline.Builder AddCommandQueue<TCommand>(
+        this EcsPipeline.Builder builder,
+        CommandQueue<TCommand> queue)
     {
-        (_current, _pending) = (_pending, _current);
-        _pending.Clear();
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(queue);
+        return builder.Inject(queue);
     }
 
-    public void Clear()
+    /// <summary>Creates and registers a command queue for pipeline injection.</summary>
+    public static EcsPipeline.Builder AddCommandQueue<TCommand>(
+        this EcsPipeline.Builder builder,
+        out CommandQueue<TCommand> queue)
     {
-        _current.Clear();
-        _pending.Clear();
+        queue = new CommandQueue<TCommand>();
+        return builder.AddCommandQueue(queue);
     }
 }
 

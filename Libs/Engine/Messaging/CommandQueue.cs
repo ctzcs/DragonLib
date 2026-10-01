@@ -1,13 +1,11 @@
-using DCFApixels.DragonECS;
-
-namespace Engine.ECS;
+namespace Engine.Messaging;
 
 /// <summary>
 /// 单消费者模型，本帧处理
 /// A FIFO queue owned by one consumer. Producers may enqueue commands, but only
 /// the system that owns <typeparamref name="TCommand"/> should dequeue them.
 /// </summary>
-/// <remarks>This type is intended for the single-threaded ECS update loop.</remarks>
+/// <remarks>This type is intended for a single-threaded update loop.</remarks>
 public sealed class CommandQueue<TCommand>
 {
     private readonly Queue<TCommand> _commands = new();
@@ -34,26 +32,4 @@ public sealed class CommandQueue<TCommand>
     }
 
     public void Clear() => _commands.Clear();
-}
-
-public static class CommandQueuePipelineExtensions
-{
-    /// <summary>Registers an existing command queue for pipeline injection.</summary>
-    public static EcsPipeline.Builder AddCommandQueue<TCommand>(
-        this EcsPipeline.Builder builder,
-        CommandQueue<TCommand> queue)
-    {
-        ArgumentNullException.ThrowIfNull(builder);
-        ArgumentNullException.ThrowIfNull(queue);
-        return builder.Inject(queue);
-    }
-
-    /// <summary>Creates and registers a command queue for pipeline injection.</summary>
-    public static EcsPipeline.Builder AddCommandQueue<TCommand>(
-        this EcsPipeline.Builder builder,
-        out CommandQueue<TCommand> queue)
-    {
-        queue = new CommandQueue<TCommand>();
-        return builder.AddCommandQueue(queue);
-    }
 }
