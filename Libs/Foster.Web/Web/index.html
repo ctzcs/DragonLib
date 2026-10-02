@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Foster WebGL2</title>
+  <style>
+    html, body { margin: 0; background: #101520; color: #dce5f5; font: 14px system-ui, sans-serif; }
+    body { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 24px; }
+    canvas { display: block; outline: 1px solid #3c4961; }
+    canvas:focus { outline: 2px solid #5adcce; }
+    canvas:fullscreen { width: 100vw !important; height: 100vh !important; max-width: none !important; }
+    #status { max-width: 960px; white-space: pre-wrap; overflow-wrap: anywhere; }
+    #status[data-state=error] { color: #ff9f9f; }
+  </style>
+</head>
+<body>
+  <canvas id="canvas" aria-label="Foster game canvas"></canvas>
+  <div id="status" role="status">Loading .NET WebAssembly…</div>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

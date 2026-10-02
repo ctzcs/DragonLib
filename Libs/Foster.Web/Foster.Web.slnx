@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Framework/Foster.Framework.Web.csproj" />
+  <Project Path="Samples/WebDemo/WebDemo.csproj" />
+</Solution>

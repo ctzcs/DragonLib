@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <!-- Drop-in replacement: a game references either desktop Foster or this project. -->
+    <AssemblyName>Foster.Framework</AssemblyName>
+    <RootNamespace>Foster.Framework</RootNamespace>
+    <PackageId>FosterFramework.Web</PackageId>
+    <Version>0.3.0</Version>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <FosterSource>../../Foster/Framework</FosterSource>
+    <EnableDefaultEmbeddedResourceItems>false</EnableDefaultEmbeddedResourceItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(FosterSource)/**/*.cs"
+      Exclude="$(FosterSource)/obj/**/*.cs;$(FosterSource)/bin/**/*.cs;$(FosterSource)/App.cs;$(FosterSource)/Window.cs;$(FosterSource)/Input/Cursor.cs;$(FosterSource)/Storage/Storage.cs;$(FosterSource)/Storage/FileSystem.cs;$(FosterSource)/Internal/GraphicsDeviceSDL.cs;$(FosterSource)/Internal/InputProviderSDL.cs;$(FosterSource)/Internal/ThirdParty/SDL3.cs;$(FosterSource)/Internal/ImageData.cs;$(FosterSource)/Graphics/Enums/GraphicsDriver.cs"
+      Link="Shared/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Remove="$(FosterSource)/.codex-build/**/*.cs" />
+    <Compile Remove="$(FosterSource)/Graphics/SpriteFont.cs" />
+    <EmbeddedResource Include="../Shaders/*.glsl" LogicalName="Shaders/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="$(FosterSource)/Content/Fonts/Compiled/*" LogicalName="Fonts/%(Filename)%(Extension)" />
+    <None Include="../README.md" Pack="true" PackagePath="/" />
+    <None Include="../LICENSE" Pack="true" PackagePath="/" />
+    <None Include="../Web/**" Pack="true" PackagePath="web/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+  <PropertyGroup>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
+    <Description>Foster browser backend using .NET WebAssembly and WebGL2.</Description>
+  </PropertyGroup>
+</Project>
