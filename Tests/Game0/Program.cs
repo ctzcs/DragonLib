@@ -31,7 +31,10 @@ internal static class Program
             "Game",
             "Game",
             2560,
-            1440, Flags: AppFlags.GraphicsDebugging), args));
+            1440, Flags: AppFlags.GraphicsDebugging), args))
+        {
+            StartGutWallDemo = GameApp.HasArg(args, "--gut-demo"),
+        };
 
         if (GameApp.HasArg(args, "--cli"))
             gameContent.EnableCli()
@@ -79,6 +82,7 @@ public class MyGame : GameApp
     private Camera2D _camera;
     private Camera3D _camera3D;
     private SceneRouter<RuntimeScene> _sceneRouter;
+    public bool StartGutWallDemo { get; init; }
     private JobScheduler _jobScheduler = null!;
 
     private const double RenderFpsSampleInterval = 0.5;
@@ -183,6 +187,9 @@ public class MyGame : GameApp
             .AddModule(new EditorModule())
             .AutoInject()
             .BuildAndInit();
+
+        if (StartGutWallDemo)
+            _sceneRouter.SwitchTo(RuntimeScene.GutWall);
     }
 
     protected override void Shutdown()
@@ -284,6 +291,7 @@ public class MyGame : GameApp
             : _sceneRouter.Current == RuntimeScene.DreamBlockShader ||
               _sceneRouter.Current == RuntimeScene.FishSdfShader ||
               _sceneRouter.Current == RuntimeScene.MachineGunSdfShader ||
+              _sceneRouter.Current == RuntimeScene.GutWall ||
               _sceneRouter.Current == RuntimeScene.RadianceCascades2D
                 ? new Color(0x08, 0x0c, 0x14, 0xff)
                 : Color.AliceBlue;

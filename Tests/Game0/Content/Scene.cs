@@ -18,6 +18,7 @@ public class SceneModule : EcsModule<SceneModule>
         b.Add(new DreamBlockDemoSystem());
         b.Add(new FishSdfDemoSystem());
         b.Add(new MachineGunSdfDemoSystem());
+        b.Add(new GutWallDemoSystem());
         b.Add(new SpineDemoSystem());
         b.Add(new Box2DDemoSystem());
         b.Add(new DualCamera2DDemoSystem());
@@ -46,6 +47,7 @@ public enum RuntimeScene
     LightSandbox,
     RadianceCascades2D,
     Skinning,
+    GutWall,
 }
 
 public sealed class SceneLauncherSystem : IUpdateSystem
@@ -68,6 +70,9 @@ public sealed class SceneLauncherSystem : IUpdateSystem
 
             if (ImGui.Button("Machine Gun SDF Shader"))
                 _sceneRouter.SwitchTo(RuntimeScene.MachineGunSdfShader);
+
+            if (ImGui.Button("Procedural Gut Wall"))
+                _sceneRouter.SwitchTo(RuntimeScene.GutWall);
 
             if (ImGui.Button("Spine Boy"))
                 _sceneRouter.SwitchTo(RuntimeScene.SpineBoy);
