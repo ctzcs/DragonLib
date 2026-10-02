@@ -10,13 +10,18 @@ try {
     const framework = await runtime.getAssemblyExports('Foster.Framework.dll');
     backend.attach(framework.Foster.Framework.WebRuntime);
     // Assets are fetched before Startup so Foster's synchronous title-storage API works.
+    // Entries with "vfs": true go to the in-memory file system instead, for code that uses System.IO.
     const manifestResponse = await fetch('./assets.json');
     if (!manifestResponse.ok) throw new Error(`Asset manifest failed: ${manifestResponse.status}`);
     const manifest = await manifestResponse.json();
+    let loaded = 0;
     await Promise.all(manifest.map(async asset => {
         const response = await fetch(asset.url);
         if (!response.ok) throw new Error(`Asset ${asset.path} failed: ${response.status}`);
-        framework.Foster.Framework.WebRuntime.AddAsset(asset.path, new Uint8Array(await response.arrayBuffer()));
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        const web = framework.Foster.Framework.WebRuntime;
+        if (asset.vfs) web.AddFile(asset.path, bytes); else web.AddAsset(asset.path, bytes);
+        status.textContent = `Loading assets ${++loaded}/${manifest.length}…`;
     }));
     await runtime.runMain();
     status.textContent = 'Running — click the canvas to focus keyboard input.';

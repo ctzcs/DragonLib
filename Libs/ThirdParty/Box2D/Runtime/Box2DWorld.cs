@@ -27,6 +27,7 @@ public sealed class Box2DWorld : IDisposable
     {
     }
 
+    [System.Runtime.Versioning.UnsupportedOSPlatform("browser")]
     public Box2DWorld(Vector2 gravity, JobScheduler scheduler, int workerCount)
         : this(CreateThreadedDefinition(gravity, scheduler, workerCount))
     {
@@ -69,6 +70,7 @@ public sealed class Box2DWorld : IDisposable
         return definition;
     }
 
+    [System.Runtime.Versioning.UnsupportedOSPlatform("browser")]
     private static B2WorldDef CreateThreadedDefinition(Vector2 gravity, JobScheduler scheduler, int workerCount)
     {
         ArgumentNullException.ThrowIfNull(scheduler);

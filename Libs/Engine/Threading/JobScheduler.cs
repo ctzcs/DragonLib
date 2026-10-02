@@ -8,6 +8,7 @@ namespace Engine.Threading;
 /// Persistent worker pool for frame-sized jobs and parallel range processing.
 /// The calling thread participates while completing a handle.
 /// </summary>
+[System.Runtime.Versioning.UnsupportedOSPlatform("browser")]
 public sealed class JobScheduler : IDisposable
 {
     private const int DefaultQueueCapacity = 4096;

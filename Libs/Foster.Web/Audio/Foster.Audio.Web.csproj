@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>Foster.Audio</AssemblyName>
+    <RootNamespace>Foster.Audio</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../Foster.Audio/Foster.Audio/**/*.cs"
+             Exclude="../../Foster.Audio/Foster.Audio/Platform.cs;../../Foster.Audio/Foster.Audio/**/obj/**/*.cs;../../Foster.Audio/Foster.Audio/**/bin/**/*.cs"
+             Link="Shared/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

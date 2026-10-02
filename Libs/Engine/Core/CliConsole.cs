@@ -7,6 +7,7 @@ namespace Engine;
 /// CLI 后台调试控制台:后台线程读 stdin,命令统一转到主线程执行,输出走 Log(即 stdout)。
 /// 配合 AppFlags.NoWindowFocus 使用,调试全程不用把游戏窗口切到前台。
 /// </summary>
+[System.Runtime.Versioning.UnsupportedOSPlatform("browser")]
 public sealed class CliConsole
 {
     /// <summary>命令处理函数,args 是命令名之后的剩余文本。在主线程上执行。</summary>

@@ -5,6 +5,7 @@ using Engine.Threading;
 namespace DragonLib.Box2D;
 
 /// <summary>Bridges Box2D task callbacks to the shared engine scheduler.</summary>
+[System.Runtime.Versioning.UnsupportedOSPlatform("browser")]
 public sealed class Box2DTaskSchedulerAdapter
 {
     private static readonly ConcurrentBag<Box2DTaskHandle> HandlePool = new();

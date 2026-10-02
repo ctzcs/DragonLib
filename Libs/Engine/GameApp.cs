@@ -11,6 +11,7 @@ public abstract class GameApp : App{
     }
 
     /// <summary>CLI 调试控制台(EnableCli 之后可用)。</summary>
+    [System.Runtime.Versioning.UnsupportedOSPlatform("browser")]
     public CliConsole? Cli => cli;
 
     /// <summary>判断命令行参数是否存在(不区分大小写)。</summary>
@@ -24,6 +25,7 @@ public abstract class GameApp : App{
             : config;
 
     /// <summary>启动 CLI 后台调试控制台(stdin 读命令,主线程执行,stdout 输出)。</summary>
+    [System.Runtime.Versioning.UnsupportedOSPlatform("browser")]
     public CliConsole EnableCli()
     {
         cli ??= new CliConsole(this);

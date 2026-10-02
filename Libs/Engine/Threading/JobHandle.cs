@@ -4,6 +4,7 @@ using System.Threading;
 namespace Engine.Threading;
 
 /// <summary>Represents one scheduled job or parallel batch.</summary>
+[System.Runtime.Versioning.UnsupportedOSPlatform("browser")]
 public sealed class JobHandle
 {
     private readonly object _sync = new();

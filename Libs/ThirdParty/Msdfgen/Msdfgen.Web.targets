@@ -1,0 +1,13 @@
+<Project>
+  <!-- Import from a browser-wasm app (Microsoft.NET.Sdk.WebAssembly) that uses Scribe MSDF text.
+       emcc (from the wasm-tools workload) compiles these into dotnet.native.wasm during build/publish,
+       so the native runtime is relinked; the first build takes noticeably longer. -->
+  <PropertyGroup>
+    <!-- Sources are compiled by the emcc link step; same define as CMakeLists.txt (no generated msdfgen-config.h). -->
+    <EmccExtraLDFlags>$(EmccExtraLDFlags) -DMSDFGEN_PUBLIC=</EmccExtraLDFlags>
+  </PropertyGroup>
+  <ItemGroup>
+    <NativeFileReference Include="$(MSBuildThisFileDirectory)web/DragonLib.Msdfgen.cpp" />
+    <NativeFileReference Include="$(MSBuildThisFileDirectory)core/*.cpp" ScanForPInvokes="false" />
+  </ItemGroup>
+</Project>

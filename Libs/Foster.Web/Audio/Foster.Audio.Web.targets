@@ -1,0 +1,9 @@
+<Project>
+  <!-- Import in the final WebAssembly executable: native inputs do not flow through ProjectReference. -->
+  <PropertyGroup>
+    <EmccExtraLDFlags>$(EmccExtraLDFlags) -I&quot;$(MSBuildThisFileDirectory)../../Foster.Audio/Platform/include&quot;</EmccExtraLDFlags>
+  </PropertyGroup>
+  <ItemGroup>
+    <NativeFileReference Include="$(MSBuildThisFileDirectory)Native/FosterAudioPlatform.c" />
+  </ItemGroup>
+</Project>

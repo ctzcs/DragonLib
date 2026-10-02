@@ -20,6 +20,14 @@ build and publish outputs. Rebuild with CMake and Visual Studio C++ tools:
 ./Libs/ThirdParty/Msdfgen/build.ps1
 ```
 
+## WebAssembly (Foster.Web)
+
+A browser-wasm app imports `Msdfgen.Web.targets`. It adds `web/DragonLib.Msdfgen.cpp`
+(includes `bridge.cpp`) and `core/*.cpp` as `NativeFileReference`, so the wasm-tools
+workload's emcc statically links them into `dotnet.native.wasm`. .NET wasm resolves
+`DllImport("DragonLib.Msdfgen")` by that file name; no Scribe change is needed.
+Publishing relinks the native runtime, so the first web publish takes longer.
+
 ## Other platforms
 
 Only Windows x64 binaries are included and verified. The bridge itself is portable:

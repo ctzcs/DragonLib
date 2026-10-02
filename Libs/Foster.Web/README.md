@@ -65,6 +65,8 @@ dotnet pack .\Framework\Foster.Framework.Web.csproj -c Release -o .\artifacts\pa
 
 命名空间仍是 `Foster.Framework`，程序集仍是 `Foster.Framework.dll`。**一个游戏项目只能引用桌面 Foster 或 Foster.Web 中的一个。** 不能同时引用这两个项目，也不能间接引入已经编译过的桌面 Foster；其他库若引用桌面项目，需要单独建立 Web 构建配置并切换该引用。
 
+DragonLib 的 `Engine` 与 `DragonLib.Box2D` 已按这种方式多目标：`net10.0` 引用桌面 Foster，`net10.0-browser` 引用本项目。游戏库同样写 `<TargetFrameworks>net10.0;net10.0-browser</TargetFrameworks>`，Web 入口项目写 `<TargetFramework>net10.0-browser</TargetFramework>`，引用链就会整条切到 Foster.Web；桌面入口只构建 `net10.0` 那一份。完整示例见 Proj_TD 的 `Scripts/Game.Web`。
+
 ### 生命周期
 
 Web 的 `App.Run()` 在 `Startup()` 后立即返回；浏览器稍后调用 `Update/Render`。因此入口不要写 `using var app = ...; app.Run();`，也不要在 `Run()` 后立刻 `Dispose()`：
@@ -101,6 +103,8 @@ FileSystem.OpenTitleStorage(storage => {
 
 不要使用 `File.ReadAllBytes("Content/...")` 加载 HTTP 资源；它不会自动访问预加载资源表。
 
+已有代码直接用 `System.IO` 读文件时，给条目加 `"vfs": true`：`main.js` 会调用 `WebRuntime.AddFile` 把它写进 WebAssembly 内存文件系统（相对当前目录，即 `/`），之后 `File.ReadAllText("Content/level.json")` 无需修改。这类文件不进 title storage；写入只留在本次页面内存，刷新即丢失，存档仍应走 `OpenUserStorage`。
+
 `OpenUserStorage` 对应按 App 名称隔离的 `localStorage`，二进制文件使用 Base64；Stream 的 `Flush/Dispose` 写入。配额不足或存储被浏览器禁用会抛出异常，不会伪装为保存成功。目录从文件路径推导，不保存空目录；不允许 `..` 越过根路径。`UserPath` 是逻辑路径，不能通过桌面 `System.IO` API 访问。
 
 ### 着色器
@@ -117,6 +121,8 @@ FileSystem.OpenTitleStorage(storage => {
 | 片元 sampler slot N | `uniform sampler2D u_fragment_texN;` |
 | 顶点属性 | `layout(location = VertexFormat.Element.Index)` |
 | 离屏坐标翻转 | `uniform float u_target_flip;`，将 `gl_Position.y` 乘以它 |
+
+已有 SDL shadercross 着色器(HLSL → `.spv`)可以用 `Tools/spv-to-glsl.ps1 -Spv X.vertex.spv -Output X.vertex.glsl` 转换(需要 Vulkan SDK 的 `spirv-cross`)。脚本按上表改名 uniform block、合并采样器和阶段间变量，并在顶点末尾加入 `u_target_flip`。SDL GPU 默认 depth clamp 而 WebGL 只有裁剪，脚本还会把 clip z 夹到 `[0, w]` 再映射到 GL 的 `[-w, w]`；否则 `CreateOrthographicOffCenter(…, 0.1f, 1000)` 投影下 z=0 的二维图元会被整批裁掉。手写 GLSL 时也要注意这一点。
 
 矩阵 uniform 按 `Matrix4x4` 的字节布局传入；自定义结构要满足 GLSL `std140` 对齐。每个阶段最多 8 个 uniform slot。纹理逻辑第一行是顶部；默认顶点着色器在离屏绘制时翻转 Y，让上传、渲染、采样和回读采用同一个方向。
 
@@ -135,7 +141,50 @@ FileSystem.OpenTitleStorage(storage => {
 | 多窗口、窗口定位、鼠标瞬移、手柄震动、原生文件对话框 | 暂不支持 |
 | IME/移动端软键盘 | 仅基础文字/组合事件，没有完整输入控件 |
 | WebGL context 丢失后的自动重建 | 暂不支持；停止并显示错误，刷新重启 |
-| Foster.Audio / DragonLib Engine 的 Web 后端 | 本目录不包含；各自需要平台适配 |
+| DragonLib Engine / Box2D | `net10.0-browser` 目标链接本项目；`JobScheduler`、`CliConsole` 等线程功能在浏览器上不可用 |
+| Scribe MSDF 文字 | 原生 msdfgen 通过 `ThirdParty/Msdfgen/Msdfgen.Web.targets` 用 emcc 静态链接进 `dotnet.native.wasm` |
+| Foster.Audio 的 Web 后端 | `Audio/Foster.Audio.Web.csproj` + `Audio/Foster.Audio.Web.targets` 静态编译 miniaudio；接入见下文 |
+
+### 音频 WebAssembly 打包
+
+`Audio` 目录复用原 `Foster.Audio` 的托管 API 和 miniaudio/解码器源码，用 WebAudio 输出。原来的桌面项目和原生库不需要修改。Web 游戏项目换成以下引用，并在**最终 WebAssembly 可执行项目**中导入原生编译目标（仅引用 C# 项目不能自动传递原生链接输入）：
+
+```xml
+<ItemGroup>
+  <ProjectReference Include="你的相对路径/Libs/Foster.Web/Audio/Foster.Audio.Web.csproj" />
+</ItemGroup>
+<Import Project="你的相对路径/Libs/Foster.Web/Audio/Foster.Audio.Web.targets" />
+```
+
+使用 Engine 的 `net10.0-browser` 目标时已经间接引用 Web Audio，只需在最终 Web 项目加 `Import`。桌面 Engine 仍引用原 Foster.Audio。同一程序不要同时引用两个 Audio 项目，它们的程序集和命名空间都是 `Foster.Audio`。
+
+游戏继续使用 `Audio.Startup()` / `Audio.Update()` / `Audio.Shutdown()`、`new Sound(...)`、`SoundInstance` 和 `SoundGroup`。原生代码由 .NET `wasm-tools` 工作负载内的 emcc 编译进 `dotnet.native.wasm`，无需复制桌面的 `.dll/.so`，也无需另外安装 Emscripten。第一次发布会重新链接运行时，耗时较长。
+
+音频文件通过现有 `assets.json` 写入虚拟文件系统，才能沿用路径构造函数：
+
+```json
+[{ "path": "Content/music.ogg", "url": "./Content/music.ogg", "vfs": true }]
+```
+
+实际文件也必须作为 `Content` 打包到站点；随后 `new Sound("Content/music.ogg")` 可直接使用。`Sound(byte[])` 也可继续使用。源码保留 WAV、MP3、FLAC、Vorbis 和 QOA 解码器；实际浏览器验证范围见示例说明。
+
+浏览器限制：
+
+- 初始化后需要一次用户点击/触摸才能出声，miniaudio 会自动尝试解锁音频；建议游戏有“点击开始”界面。
+- 当前使用单线程 WebAudio ScriptProcessor 后端，资源任务由浏览器定时器处理，不要求跨源隔离响应头。主线程长时间阻塞、后台标签页节流可能造成卡音；不适合在每帧做重解码。
+- `SoundLoadingMethod.Stream` 从预加载的内存文件系统分段解码，不是从网络边下载边播放。
+- 退出时先释放 `Sound` / `SoundGroup`，再 `Audio.Shutdown()`。适配层会关闭设备、停止资源任务并释放资源管理器。
+
+音频验证示例（无需音频素材，启动时生成 WAV）：
+
+```powershell
+./Libs/Foster.Web/build.ps1 -Project ./Libs/Foster.Web/Samples/AudioDemo/AudioDemo.csproj -Output ./Libs/Foster.Web/artifacts/audio
+python -m http.server 8140 --bind 127.0.0.1 --directory ./Libs/Foster.Web/artifacts/audio/wwwroot
+```
+
+打开 `http://127.0.0.1:8140/`，点击 Play 或 Play Stream。页面检查 WAV 解码、五种加载模式、循环/分组/空间参数，并显示音频回调次数和实际输出 PCM 峰值；Pause、Seek、Shutdown、Restart 用于验证生命周期。已在桌面 Chromium 中验证普通播放、流式循环持续输出非零 PCM、暂停归零、跳转及关闭后重启；Engine 两个目标均编译通过。非 WAV 格式、移动端浏览器和 AOT 发布尚未在此示例中验证。
+
+实现依据：[.NET 原生 WebAssembly 依赖](https://learn.microsoft.com/en-us/aspnet/core/blazor/webassembly-native-dependencies?view=aspnetcore-10.0)、[miniaudio 单线程资源管理示例](https://miniaud.io/docs/examples/resource_manager.html)。复用源码及第三方许可证见 `../Foster.Audio/LICENSE` 和 `../Foster.Audio/Platform/src/third_party/`。
 
 本后端的 C# 绘制参数通过 JSON 传给 JS，GPU 数据通过 `MemoryView` 传输；这是可运行的 2D 起点，大量 draw call 的性能优化可以继续在本目录内推进。
 

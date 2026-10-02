@@ -1,16 +1,26 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <TargetFramework>net10.0</TargetFramework>
+        <!-- net10.0-browser 供 WebAssembly 游戏引用：同一份源码改为链接 Foster.Web 后端。
+             引用方只构建与自己 TFM 匹配的一份，桌面 run/publish 不会多编译 browser 版本。 -->
+        <TargetFrameworks>net10.0;net10.0-browser</TargetFrameworks>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     </PropertyGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\Foster.Audio\Foster.Audio\Foster.Audio.csproj" />
-      <ProjectReference Include="..\Foster\Framework\Foster.Framework.csproj" />
       <ProjectReference Include="..\ThirdParty\Prowl\Quill\Quill.csproj" />
+    </ItemGroup>
+
+    <!-- 桌面 Foster 与 Foster.Web 的程序集同名(Foster.Framework)，只能二选一。 -->
+    <ItemGroup Condition="'$([MSBuild]::GetTargetPlatformIdentifier($(TargetFramework)))' != 'browser'">
+      <ProjectReference Include="..\Foster\Framework\Foster.Framework.csproj" />
+      <ProjectReference Include="..\Foster.Audio\Foster.Audio\Foster.Audio.csproj" />
+    </ItemGroup>
+    <ItemGroup Condition="'$([MSBuild]::GetTargetPlatformIdentifier($(TargetFramework)))' == 'browser'">
+      <ProjectReference Include="..\Foster.Web\Framework\Foster.Framework.Web.csproj" />
+      <ProjectReference Include="..\Foster.Web\Audio\Foster.Audio.Web.csproj" />
     </ItemGroup>
 
     <ItemGroup>
