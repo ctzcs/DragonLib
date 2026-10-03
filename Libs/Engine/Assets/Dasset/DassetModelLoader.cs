@@ -11,25 +11,25 @@ namespace Engine.Assets.Dasset;
 public static class DassetModelLoader
 {
     /// <summary>从存储读取(桌面 LocalStorage、Web 预加载的 title storage 都可，见 <see cref="GameStorage"/>)。</summary>
-    public static DassetModelAsset Load(GraphicsDevice device, StorageContainer storage, string path)
+    public static DassetModelAsset Load(GraphicsDevice device, StorageContainer storage, string path, bool retainCpuGeometry = false)
     {
         ArgumentNullException.ThrowIfNull(storage);
         using var stream = storage.OpenRead(path);
-        return Load(device, DassetReader.Read(stream, path), Path.GetFileName(path));
+        return Load(device, DassetReader.Read(stream, path), Path.GetFileName(path), retainCpuGeometry);
     }
 
-    public static DassetModelAsset Load(GraphicsDevice device, string filePath, string? assetName = null)
+    public static DassetModelAsset Load(GraphicsDevice device, string filePath, string? assetName = null, bool retainCpuGeometry = false)
     {
         var model = DassetReader.Read(filePath);
-        return Load(device, model, assetName ?? Path.GetFileName(filePath));
+        return Load(device, model, assetName ?? Path.GetFileName(filePath), retainCpuGeometry);
     }
 
-    public static DassetModelAsset Load(GraphicsDevice device, DassetModel model, string assetName)
+    public static DassetModelAsset Load(GraphicsDevice device, DassetModel model, string assetName, bool retainCpuGeometry = false)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(model);
 
-        var asset = new DassetModelAsset { Name = assetName };
+        var asset = new DassetModelAsset { Name = assetName, CpuGeometry = retainCpuGeometry ? model.Primitives.ToArray() : null };
 
         // 贴图表按下标原样上传，材质里的索引才能对齐。cook 端只收 PNG/JPG（Foster Image 能处理的格式）。
         var colorUses = new bool[model.Textures.Count];

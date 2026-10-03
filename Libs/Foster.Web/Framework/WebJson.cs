@@ -22,7 +22,7 @@ internal sealed record DrawDesc(
     int IndexCount, int IndexOffset, int VertexCount, int VertexOffset, int InstanceCount,
     int[]? viewport, int[]? scissor,
     int[] blend, float[] blendColor,
-    int cull, bool DepthTestEnabled, bool DepthWriteEnabled, int depthCompare,
+    int topology, int cull, bool DepthTestEnabled, bool DepthWriteEnabled, int depthCompare,
     bool StencilTestEnabled, byte StencilCompareMask, byte StencilWriteMask, byte StencilReferenceValue,
     int[] frontStencil, int[] backStencil);
 

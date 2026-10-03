@@ -405,8 +405,8 @@ export function createFosterBackend(canvas, reportError = console.error) {
     function draw() {
         const c = currentCommand;
         if (c.InstanceCount <= 0) return;
-        if (c.indexBuffer) gl.drawElementsInstanced(gl.TRIANGLES, c.IndexCount, c.indexFormat === 0 ? gl.UNSIGNED_SHORT : gl.UNSIGNED_INT, c.IndexOffset * (c.indexFormat === 0 ? 2 : 4), c.InstanceCount);
-        else gl.drawArraysInstanced(gl.TRIANGLES, c.VertexOffset, c.VertexCount, c.InstanceCount);
+        if (c.indexBuffer) gl.drawElementsInstanced(c.topology === 1 ? gl.LINES : gl.TRIANGLES, c.IndexCount, c.indexFormat === 0 ? gl.UNSIGNED_SHORT : gl.UNSIGNED_INT, c.IndexOffset * (c.indexFormat === 0 ? 2 : 4), c.InstanceCount);
+        else gl.drawArraysInstanced(c.topology === 1 ? gl.LINES : gl.TRIANGLES, c.VertexOffset, c.VertexCount, c.InstanceCount);
     }
     function clear(id, json, depth, stencil, mask) {
         const t = target(id), colors = JSON.parse(json); if (t) checkFramebuffer();

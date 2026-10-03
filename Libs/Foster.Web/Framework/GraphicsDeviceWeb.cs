@@ -110,7 +110,7 @@ internal sealed class GraphicsDeviceWeb(App app) : GraphicsDevice(app)
             viewport: command.Viewport is {} vp ? Region(vp) : null, scissor: command.Scissor is {} sc ? Region(sc) : null,
             blend: [(int)blend.ColorSource, (int)blend.ColorDestination, (int)blend.ColorOperation, (int)blend.AlphaSource, (int)blend.AlphaDestination, (int)blend.AlphaOperation, (int)blend.Mask],
             blendColor: [blend.Color.R / 255f, blend.Color.G / 255f, blend.Color.B / 255f, blend.Color.A / 255f],
-            cull: (int)command.CullMode, DepthTestEnabled: command.DepthTestEnabled, DepthWriteEnabled: command.DepthWriteEnabled,
+            topology: (int)command.Topology, cull: (int)command.CullMode, DepthTestEnabled: command.DepthTestEnabled, DepthWriteEnabled: command.DepthWriteEnabled,
             depthCompare: (int)command.DepthCompare,
             StencilTestEnabled: command.StencilTestEnabled, StencilCompareMask: command.StencilCompareMask,
             StencilWriteMask: command.StencilWriteMask, StencilReferenceValue: command.StencilReferenceValue,

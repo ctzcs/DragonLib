@@ -1763,6 +1763,7 @@ internal unsafe class GraphicsDeviceSDL(App app, GraphicsDriver preferred) : Gra
 			command.BlendMode
 		);
 
+		hash = HashCode.Combine(hash, command.Topology); // DragonLib 扩展：线与三角形不能共享管线。
 		if (command.StencilTestEnabled)
 			hash = HashCode.Combine(
 				hash,
@@ -1866,7 +1867,9 @@ internal unsafe class GraphicsDeviceSDL(App app, GraphicsDriver preferred) : Gra
 					vertex_attributes = vertexAttributes,
 					num_vertex_attributes = (uint)vertexAttributeCount
 				},
-				primitive_type = SDL_GPUPrimitiveType.SDL_GPU_PRIMITIVETYPE_TRIANGLELIST,
+				primitive_type = command.Topology == PrimitiveTopology.Lines
+                    ? SDL_GPUPrimitiveType.SDL_GPU_PRIMITIVETYPE_LINELIST
+                    : SDL_GPUPrimitiveType.SDL_GPU_PRIMITIVETYPE_TRIANGLELIST,
 				rasterizer_state = new()
 				{
 					fill_mode = SDL_GPUFillMode.SDL_GPU_FILLMODE_FILL,

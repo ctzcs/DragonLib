@@ -158,6 +158,21 @@ public sealed class Camera3D : ICamera
     public Frustum3D GetFrustum()
         => Frustum3D.FromViewProjection(ViewProjection);
 
+    public Ray3D ScreenPointToRay(Vector2 pixel)
+    {
+        if (ViewportSize.X <= 0 || ViewportSize.Y <= 0)
+            throw new InvalidOperationException("Set a positive camera viewport before picking.");
+        if (!Matrix4x4.Invert(ViewProjection, out var inverse))
+            throw new InvalidOperationException("Camera ViewProjection is singular.");
+        var x = pixel.X / ViewportSize.X * 2 - 1;
+        var y = 1 - pixel.Y / ViewportSize.Y * 2;
+        var near = Vector4.Transform(new Vector4(x, y, 0, 1), inverse);
+        var far = Vector4.Transform(new Vector4(x, y, 1, 1), inverse);
+        var a = new Vector3(near.X, near.Y, near.Z) / near.W;
+        var b = new Vector3(far.X, far.Y, far.Z) / far.W;
+        return new Ray3D(a, b - a);
+    }
+
     public void Update()
     {
         if (_viewportSize.X <= 0 || _viewportSize.Y <= 0)

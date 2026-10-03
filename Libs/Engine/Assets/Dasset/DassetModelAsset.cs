@@ -36,6 +36,8 @@ public sealed class DassetModelAsset : IAsset, IDisposable
     private readonly Dictionary<int, Texture> _colorTextures = [];
 
     public IReadOnlyList<DassetMeshPrimitive> Primitives => _primitives;
+    /// <summary>仅 loader 开启 retainCpuGeometry 时保留，避免普通模型常驻两份几何数据。</summary>
+    public IReadOnlyList<DassetPrimitive>? CpuGeometry { get; internal set; }
 
     /// <summary>GPU 贴图表，下标与 <see cref="DassetMaterial.AlbedoTextureIndex"/> 等一一对应。</summary>
     public IReadOnlyList<Texture> Textures => _textures;
@@ -70,6 +72,7 @@ public sealed class DassetModelAsset : IAsset, IDisposable
         foreach (var primitive in _primitives)
             primitive.Mesh.Dispose();
         _primitives.Clear();
+        CpuGeometry = null;
 
         foreach (var texture in _textures)
             texture.Dispose();
