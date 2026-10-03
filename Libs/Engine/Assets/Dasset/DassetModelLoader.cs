@@ -31,7 +31,7 @@ public static class DassetModelLoader
 
         var asset = new DassetModelAsset { Name = assetName, CpuGeometry = retainCpuGeometry ? model.Primitives.ToArray() : null };
 
-        // 贴图表按下标原样上传，材质里的索引才能对齐。cook 端只收 PNG/JPG（Foster Image 能处理的格式）。
+        // 贴图表按下标原样上传；新版 cooker 将 JPEG 转 PNG，匹配 Foster 的解码能力。
         var colorUses = new bool[model.Textures.Count];
         var dataUses = new bool[model.Textures.Count];
         foreach (var primitive in model.Primitives)
@@ -45,6 +45,8 @@ public static class DassetModelLoader
         for (var i = 0; i < model.Textures.Count; i++)
         {
             var entry = model.Textures[i];
+            if (entry.Codec == DassetTextureCodec.Jpg && !OperatingSystem.IsBrowser())
+                throw new InvalidDataException($"Texture '{entry.Name}' in '{assetName}' uses JPEG. Re-cook the source glTF to convert textures to PNG for Foster.");
             using var image = new Image(entry.Bytes);
             var srgb = colorUses[i] && device.IsTextureFormatSupported(TextureFormat.R8G8B8A8Srgb);
             var format = srgb && !dataUses[i] ? TextureFormat.R8G8B8A8Srgb : TextureFormat.Color;

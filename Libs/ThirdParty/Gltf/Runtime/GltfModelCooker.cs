@@ -22,7 +22,8 @@ namespace DragonLib.Gltf;
 /// - 资产绕序：从外侧看 CCW；glTF 绕序保留，仅负行列式的节点矩阵翻转补偿。
 ///   GPU 上传时由 Engine 的 MeshUpload3D 适配 Foster 默认正面（桌面 CW、Web CCW）。
 /// - 缺 NORMAL 时累积面法线补齐；缺 TANGENT 且有 UV 时按 UV 梯度计算（w = 手性符号）。
-/// - 贴图只收 PNG/JPG 原始字节（不解码，运行时 Foster Image 解码路径不变）；webp/dds/ktx2 跳过并警告。
+/// - PNG 原样保留，JPEG 在离线 cook 转 PNG；运行时沿用 Foster Image 的 PNG 解码路径。
+///   webp/dds/ktx2 跳过并警告。
 /// - AlphaMode/AlphaCutoff 从 glTF 材质读出写入 DassetMaterial；逐 primitive 与模型级 AABB 一并算出
 ///   （蒙皮 primitive 是 bind pose 包围盒，动画姿态可能超出）。
 /// </summary>
@@ -555,7 +556,7 @@ public static class GltfModelCooker
         return result;
     }
 
-    /// <summary>把 glTF image 的原始字节收进贴图表（按 image 去重），返回表内下标；不收则返回 -1。</summary>
+    /// <summary>把 glTF image 收进贴图表（按 image 去重）；JPEG 转 PNG，不收则返回 -1。</summary>
     private static int CookTexture(
         SchemaTexture? texture,
         DassetModel model,
@@ -576,12 +577,7 @@ public static class GltfModelCooker
         if (content.IsEmpty)
             return -1;
 
-        DassetTextureCodec codec;
-        if (content.IsPng)
-            codec = DassetTextureCodec.Png;
-        else if (content.IsJpg)
-            codec = DassetTextureCodec.Jpg;
-        else
+        if (!content.IsPng && !content.IsJpg)
         {
             Log.Warning($"GltfModelCooker: 贴图 '{image.Name}' 是 {content.FileExtension ?? "未知格式"}，只支持 PNG/JPG，已跳过。");
             return -1;
@@ -589,11 +585,22 @@ public static class GltfModelCooker
 
         // image.Content 是 MemoryImage 包装，.Content 才是文件字节。
         var bytes = content.Content.ToArray();
+        if (content.IsJpg)
+        {
+            // 桌面 Foster 只解码 PNG/QOI；在离线阶段转换，避免合法 JPEG 导致整模型加载失败。
+            // 不做色彩空间或翻转变换，颜色/数据贴图的用途由运行时分别决定。
+            var decoded = StbImageSharp.ImageResult.FromMemory(bytes, StbImageSharp.ColorComponents.RedGreenBlueAlpha);
+            var pixels = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, Color>(decoded.Data).ToArray();
+            using var png = new Foster.Framework.Image(decoded.Width, decoded.Height, pixels);
+            using var encoded = new MemoryStream();
+            png.WritePng(encoded);
+            bytes = encoded.ToArray();
+        }
 
         var entry = new DassetTextureEntry
         {
             Name = image.Name ?? $"image{index}",
-            Codec = codec,
+            Codec = DassetTextureCodec.Png,
             Bytes = bytes,
         };
         model.Textures.Add(entry);

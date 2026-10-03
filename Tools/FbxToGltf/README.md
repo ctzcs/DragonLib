@@ -9,7 +9,8 @@ fbx →(Blender, convert)→ .glb →(DassetCompiler, cook)→ .dasset → 运�
 
 - FBX 是 Autodesk 私有格式、没有官方 .NET SDK，按业界惯例在导入期转成 glTF；
 - SharpGLTF 不进运行时热路径：`.glb` 再被 cook 成 `.dasset`（顶点/索引整块二进制 +
-  贴图原始 PNG/JPG 字节 + 材质参数 + AABB），运行时 `DassetModelScanner` 直读上传 GPU。
+  贴图 PNG 字节 + 材质参数 + AABB），运行时 `DassetModelScanner` 直读上传 GPU。
+  输入 JPEG 在 cook 阶段解码转 PNG，匹配桌面 Foster 的 PNG/QOI 解码能力。
 
 两级产物都放在源文件同目录，`DassetModelScanner` 启动时会自动注册（资产名 =
 相对 `Resources` 的路径去扩展名，如 `Models/character`）。
@@ -48,6 +49,8 @@ dassetcompiler --scan <dir>                        # 目录递归，增量
   "分"级精度（批处理 `%~t` 的固有限制）。
 - cook（`.glb → .dasset`）：`.dasset` 不存在或比 `.glb` 旧才重转（UTC 时间戳比较）。
 - 要强制重转，删掉对应产物文件即可。
+- 单文件模式始终重新 cook。升级 cooker 后，旧 `.dasset` 若含 JPEG 贴图，需用单文件模式重烘焙；
+  `--scan` 的时间戳检查不会自动发现编码策略更新。
 
 ## 依赖
 
@@ -59,8 +62,9 @@ dassetcompiler --scan <dir>                        # 目录递归，增量
 - 转换质量取决于 Blender 的 FBX 导入器（社区长期维护，覆盖二进制 FBX 7.x 的
   绝大多数导出；静态节点的变换烘焙进顶点；蒙皮/动画由 .dasset v2 消费：
   skin/剪辑进入骨架表与剪辑表，蒙皮 primitive 顶点保持 bind 空间）。
-- 贴图只收 PNG/JPG 原始字节（运行时 Foster Image 解码路径不变）；webp/dds/ktx2
-  在 cook 时跳过并警告。
+- PNG 原始字节保留，JPEG 使用 StbImageSharp 在离线阶段解码，再用 Foster 编码 PNG；
+  保持像素、行序与 alpha，不额外应用 gamma 或颜色配置，颜色/数据用途仍由运行时区分。
+  webp/dds/ktx2 在 cook 时跳过并警告；无需修改 Foster 的运行时解码器。
 - 材质的 AlphaMode/AlphaCutoff 会写进 .dasset；渲染端 Opaque/Mask 走不透明队列
   （Mask 由 shader clip），Blend 走透明队列（back-to-front、不写深度）。
 

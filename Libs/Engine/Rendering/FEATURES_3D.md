@@ -8,6 +8,10 @@
 
 检查 GltfScene 的 Cascaded shadows / Cascade colors 开关；GltfModel 的 DamagedHelmet 开关检查 MR、AO、自发光。`Rendering3D.Smoke` 在 D3D12/Vulkan 实际读回验证 MyFoster 原生 CW、Engine 索引上传适配、HDR/sRGB/mipmap，以及非对称遮挡物在简单阴影/CSM 中的上下投影方向。
 
+glTF 的 JPEG 贴图在 cook 阶段转 PNG，桌面 Foster 原生不解码 JPEG。旧 JPEG `.dasset` 需重 cook。
+DamagedHelmet 资源已更新，GPU smoke 加载实际资产并以 demo 相机读回；在输出目录生成 `helmet-D3D12.png` / `helmet-Vulkan.png`。
+demo 加载失败时保留当前模型并显示错误，模型切换和返回场景都会保持对应取景。
+
 `Camera3D.ScreenPointToRay(pixel)` 接收绘制目标的像素坐标，原点在 near 平面，方向已归一化。`Intersections3D` 返回世界单位距离，AABB/球内起点返回 0，三角形支持双面，平面用点和法线定义。逐三角形拾取用 `Primitive`，蒙皮可传当前 palette；`DassetModelLoader.Load(..., retainCpuGeometry: true)` 才会保留 `CpuGeometry`。
 
 `DebugDraw3D` 提供 Line/Aabb/Sphere/Frustum/Axis/Grid/Skeleton；排队后 `Render(target, camera)` 会清空。`DepthTestEnabled` 控制遮挡，始终不写深度。Skeleton 默认接收 palette，通过 inverse IBM 重建 globals；也可传 `isPalette: false`。GltfScene 左键选择实体并显示 AABB，Skeletons / Light ranges 开关显示调试线。

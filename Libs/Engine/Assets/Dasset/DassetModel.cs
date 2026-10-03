@@ -45,7 +45,7 @@ public struct DassetBounds
     }
 }
 
-/// <summary>贴图表条目：原始 PNG/JPG 字节（不解码），运行时再由 Foster Image 解码上传。</summary>
+/// <summary>贴图表条目：编码后的 PNG 字节，运行时由 Foster Image 解码；JPEG 在 cook 阶段转换。</summary>
 public sealed class DassetTextureEntry
 {
     public string Name = string.Empty;

@@ -33,7 +33,7 @@ public enum DassetAlphaMode
     Blend = 2,
 }
 
-/// <summary>贴图字节的原编码（不解码，运行时仍走 Foster Image 解码路径）。</summary>
+/// <summary>贴图字节编码。新版 cooker 将 JPEG 转 PNG；Jpg 值保留以读取旧资产数据。</summary>
 public enum DassetTextureCodec
 {
     Png = 0,
