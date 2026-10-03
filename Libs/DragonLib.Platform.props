@@ -1,0 +1,14 @@
+<Project>
+  <!-- Web(WebAssembly)目标识别：多目标库的 net10.0-browser 内部构建里 IsBrowser=true，并定义 BROWSER 编译符号。
+       项目文件用 '$(IsBrowser)' == 'true' 选择 Foster.Web 等浏览器版依赖，代码用 #if BROWSER。
+       DragonLib 的 Directory.Build.props 导入本文件；使用 DragonLib 的游戏仓库也在自己的 Directory.Build.props 里导入。 -->
+  <PropertyGroup Condition="'$(TargetFramework)' != '' And $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'browser'">
+    <IsBrowser>true</IsBrowser>
+    <DefineConstants>$(DefineConstants);BROWSER</DefineConstants>
+  </PropertyGroup>
+  <!-- Web 构建启用 DragonLib 分析器(DLWEB001：对自定义结构体用 LINQ 在 wasm AOT 下会崩溃)。 -->
+  <ItemGroup Condition="'$(IsBrowser)' == 'true'">
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../Tools/Analyzers/DragonLib.Analyzers.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

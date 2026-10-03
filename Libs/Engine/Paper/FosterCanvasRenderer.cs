@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
+using Engine.Rendering;
 using Foster.Framework;
 using System.Runtime.InteropServices;
 using Prowl.Quill;
@@ -33,7 +34,8 @@ public sealed class FosterCanvasRenderer : ICanvasRenderer
 
 	private readonly GraphicsDevice _device;
 	private readonly Mesh<PosTexColVertex, uint> _mesh;
-	private readonly Material _material;
+	private readonly EmbeddedShaderMaterial _shader;
+	private Material _material => _shader.Material;
 	private readonly Texture _whiteTexture;
 	private readonly List<Texture> _ownedTextures = [];
 	private readonly TextureSampler _fontSampler = new(TextureFilter.Linear, TextureWrap.Clamp, TextureWrap.Clamp);
@@ -64,7 +66,9 @@ public sealed class FosterCanvasRenderer : ICanvasRenderer
 		Target = target;
 
 		_mesh = new Mesh<PosTexColVertex, uint>(device, "Quill Mesh");
-		_material = CreateMaterial(device);
+		// 按当前驱动加载 Shaders/QuillCanvas.{vertex,fragment}.{spv|dxil|msl|glsl}。
+		_shader = EmbeddedShaderMaterial.Load(device, typeof(FosterCanvasRenderer).Assembly, "Shaders/QuillCanvas",
+			new ShaderStageSpec(2, 1, "fragment_main"), new ShaderStageSpec(0, 1, "vertex_main"));
 
 		_whiteTexture = new Texture(device, 1, 1, [Color.White], name: "Quill White");
 		_ownedTextures.Add(_whiteTexture);
@@ -164,8 +168,7 @@ public sealed class FosterCanvasRenderer : ICanvasRenderer
 	public void Dispose()
 	{
 		_mesh.Dispose();
-		_material.Vertex.Shader?.Dispose();
-		_material.Fragment.Shader?.Dispose();
+		_shader.Dispose();
 		foreach (var texture in _ownedTextures)
 		{
 			if (!texture.IsDisposed)
@@ -198,29 +201,6 @@ public sealed class FosterCanvasRenderer : ICanvasRenderer
 
 		_mesh.SetVertices(_vertexScratch.AsSpan(0, vertexCount));
 		_mesh.SetIndices(_indexScratch.AsSpan(0, indexCount));
-	}
-
-	private static Material CreateMaterial(GraphicsDevice device)
-	{
-		var extension = device.Driver.GetShaderExtension();
-		var assembly = typeof(FosterCanvasRenderer).Assembly;
-
-		return new Material(
-			vertexShader: new Shader(
-				device,
-				ShaderStage.Vertex,
-				Calc.ReadEmbeddedBytes(assembly, $"Shaders/QuillCanvas.vertex.{extension}"),
-				uniformBufferCount: 1,
-				entryPoint: "vertex_main",
-				name: "QuillCanvasVertex"),
-			fragmentShader: new Shader(
-				device,
-				ShaderStage.Fragment,
-				Calc.ReadEmbeddedBytes(assembly, $"Shaders/QuillCanvas.fragment.{extension}"),
-				samplerCount: 2,
-				uniformBufferCount: 1,
-				entryPoint: "fragment_main",
-				name: "QuillCanvasFragment"));
 	}
 
 	private static RectInt? TryGetScissor(in DrawCall call, Point2 targetSize, float framebufferScale)

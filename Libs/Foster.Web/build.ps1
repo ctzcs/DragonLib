@@ -7,8 +7,15 @@ param(
 $ErrorActionPreference = 'Stop'
 $taskProjectPath = (Resolve-Path -LiteralPath $Project).Path
 $taskOutputPath = [System.IO.Path]::GetFullPath($Output)
+# Publish never prunes its output, so files from earlier publishes (hashed runtime files, renamed assets) pile up.
+# Clear generated site folders only: a wwwroot that contains _framework.
+Get-ChildItem -LiteralPath $taskOutputPath -Directory -Recurse -Filter wwwroot -ErrorAction SilentlyContinue |
+    Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName '_framework') } |
+    ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force }
 $taskArguments = @('publish', $taskProjectPath, '-c', $Configuration, '-o', $taskOutputPath, '--nologo')
-if ($Aot) { $taskArguments += '-p:RunAOTCompilation=true' }
+# AOT and interpreter publishes must not share intermediates: the incremental native link does not notice the
+# switch and reuses objects from the other mode, and the page then fails while loading the runtime.
+if ($Aot) { $taskArguments += @('-p:RunAOTCompilation=true', "-p:IntermediateOutputPath=obj/$Configuration-aot/") }
 & dotnet @taskArguments
 if ($LASTEXITCODE -ne 0) { throw 'Web publish failed. Install the matching .NET wasm-tools workload if it is missing.' }
 $taskIndexFiles = @(Get-ChildItem -LiteralPath $taskOutputPath -Filter index.html -Recurse)

@@ -1,5 +1,4 @@
 using System.Numerics;
-using Engine.Threading;
 using global::Box2D.NET;
 using static global::Box2D.NET.B2Types;
 using static global::Box2D.NET.B2Worlds;
@@ -27,8 +26,8 @@ public sealed class Box2DWorld : IDisposable
     {
     }
 
-    [System.Runtime.Versioning.UnsupportedOSPlatform("browser")]
-    public Box2DWorld(Vector2 gravity, JobScheduler scheduler, int workerCount)
+    /// <summary>Multithreaded solver; tasks run on <paramref name="scheduler"/> (see <see cref="IBox2DTaskScheduler"/>).</summary>
+    public Box2DWorld(Vector2 gravity, IBox2DTaskScheduler scheduler, int workerCount)
         : this(CreateThreadedDefinition(gravity, scheduler, workerCount))
     {
     }
@@ -70,8 +69,7 @@ public sealed class Box2DWorld : IDisposable
         return definition;
     }
 
-    [System.Runtime.Versioning.UnsupportedOSPlatform("browser")]
-    private static B2WorldDef CreateThreadedDefinition(Vector2 gravity, JobScheduler scheduler, int workerCount)
+    private static B2WorldDef CreateThreadedDefinition(Vector2 gravity, IBox2DTaskScheduler scheduler, int workerCount)
     {
         ArgumentNullException.ThrowIfNull(scheduler);
         if (workerCount < 1)

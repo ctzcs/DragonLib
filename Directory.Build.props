@@ -9,4 +9,6 @@
         <NoWarn>$(NoWarn);CS8600;CS8601;CS8602;CS8603;CS8604;CS8618;CS8625;CS8765;CS8767;CS0162;CS0414;CA2265</NoWarn>
     </PropertyGroup>
 
+    <Import Project="Libs/DragonLib.Platform.props" />
+
 </Project>

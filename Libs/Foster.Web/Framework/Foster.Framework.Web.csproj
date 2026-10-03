@@ -7,6 +7,8 @@
     <PackageId>FosterFramework.Web</PackageId>
     <Version>0.3.0</Version>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Like desktop Foster: browser JSON goes through the source-generated WebJson context, so AOT may trim this assembly. -->
+    <IsAotCompatible>true</IsAotCompatible>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
@@ -14,13 +16,18 @@
     <EnableDefaultEmbeddedResourceItems>false</EnableDefaultEmbeddedResourceItems>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="$(FosterSource)/**/*.cs"
-      Exclude="$(FosterSource)/obj/**/*.cs;$(FosterSource)/bin/**/*.cs;$(FosterSource)/App.cs;$(FosterSource)/Window.cs;$(FosterSource)/Input/Cursor.cs;$(FosterSource)/Storage/Storage.cs;$(FosterSource)/Storage/FileSystem.cs;$(FosterSource)/Internal/GraphicsDeviceSDL.cs;$(FosterSource)/Internal/InputProviderSDL.cs;$(FosterSource)/Internal/ThirdParty/SDL3.cs;$(FosterSource)/Internal/ImageData.cs;$(FosterSource)/Graphics/Enums/GraphicsDriver.cs"
-      Link="Shared/%(RecursiveDir)%(Filename)%(Extension)" />
-    <Compile Remove="$(FosterSource)/.codex-build/**/*.cs" />
-    <Compile Remove="$(FosterSource)/Graphics/SpriteFont.cs" />
+    <!-- Shared Foster sources. A file in this folder with the same name as a Foster source replaces it
+         (App.cs, Window.cs, Storage.cs ...), so the exclusions follow the overrides automatically.
+         Only the SDL backends have no web counterpart and are listed explicitly. -->
+    <_FosterWebOverride Include="*.cs" />
+    <_FosterShared Include="$(FosterSource)/**/*.cs"
+      Exclude="$(FosterSource)/obj/**;$(FosterSource)/bin/**;$(FosterSource)/.codex-build/**;$(FosterSource)/Internal/GraphicsDeviceSDL.cs;$(FosterSource)/Internal/InputProviderSDL.cs;$(FosterSource)/Internal/ThirdParty/SDL3.cs" />
+    <_FosterShared Remove="@(_FosterWebOverride)" MatchOnMetadata="Filename" />
+    <Compile Include="@(_FosterShared)" Link="Shared/%(RecursiveDir)%(Filename)%(Extension)" />
     <EmbeddedResource Include="../Shaders/*.glsl" LogicalName="Shaders/%(Filename)%(Extension)" />
     <EmbeddedResource Include="$(FosterSource)/Content/Fonts/Compiled/*" LogicalName="Fonts/%(Filename)%(Extension)" />
+    <!-- 共享的 Foster 源码在这里只为浏览器编译：启用 DLWEB001(wasm AOT 下自定义结构体 LINQ 崩溃)。 -->
+    <ProjectReference Include="../../../Tools/Analyzers/DragonLib.Analyzers.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" PrivateAssets="all" />
     <None Include="../README.md" Pack="true" PackagePath="/" />
     <None Include="../LICENSE" Pack="true" PackagePath="/" />
     <None Include="../Web/**" Pack="true" PackagePath="web/%(RecursiveDir)%(Filename)%(Extension)" />

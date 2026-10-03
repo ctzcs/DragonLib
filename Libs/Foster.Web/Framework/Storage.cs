@@ -28,7 +28,7 @@ public sealed class Storage : StorageContainer
     private string[] Files()
     {
         ObjectDisposedException.ThrowIf(disposed, this);
-        return Writable ? JsonSerializer.Deserialize<string[]>(WebInterop.StorageKeys(prefix))!.Select(k => k[prefix.Length..]).ToArray()
+        return Writable ? JsonSerializer.Deserialize(WebInterop.StorageKeys(prefix), WebJson.Default.StringArray)!.Select(k => k[prefix.Length..]).ToArray()
             : Assets.Keys.Where(k => k.StartsWith(prefix, StringComparison.Ordinal)).Select(k => k[prefix.Length..]).ToArray();
     }
     public override bool FileExists(string path) => Writable ? WebInterop.StorageGet(Key(path)) != null : Assets.ContainsKey(Key(path));

@@ -4,7 +4,7 @@ namespace Engine;
     //codepoints
         int[] codepoints = FontUtility.GetCodepoints(0, FontLanguage.SimplifiedChinese);
     //UI Font
-        var storage = StorageUtils.GetDevGameRoot;
+        var storage = GameStorage.Resources;
         byte[] fontData = storage.ReadAllBytes("Resources/Fonts/MapleMono-CN-Medium.ttf");
         _imGui = new Renderer(this, fontData, codepoints);
     //Game Font

@@ -411,6 +411,17 @@ public class SpriteFont : IDisposable
 			if (!ch.Visible)
 				continue;
 
+			// The browser has no worker pool to wait on (Task.WaitAll throws there): rasterize in place.
+			if (OperatingSystem.IsBrowser())
+			{
+				var buffer = buffers.Value;
+				if (buffer == null || buffer.Length < ch.Width * ch.Height)
+					buffers.Value = buffer = new Color[ch.Width * ch.Height * 2];
+				font.GetPixels(ch, buffer);
+				packer.Add(codepoint, string.Empty, new RectInt(0, 0, ch.Width, ch.Height), ch.Width, buffer);
+				continue;
+			}
+
 			// blit and add to packer
 			tasks.Add(Task.Run(() =>
 			{
@@ -432,7 +443,8 @@ public class SpriteFont : IDisposable
 		}
 
 		// wait on all blitting
-		Task.WaitAll([..tasks]);
+		if (!OperatingSystem.IsBrowser())
+			Task.WaitAll([..tasks]);
 		buffers.Dispose();
 
 		// get packed textures
@@ -443,6 +455,7 @@ public class SpriteFont : IDisposable
 			if (premultiplyAlpha)
 				page.Premultiply();
 			generatedTextures.Add(new(GraphicsDevice, page));
+			page.Dispose(); // the texture holds its own copy
 		}
 
 		// update character subtextures

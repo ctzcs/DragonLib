@@ -10,11 +10,12 @@ namespace Engine.Assets.Dasset;
 /// </summary>
 public static class DassetModelLoader
 {
-    public static DassetModelAsset Load(GraphicsDevice device, LocalStorage storage, string path)
+    /// <summary>从存储读取(桌面 LocalStorage、Web 预加载的 title storage 都可，见 <see cref="GameStorage"/>)。</summary>
+    public static DassetModelAsset Load(GraphicsDevice device, StorageContainer storage, string path)
     {
         ArgumentNullException.ThrowIfNull(storage);
-        var fullPath = Path.IsPathRooted(path) ? path : Path.Combine(storage.RootPath, path);
-        return Load(device, fullPath, path);
+        using var stream = storage.OpenRead(path);
+        return Load(device, DassetReader.Read(stream, path), Path.GetFileName(path));
     }
 
     public static DassetModelAsset Load(GraphicsDevice device, string filePath, string? assetName = null)

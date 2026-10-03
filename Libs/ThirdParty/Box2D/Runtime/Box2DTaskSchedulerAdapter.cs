@@ -1,11 +1,9 @@
 using System.Collections.Concurrent;
 using Box2D.NET;
-using Engine.Threading;
 
 namespace DragonLib.Box2D;
 
-/// <summary>Bridges Box2D task callbacks to the shared engine scheduler.</summary>
-[System.Runtime.Versioning.UnsupportedOSPlatform("browser")]
+/// <summary>Bridges Box2D task callbacks to an <see cref="IBox2DTaskScheduler"/>.</summary>
 public sealed class Box2DTaskSchedulerAdapter
 {
     private static readonly ConcurrentBag<Box2DTaskHandle> HandlePool = new();
@@ -16,7 +14,7 @@ public sealed class Box2DTaskSchedulerAdapter
         object userContext)
     {
         ArgumentNullException.ThrowIfNull(task);
-        var scheduler = (JobScheduler)userContext;
+        var scheduler = (IBox2DTaskScheduler)userContext;
         if (!HandlePool.TryTake(out var taskHandle))
             taskHandle = new Box2DTaskHandle();
 
@@ -37,7 +35,7 @@ public sealed class Box2DTaskSchedulerAdapter
     public static void Finish(object taskHandle, object userContext)
     {
         ArgumentNullException.ThrowIfNull(taskHandle);
-        var scheduler = (JobScheduler)userContext;
+        var scheduler = (IBox2DTaskScheduler)userContext;
         var handle = (Box2DTaskHandle)taskHandle;
         try
         {
@@ -52,7 +50,7 @@ public sealed class Box2DTaskSchedulerAdapter
 
     private sealed class Box2DTaskHandle
     {
-        private readonly Action<JobContext> _execute;
+        private readonly Action _execute;
         private b2TaskCallback? _task;
         private object? _taskContext;
 
@@ -61,7 +59,7 @@ public sealed class Box2DTaskSchedulerAdapter
             _execute = Execute;
         }
 
-        public JobHandle Handle { get; private set; } = null!;
+        public object Handle { get; private set; } = null!;
 
         public void Initialize(b2TaskCallback task, object taskContext)
         {
@@ -69,7 +67,7 @@ public sealed class Box2DTaskSchedulerAdapter
             _taskContext = taskContext;
         }
 
-        public void Schedule(JobScheduler scheduler)
+        public void Schedule(IBox2DTaskScheduler scheduler)
         {
             Handle = scheduler.Schedule(_execute);
         }
@@ -81,7 +79,7 @@ public sealed class Box2DTaskSchedulerAdapter
             _taskContext = null;
         }
 
-        private void Execute(JobContext _)
+        private void Execute()
         {
             _task!(_taskContext!);
         }

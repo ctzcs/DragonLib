@@ -1,15 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- 与 Engine 一致：browser 版本链接 Foster.Web。 -->
-    <TargetFrameworks>net10.0;net10.0-browser</TargetFrameworks>
+    <!-- 不依赖 Engine/Foster：多线程求解经 IBox2DTaskScheduler 接入任意任务系统，桌面与 Web 共用同一份。 -->
+    <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\Engine\Engine.csproj" />
     <ProjectReference Include="Box2D.NET\Box2D.NET.csproj" />
   </ItemGroup>
 

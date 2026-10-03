@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <!-- 编辑器/调试界面(Dear ImGui)。依赖原生 cimgui，只有桌面版；游戏运行时不引用，Web 版也不会带上它。
+         命名空间保持 Engine.DearImGui / Engine.Assets，引用方只需加项目引用。 -->
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\Engine\Engine.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <PackageReference Include="ImGui.NET" Version="1.91.6.1" />
+    </ItemGroup>
+
+</Project>

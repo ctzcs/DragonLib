@@ -60,6 +60,7 @@ public partial class LocalStorage(string rootPath) : StorageContainer
 }
 
 
+/// <summary>本地目录存储(仅桌面)。游戏代码优先用跨平台的 <see cref="GameStorage"/>。</summary>
 public class StorageUtils
 {
     /// <summary>

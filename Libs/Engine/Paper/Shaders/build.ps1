@@ -1,10 +1,4 @@
+﻿# Paper UI(Quill 画布)着色器：生成 dxil/spv/msl/glsl 与哈希清单(实现见 Tools/ShaderCompiler)。
 $ErrorActionPreference = 'Stop'
-$compiler = Join-Path $PSScriptRoot '../../../../Tools/ShaderCross/shadercross.exe'
-foreach ($stage in @('vertex', 'fragment')) {
-    foreach ($format in @('dxil', 'spv', 'msl')) {
-        & $compiler (Join-Path $PSScriptRoot 'QuillCanvas.hlsl') -s HLSL -t $stage -e "${stage}_main" -o (Join-Path $PSScriptRoot "Compiled/QuillCanvas.$stage.$format")
-        if ($LASTEXITCODE -ne 0) { throw "Shader compilation failed: $stage.$format" }
-    }
-    # Foster.Web (WebGL2): GLSL ES 3.00 from the SPIR-V output; needs spirv-cross (Vulkan SDK).
-    & (Join-Path $PSScriptRoot '../../../Foster.Web/Tools/spv-to-glsl.ps1') -Spv (Join-Path $PSScriptRoot "Compiled/QuillCanvas.$stage.spv") -Output (Join-Path $PSScriptRoot "Compiled/QuillCanvas.$stage.glsl")
-}
+& (Join-Path $PSScriptRoot '../../../../Tools/ShaderCompiler/Build-Shaders.ps1') -Output (Join-Path $PSScriptRoot 'Compiled') -ManifestDir $PSScriptRoot -Shaders @(
+    @{ Name = 'QuillCanvas'; Source = (Join-Path $PSScriptRoot 'QuillCanvas.hlsl'); Vertex = 'vertex_main'; Fragment = 'fragment_main' })

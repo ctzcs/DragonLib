@@ -160,7 +160,7 @@ public sealed class Box2DDemoSystem : IEcsInit, IEcsDestroy, IUpdateSystem, IRen
     {
         DestroyWorld();
         _world = _workerCount > 1
-            ? new Box2DWorld(new Vector2(0f, 9.81f), _jobScheduler, _workerCount)
+            ? new Box2DWorld(new Vector2(0f, 9.81f), new JobSchedulerBox2DTasks(_jobScheduler), _workerCount)
             : new Box2DWorld(new Vector2(0f, 9.81f));
         _bodies.Clear();
         _spawnIndex = 0;

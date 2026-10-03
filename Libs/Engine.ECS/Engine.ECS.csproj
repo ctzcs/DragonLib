@@ -9,6 +9,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Engine\Engine.csproj" />
+    <!-- DebugInspector 用 Dear ImGui 绘制实体检查器。 -->
+    <ProjectReference Include="..\Engine.Editor\Engine.Editor.csproj" />
     <ProjectReference Include="..\DragonECS-main\DragonECS.csproj" />
     <ProjectReference Include="..\DragonECS-AutoInjections\DragonECS-AutoInjections.csproj" />
   </ItemGroup>

@@ -1,0 +1,92 @@
+<Project>
+  <!--
+    DragonLib 的 Web(WebAssembly + WebGL2)入口项目公共配置。用法(Sdk="Microsoft.NET.Sdk.WebAssembly" 的入口 csproj):
+
+      <PropertyGroup><TargetFramework>net10.0-browser</TargetFramework></PropertyGroup>
+      <ItemGroup>
+        <ProjectReference Include="...你的游戏库(引用 Engine)..." />
+        <WebResource Include="..\Resources\**\*.*" Prefix="Resources" />   游戏读取路径 = Prefix/相对路径
+      </ItemGroup>
+      <Import Project="<DragonLib>/Libs/DragonLib.Web.targets" />
+
+    提供：浏览器运行设置；Foster.Web 的页面与 JS(项目目录有 index.html 时用项目的)；
+    原生依赖(msdfgen 文字、Foster.Audio.Web 音频)的 emcc 静态链接；WebResource 打包到 wwwroot 并生成 assets.json，
+    main.js 在 Main 之前预加载进 title storage，即 Engine.GameStorage.Resources；AOT(RunAOTCompilation=true)所需的裁剪设置。
+    AOT 与解释执行请用不同的中间目录发布(切换模式时增量原生链接会复用另一模式的产物)，见 Proj_TD 的 publish_web.bat。
+  -->
+  <PropertyGroup>
+    <DragonLibLibs>$(MSBuildThisFileDirectory)</DragonLibLibs>
+    <FosterWebDir>$(DragonLibLibs)Foster.Web/</FosterWebDir>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">browser-wasm</RuntimeIdentifier>
+    <OutputType Condition="'$(OutputType)' == '' Or '$(OutputType)' == 'Library'">Exe</OutputType>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <EnableDefaultContentItems>false</EnableDefaultContentItems>
+    <WasmEnableHotReload>false</WasmEnableHotReload>
+    <!-- 游戏代码常用反射 JSON(配置、存档)；默认解释执行发布不裁剪。 -->
+    <PublishTrimmed Condition="'$(RunAOTCompilation)' != 'true'">false</PublishTrimmed>
+    <WebAssetManifest>$(BaseIntermediateOutputPath)assets.json</WebAssetManifest>
+  </PropertyGroup>
+
+  <!-- wasm AOT 强制要求裁剪。partial 只裁声明可裁剪的程序集(.NET 框架、Foster.Web)，游戏、Engine、Prowl 原样保留；
+       开启裁剪后 SDK 默认关闭反射 JSON，这里显式打开；JSON 反射创建不可变集合，整库保留 System.Collections.Immutable。 -->
+  <PropertyGroup Condition="'$(RunAOTCompilation)' == 'true'">
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>partial</TrimMode>
+    <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(RunAOTCompilation)' == 'true'">
+    <TrimmerRootAssembly Include="System.Collections.Immutable" />
+  </ItemGroup>
+
+  <!-- 原生依赖不随 ProjectReference 传递，必须由最终 wasm 入口导入。 -->
+  <Import Project="$(DragonLibLibs)ThirdParty/Msdfgen/Msdfgen.Web.targets" />
+  <Import Project="$(FosterWebDir)Audio/Foster.Audio.Web.targets" />
+
+  <ItemGroup>
+    <Content Include="$(FosterWebDir)Web/**" Exclude="$(FosterWebDir)Web/assets.json"
+             Link="wwwroot/%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Remove="$(FosterWebDir)Web/index.html" Condition="Exists('$(MSBuildProjectDirectory)/index.html')" />
+    <Content Include="$(MSBuildProjectDirectory)/index.html" Link="wwwroot/index.html" Condition="Exists('$(MSBuildProjectDirectory)/index.html')"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(WebAssetManifest)" Link="wwwroot/assets.json"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- WebResource → 站点文件。WebPath = 游戏读取路径(Prefix/相对路径)。
+       Qoa="true" 的 16-bit PCM WAV 在构建时转成 QOA(约 1/5 大小，Foster.Audio 桌面与 Web 都能解码)，
+       读取路径的扩展名随之改为 .qoa；适合音乐等长音频，短促的音效压缩收益小且失真更明显。 -->
+  <PropertyGroup>
+    <_WebAudioDir>$(BaseIntermediateOutputPath)webaudio/</_WebAudioDir>
+    <QoaEncoder Condition="'$(QoaEncoder)' == ''">$(DragonLibLibs)../Tools/QoaEncode/qoaenc.exe</QoaEncoder>
+  </PropertyGroup>
+  <ItemGroup>
+    <_WebQoaSource Include="@(WebResource->WithMetadataValue('Qoa', 'true'))" WebPath="%(Prefix)/%(RecursiveDir)%(Filename).qoa" />
+    <_WebAsset Include="@(WebResource)" Exclude="@(_WebQoaSource)" WebPath="%(Prefix)/%(RecursiveDir)%(Filename)%(Extension)" />
+    <_WebAsset Include="@(_WebQoaSource->'$(_WebAudioDir)%(WebPath)')" />
+    <Content Include="@(_WebAsset)" Link="wwwroot/%(WebPath)"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="EncodeWebQoaAudio" BeforeTargets="BeforeBuild" Condition="'@(_WebQoaSource)' != ''"
+          Inputs="@(_WebQoaSource)" Outputs="@(_WebQoaSource->'$(_WebAudioDir)%(WebPath)')">
+    <MakeDir Directories="@(_WebQoaSource->'$(_WebAudioDir)%(WebPath)'->DirectoryName()->Distinct())" />
+    <Exec Command="&quot;$(QoaEncoder)&quot; &quot;%(_WebQoaSource.FullPath)&quot; &quot;$(_WebAudioDir)%(_WebQoaSource.WebPath)&quot;" />
+  </Target>
+
+  <!-- assets.json：每个资源一条，path 即 title storage 中的读取路径。 -->
+  <Target Name="WriteWebAssetManifest" BeforeTargets="BeforeBuild">
+    <Error Condition="'%(WebResource.Prefix)' == ''" Text="WebResource %(WebResource.Identity) 缺少 Prefix 元数据(游戏读取它的目录，例如 Resources)。" />
+    <ItemGroup>
+      <_WebAssetPath Include="@(_WebAsset->'%(WebPath)'->Replace('\', '/'))" />
+      <_WebAssetLine Include="@(_WebAssetPath->'  { &quot;path&quot;: &quot;%(Identity)&quot;, &quot;url&quot;: &quot;./%(Identity)&quot; }')" />
+    </ItemGroup>
+    <PropertyGroup>
+      <_WebAssetJson>[
+@(_WebAssetLine, ',
+')
+]</_WebAssetJson>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(WebAssetManifest)" Lines="$(_WebAssetJson)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+  </Target>
+</Project>

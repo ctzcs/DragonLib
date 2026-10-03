@@ -4,7 +4,7 @@ Foster 的独立 **.NET 10 WebAssembly + WebGL2** 后端。参考 OFoster 的浏
 
 所有新增实现、着色器、示例和打包脚本都在本目录。`../Foster` 的源码、项目和桌面 SDL3 后端无需修改；通用数学、Batcher、Mesh、纹理、字体、输入绑定等代码通过项目中的 `Compile Link` 复用。构建 Web 项目也不会构建或向原 Foster 项目写入 `bin/obj`。本目录依赖仓库里的 `../Foster/Framework`，不是该源码的完整复制。
 
-`Framework/SpriteFont.cs` 是单独的平台副本，仅将 `AddCharacters` 改为顺序生成字形，避开浏览器不支持的 `Task.WaitAll`；同步升级 Foster 时需检查这个副本。`AppConfig.cs` 保留桌面配置类型的接口。
+`Framework/` 里与 Foster 源文件**同名**的文件(App、Window、Storage、FileSystem、Cursor、ImageData、GraphicsDriver)替换对应的 Foster 源码，排除列表按文件名自动生成；只有 SDL 后端三个文件(GraphicsDeviceSDL、InputProviderSDL、SDL3)是显式排除的。新增替换文件时直接放进 `Framework/` 即可。共享源码里的浏览器差异直接写在 Foster 中(例如 `SpriteFont.AddCharacters` 在 `OperatingSystem.IsBrowser()` 时顺序生成字形，避开 `Task.WaitAll`)，不再维护副本。`AppConfig.cs` 保留桌面配置类型的接口。
 
 ## 快速打包和运行
 
@@ -61,9 +61,11 @@ dotnet pack .\Framework\Foster.Framework.Web.csproj -c Release -o .\artifacts\pa
 </Project>
 ```
 
-通过 `build.ps1 -Project <你的 csproj>` 发布。示例和后端暂时使用反射 JSON 生成绘制描述，必须保留 `PublishTrimmed=false`。
+通过 `build.ps1 -Project <你的 csproj>` 发布。后端发给 JS 的绘制描述走源生成的 `WebJson`(`Framework/WebJson.cs`)，不用反射，`Foster.Framework.Web` 标记为 `IsAotCompatible`，AOT 时也可被裁剪。示例自身若用反射 JSON 才需要 `PublishTrimmed=false`。`build.ps1` 每次发布前清掉旧的 `_framework`，`-Aot` 使用独立的中间目录(`obj/<配置>-aot/`)：解释执行与 AOT 共用中间目录时，增量原生链接会复用另一模式的产物，页面加载运行时即失败。
 
-.NET 10 的 wasm AOT 强制要求 `PublishTrimmed=true`。AOT 发布时改用 `TrimMode=partial`（只裁 .NET 框架，游戏和本后端保留反射元数据）并设置 `JsonSerializerIsReflectionEnabledByDefault=true`；用 JSON 反序列化不可变集合时还要 `<TrimmerRootAssembly Include="System.Collections.Immutable" />`。参考 Proj_TD 的 `Scripts/Game.Web/Game.Web.csproj`。
+使用 DragonLib Engine 的游戏不必手写以上配置：入口项目导入 `../DragonLib.Web.targets`(见 Engine 的 README「Web 发布」)。
+
+.NET 10 的 wasm AOT 强制要求 `PublishTrimmed=true`。AOT 发布时改用 `TrimMode=partial`（只裁 .NET 框架，游戏和本后端保留反射元数据）并设置 `JsonSerializerIsReflectionEnabledByDefault=true`；用 JSON 反序列化不可变集合时还要 `<TrimmerRootAssembly Include="System.Collections.Immutable" />`。`../DragonLib.Web.targets` 已包含这些设置。
 
 AOT 下避免对结构体使用 LINQ（如 `colors.Select(c => ...)`，`c` 为 `Color`）：解释执行的泛型方法经 gsharedvt 包装回调 AOT lambda 时会出现 `memory access out of bounds`。后端内部已改为普通循环。排查原生崩溃时加 `-p:WasmEmitSymbolMap=true` 发布，用 `obj/.../dotnet.native.js.symbols` 对照报错里的 `wasm-function[N]`。
 
@@ -128,7 +130,7 @@ FileSystem.OpenTitleStorage(storage => {
 | 顶点属性 | `layout(location = VertexFormat.Element.Index)` |
 | 离屏坐标翻转 | `uniform float u_target_flip;`，将 `gl_Position.y` 乘以它 |
 
-已有 SDL shadercross 着色器(HLSL → `.spv`)可以用 `Tools/spv-to-glsl.ps1 -Spv X.vertex.spv -Output X.vertex.glsl` 转换(需要 Vulkan SDK 的 `spirv-cross`)。脚本按上表改名 uniform block、合并采样器和阶段间变量，并在顶点末尾加入 `u_target_flip`。SDL GPU 默认 depth clamp 而 WebGL 只有裁剪，脚本还会把 clip z 夹到 `[0, w]` 再映射到 GL 的 `[-w, w]`；否则 `CreateOrthographicOffCenter(…, 0.1f, 1000)` 投影下 z=0 的二维图元会被整批裁掉。手写 GLSL 时也要注意这一点。
+已有 SDL shadercross 着色器(HLSL → `.spv`)可以用 DragonLib 的 `Tools/ShaderCompiler/spv-to-glsl.ps1 -Spv X.vertex.spv -Output X.vertex.glsl` 转换(`Build-Shaders.ps1` 一次生成 dxil/spv/msl/glsl 并写哈希清单)(需要 Vulkan SDK 的 `spirv-cross`)。脚本按上表改名 uniform block、合并采样器和阶段间变量，并在顶点末尾加入 `u_target_flip`。SDL GPU 默认 depth clamp 而 WebGL 只有裁剪，脚本还会把 clip z 夹到 `[0, w]` 再映射到 GL 的 `[-w, w]`；否则 `CreateOrthographicOffCenter(…, 0.1f, 1000)` 投影下 z=0 的二维图元会被整批裁掉。手写 GLSL 时也要注意这一点。
 
 矩阵 uniform 按 `Matrix4x4` 的字节布局传入；自定义结构要满足 GLSL `std140` 对齐。每个阶段最多 8 个 uniform slot。纹理逻辑第一行是顶部；默认顶点着色器在离屏绘制时翻转 Y，让上传、渲染、采样和回读采用同一个方向。
 
@@ -147,7 +149,8 @@ FileSystem.OpenTitleStorage(storage => {
 | 多窗口、窗口定位、鼠标瞬移、手柄震动、原生文件对话框 | 暂不支持 |
 | IME/移动端软键盘 | 仅基础文字/组合事件，没有完整输入控件 |
 | WebGL context 丢失后的自动重建 | 暂不支持；停止并显示错误，刷新重启 |
-| DragonLib Engine / Box2D | `net10.0-browser` 目标链接本项目；`JobScheduler`、`CliConsole` 等线程功能在浏览器上不可用 |
+| DragonLib Engine | `net10.0-browser` 目标链接本项目；`JobScheduler`、`CliConsole` 等线程功能在浏览器上不可用；Dear ImGui 在 `Engine.Editor`，不进 Web 包 |
+| 窗口位置、最大化 | 设回浏览器唯一的状态(`Position = (0,0)`、`Maximized = false`)是空操作，其他值抛出 `PlatformNotSupportedException` |
 | Scribe MSDF 文字 | 原生 msdfgen 通过 `ThirdParty/Msdfgen/Msdfgen.Web.targets` 用 emcc 静态链接进 `dotnet.native.wasm` |
 | Foster.Audio 的 Web 后端 | `Audio/Foster.Audio.Web.csproj` + `Audio/Foster.Audio.Web.targets` 静态编译 miniaudio；接入见下文 |
 

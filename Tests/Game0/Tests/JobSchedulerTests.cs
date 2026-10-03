@@ -136,7 +136,7 @@ public sealed class JobSchedulerTests
     public void Box2DUsesTheSharedScheduler()
     {
         using var scheduler = new JobScheduler(2);
-        using var world = new Box2DWorld(new Vector2(0f, 9.81f), scheduler, 2);
+        using var world = new Box2DWorld(new Vector2(0f, 9.81f), new Game0.Content.JobSchedulerBox2DTasks(scheduler), 2);
 
         for (int i = 0; i < 64; i++)
             world.Step(1f / 60f, 4);

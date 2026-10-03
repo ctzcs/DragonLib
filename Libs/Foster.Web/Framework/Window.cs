@@ -10,7 +10,9 @@ public sealed class Window : IDrawableTarget
     public GraphicsDevice GraphicsDevice => app.GraphicsDevice;
     public bool IsDestroyed { get; private set; }
     public string Title { get => title; set { title = value; WebInterop.WindowSet("title", value); } }
-    public Point2 Position { get => Point2.Zero; set => throw Unsupported("Window positioning"); }
+    // The canvas has no window position or maximized state. Setting them to the only state the browser has is a
+    // no-op so shared desktop code (e.g. "leave maximized, then resize") runs unchanged; real requests still throw.
+    public Point2 Position { get => Point2.Zero; set { if (value != Point2.Zero) throw Unsupported("Window positioning"); } }
     public int Width { get => Size.X; set => Size = new(value, Height); }
     public int Height { get => Size.Y; set => Size = new(Width, value); }
     public Point2 Size
@@ -26,7 +28,7 @@ public sealed class Window : IDrawableTarget
     public Vector2 MousePosition => new((float)WebInterop.WindowGet("mouseX"), (float)WebInterop.WindowGet("mouseY"));
     public bool Fullscreen { get => WebInterop.WindowGet("fullscreen") != 0; set => WebInterop.WindowSet("fullscreen", value ? "1" : "0"); }
     public bool Resizable { get => WebInterop.WindowGet("resizable") != 0; set => WebInterop.WindowSet("resizable", value ? "1" : "0"); }
-    public bool Maximized { get => false; set => throw Unsupported("Window maximization"); }
+    public bool Maximized { get => false; set { if (value) throw Unsupported("Window maximization"); } }
     public bool Focused => WebInterop.WindowGet("focused") != 0;
     public event Action? OnFocusGain, OnFocusLost, OnMouseEnter, OnMouseLeave, OnResize, OnRestore, OnMaximize, OnMinimize, OnFullscreenEnter, OnFullscreenExit;
     public Action? OnCloseRequested;

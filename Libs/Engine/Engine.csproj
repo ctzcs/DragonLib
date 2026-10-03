@@ -14,17 +14,16 @@
     </ItemGroup>
 
     <!-- 桌面 Foster 与 Foster.Web 的程序集同名(Foster.Framework)，只能二选一。 -->
-    <ItemGroup Condition="'$([MSBuild]::GetTargetPlatformIdentifier($(TargetFramework)))' != 'browser'">
+    <ItemGroup Condition="'$(IsBrowser)' != 'true'">
       <ProjectReference Include="..\Foster\Framework\Foster.Framework.csproj" />
       <ProjectReference Include="..\Foster.Audio\Foster.Audio\Foster.Audio.csproj" />
     </ItemGroup>
-    <ItemGroup Condition="'$([MSBuild]::GetTargetPlatformIdentifier($(TargetFramework)))' == 'browser'">
+    <ItemGroup Condition="'$(IsBrowser)' == 'true'">
       <ProjectReference Include="..\Foster.Web\Framework\Foster.Framework.Web.csproj" />
       <ProjectReference Include="..\Foster.Web\Audio\Foster.Audio.Web.csproj" />
     </ItemGroup>
 
     <ItemGroup>
-      <PackageReference Include="ImGui.NET" Version="1.91.6.1" />
       <PackageReference Include="Prowl.Origami" Version="2.7.0" />
       <PackageReference Include="Prowl.Paper" Version="2.7.0" />
     </ItemGroup>
