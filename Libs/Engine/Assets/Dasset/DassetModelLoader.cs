@@ -38,6 +38,9 @@ public static class DassetModelLoader
         {
             MarkTextureUse(colorUses, primitive.Material.AlbedoTextureIndex);
             MarkTextureUse(dataUses, primitive.Material.NormalTextureIndex);
+            MarkTextureUse(dataUses, primitive.Material.MetallicRoughnessTextureIndex);
+            MarkTextureUse(dataUses, primitive.Material.OcclusionTextureIndex);
+            MarkTextureUse(colorUses, primitive.Material.EmissiveTextureIndex);
         }
         for (var i = 0; i < model.Textures.Count; i++)
         {

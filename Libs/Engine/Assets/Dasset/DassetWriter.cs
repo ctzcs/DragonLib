@@ -149,5 +149,11 @@ public static class DassetWriter
         writer.Write(material.AlphaCutoff);
         writer.Write(material.AlbedoTextureIndex);
         writer.Write(material.NormalTextureIndex);
+        writer.Write(material.MetallicRoughnessTextureIndex);
+        writer.Write(material.OcclusionTextureIndex);
+        writer.Write(material.OcclusionStrength);
+        writer.Write(material.EmissiveTextureIndex);
+        Write(writer, material.EmissiveFactor);
+        writer.Write(material.NormalScale);
     }
 }

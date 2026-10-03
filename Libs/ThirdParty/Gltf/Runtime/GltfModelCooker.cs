@@ -558,6 +558,14 @@ public static class GltfModelCooker
             AlphaCutoff = material.AlphaCutoff,
             AlbedoTextureIndex = CookTexture(material.FindChannel("BaseColor")?.Texture, model, textureIndices),
             NormalTextureIndex = CookTexture(material.FindChannel("Normal")?.Texture, model, textureIndices),
+            NormalScale = material.FindChannel("Normal")?.GetFactor("NormalScale") ?? 1f,
+            MetallicRoughnessTextureIndex = CookTexture(material.FindChannel("MetallicRoughness")?.Texture, model, textureIndices),
+            OcclusionTextureIndex = CookTexture(material.FindChannel("Occlusion")?.Texture, model, textureIndices),
+            OcclusionStrength = material.FindChannel("Occlusion")?.GetFactor("OcclusionStrength") ?? 1f,
+            EmissiveTextureIndex = CookTexture(material.FindChannel("Emissive")?.Texture, model, textureIndices),
+            EmissiveFactor = new Vector3((material.FindChannel("Emissive")?.Color ?? Vector4.Zero).X,
+                (material.FindChannel("Emissive")?.Color ?? Vector4.Zero).Y,
+                (material.FindChannel("Emissive")?.Color ?? Vector4.Zero).Z),
         };
         materialCache.Add(index, result);
         return result;

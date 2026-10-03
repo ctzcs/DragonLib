@@ -22,6 +22,8 @@ public struct MaterialUniforms
     public Vector4 Flags; // albedo、normal、normal strength、alpha mode
     public Vector4 AlphaParams;
     public Vector4 PbrParams;
+    public Vector4 TextureFlags; // MR、AO、emissive、emissive sRGB 硬件解码
+    public Vector4 Emissive; // xyz: factor；w: AO strength
 }
 
 /// <summary>Standard3D vertex b1, space1。</summary>

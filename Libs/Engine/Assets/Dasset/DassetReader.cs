@@ -30,7 +30,7 @@ public static class DassetReader
         if (reader.ReadUInt32() != DassetFormat.Magic)
             throw new InvalidDataException($"DassetReader: '{source}' 不是 .dasset 文件（magic 不符）。");
         var version = reader.ReadInt32();
-        if (version is < 1 or > 2)
+        if (version is < 1 or > DassetFormat.Version)
             throw new InvalidDataException($"DassetReader: '{source}' 的 .dasset 版本是 {version}，当前支持 1~{DassetFormat.Version}。请重新 cook。");
 
         var model = new DassetModel();
@@ -107,7 +107,7 @@ public static class DassetReader
 
             primitive.Indices = indices;
             primitive.Bounds = ReadBounds(reader);
-            primitive.Material = ReadMaterial(reader, source);
+            primitive.Material = ReadMaterial(reader, source, version);
             model.Primitives.Add(primitive);
         }
 
@@ -181,7 +181,7 @@ public static class DassetReader
         Max = ReadVector3(reader),
     };
 
-    private static DassetMaterial ReadMaterial(BinaryReader reader, string source)
+    private static DassetMaterial ReadMaterial(BinaryReader reader, string source, int version)
     {
         var material = new DassetMaterial
         {
@@ -195,6 +195,15 @@ public static class DassetReader
             AlbedoTextureIndex = reader.ReadInt32(),
             NormalTextureIndex = reader.ReadInt32(),
         };
+        if (version >= 3)
+        {
+            material.MetallicRoughnessTextureIndex = reader.ReadInt32();
+            material.OcclusionTextureIndex = reader.ReadInt32();
+            material.OcclusionStrength = reader.ReadSingle();
+            material.EmissiveTextureIndex = reader.ReadInt32();
+            material.EmissiveFactor = ReadVector3(reader);
+            material.NormalScale = reader.ReadSingle();
+        }
         if (!Enum.IsDefined(material.AlphaMode))
             throw new InvalidDataException($"DassetReader: '{source}' 材质的 AlphaMode 值非法（{(int)material.AlphaMode}）。");
         return material;

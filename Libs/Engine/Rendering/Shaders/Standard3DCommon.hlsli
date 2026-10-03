@@ -25,6 +25,8 @@ cbuffer Standard3DMaterialBlock : register(b1, space3)
     float4 MaterialFlags; // x: has albedo, y: has normal map, z: normal strength, w: alpha mode (0 opaque, 1 mask, 2 blend)
     float4 AlphaParams;   // x: alpha cutoff (mask mode)
     float4 PbrParams;     // x: metallic, y: roughness, z: albedo 已由 sRGB 纹理硬件解码
+    float4 TextureFlags;  // MR、AO、emissive、emissive sRGB 硬件解码
+    float4 Emissive;      // xyz: factor；w: AO strength
 };
 
 cbuffer Standard3DShadowBlock : register(b2, space3)
@@ -50,6 +52,13 @@ SamplerState NormalSampler : register(s1, space2);
 
 Texture2D ShadowMapTexture : register(t2, space2);
 SamplerState ShadowSampler : register(s2, space2);
+
+Texture2D MetallicRoughnessTexture : register(t3, space2);
+SamplerState MetallicRoughnessSampler : register(s3, space2);
+Texture2D OcclusionTexture : register(t4, space2);
+SamplerState OcclusionSampler : register(s4, space2);
+Texture2D EmissiveTexture : register(t5, space2);
+SamplerState EmissiveSampler : register(s5, space2);
 
 struct VsOutput
 {
@@ -175,8 +184,11 @@ float4 fragment_main(VsOutput input) : SV_Target0
     }
 
     float3 albedo = baseColor.rgb;
-    float metallic = saturate(PbrParams.x);
-    float roughness = clamp(PbrParams.y, 0.05, 1.0);
+    float2 mr = PbrParams.xy;
+    if (TextureFlags.x > 0.5)
+        mr *= MetallicRoughnessTexture.Sample(MetallicRoughnessSampler, input.Uv).bg;
+    float metallic = saturate(mr.x);
+    float roughness = clamp(mr.y, 0.05, 1.0);
     float3 viewDir = normalize(CameraPosition.xyz - input.WorldPosition);
 
     // 方向光（带 PCF 阴影）。
@@ -198,6 +210,17 @@ float4 fragment_main(VsOutput input) : SV_Target0
     }
 
     // 环境光：无 IBL，平面环境项。
-    color += Ambient.rgb * albedo;
+    // AO 只衰减间接光，不应遮挡直接光或自发光。
+    float ao = TextureFlags.y > 0.5 ? lerp(1.0, OcclusionTexture.Sample(OcclusionSampler, input.Uv).r, Emissive.w) : 1.0;
+    color += Ambient.rgb * albedo * ao;
+    float3 emission = Emissive.xyz;
+    if (TextureFlags.z > 0.5)
+    {
+        float3 sampleColor = EmissiveTexture.Sample(EmissiveSampler, input.Uv).rgb;
+        if (ColorPipeline.x > 0.5 && TextureFlags.w < 0.5) sampleColor = SrgbToLinear(sampleColor);
+        if (ColorPipeline.x < 0.5 && TextureFlags.w > 0.5) sampleColor = LinearToSrgb(sampleColor);
+        emission *= sampleColor;
+    }
+    color += emission;
     return float4(ColorPipeline.x > 0.5 ? color : saturate(color), baseColor.a);
 }

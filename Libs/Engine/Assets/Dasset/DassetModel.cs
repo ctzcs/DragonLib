@@ -67,6 +67,12 @@ public sealed class DassetMaterial
     public float AlphaCutoff = 0.5f;
     public int AlbedoTextureIndex = -1;
     public int NormalTextureIndex = -1;
+    public int MetallicRoughnessTextureIndex = -1;
+    public int OcclusionTextureIndex = -1;
+    public float OcclusionStrength = 1f;
+    public int EmissiveTextureIndex = -1;
+    public Vector3 EmissiveFactor;
+    public float NormalScale = 1f;
 
     public bool HasNormalMap => NormalTextureIndex >= 0;
 

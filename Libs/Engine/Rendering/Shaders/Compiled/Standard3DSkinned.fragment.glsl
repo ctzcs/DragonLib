@@ -17,6 +17,8 @@ layout(std140) uniform FragmentUniform1
     highp vec4 MaterialFlags;
     highp vec4 AlphaParams;
     highp vec4 PbrParams;
+    highp vec4 TextureFlags;
+    highp vec4 Emissive;
 } Standard3DMaterialBlock;
 
 layout(std140) uniform FragmentUniform2
@@ -33,7 +35,10 @@ layout(std140) uniform FragmentUniform3
 
 uniform highp sampler2D u_fragment_tex0;
 uniform highp sampler2D u_fragment_tex1;
+uniform highp sampler2D u_fragment_tex3;
 uniform highp sampler2D u_fragment_tex2;
+uniform highp sampler2D u_fragment_tex4;
+uniform highp sampler2D u_fragment_tex5;
 
 in highp vec3 v_loc0;
 in highp vec4 v_loc1;
@@ -44,251 +49,372 @@ layout(location = 0) out highp vec4 out_var_SV_Target0;
 
 void main()
 {
-    highp vec4 _192;
+    highp vec4 _199;
     if (Standard3DMaterialBlock.MaterialFlags.x > 0.5)
     {
-        highp vec4 _104 = texture(u_fragment_tex0, v_loc2);
-        bool _113;
+        highp vec4 _111 = texture(u_fragment_tex0, v_loc2);
+        bool _120;
         if (Standard3DLightBlock.ColorPipeline.x > 0.5)
         {
-            _113 = Standard3DMaterialBlock.PbrParams.z < 0.5;
+            _120 = Standard3DMaterialBlock.PbrParams.z < 0.5;
         }
         else
         {
-            _113 = false;
+            _120 = false;
         }
-        highp vec4 _148;
-        if (_113)
+        highp vec4 _155;
+        if (_120)
         {
-            highp float _116 = _104.x;
-            highp float _125;
-            if (_116 <= 0.040449999272823333740234375)
+            highp float _123 = _111.x;
+            highp float _132;
+            if (_123 <= 0.040449999272823333740234375)
             {
-                _125 = _116 * 0.077399380505084991455078125;
+                _132 = _123 * 0.077399380505084991455078125;
             }
             else
             {
-                _125 = pow((_116 + 0.054999999701976776123046875) * 0.947867333889007568359375, 2.400000095367431640625);
+                _132 = pow((_123 + 0.054999999701976776123046875) * 0.947867333889007568359375, 2.400000095367431640625);
             }
-            highp float _126 = _104.y;
-            highp float _135;
-            if (_126 <= 0.040449999272823333740234375)
+            highp float _133 = _111.y;
+            highp float _142;
+            if (_133 <= 0.040449999272823333740234375)
             {
-                _135 = _126 * 0.077399380505084991455078125;
+                _142 = _133 * 0.077399380505084991455078125;
             }
             else
             {
-                _135 = pow((_126 + 0.054999999701976776123046875) * 0.947867333889007568359375, 2.400000095367431640625);
+                _142 = pow((_133 + 0.054999999701976776123046875) * 0.947867333889007568359375, 2.400000095367431640625);
             }
-            highp float _136 = _104.z;
-            highp float _145;
-            if (_136 <= 0.040449999272823333740234375)
+            highp float _143 = _111.z;
+            highp float _152;
+            if (_143 <= 0.040449999272823333740234375)
             {
-                _145 = _136 * 0.077399380505084991455078125;
+                _152 = _143 * 0.077399380505084991455078125;
             }
             else
             {
-                _145 = pow((_136 + 0.054999999701976776123046875) * 0.947867333889007568359375, 2.400000095367431640625);
+                _152 = pow((_143 + 0.054999999701976776123046875) * 0.947867333889007568359375, 2.400000095367431640625);
             }
-            highp vec3 _146 = vec3(_125, _135, _145);
-            _148 = vec4(_146.x, _146.y, _146.z, _104.w);
+            highp vec3 _153 = vec3(_132, _142, _152);
+            _155 = vec4(_153.x, _153.y, _153.z, _111.w);
         }
         else
         {
-            _148 = _104;
+            _155 = _111;
         }
-        bool _155;
+        bool _162;
         if (Standard3DLightBlock.ColorPipeline.x < 0.5)
         {
-            _155 = Standard3DMaterialBlock.PbrParams.z > 0.5;
+            _162 = Standard3DMaterialBlock.PbrParams.z > 0.5;
         }
         else
         {
-            _155 = false;
+            _162 = false;
         }
-        highp vec4 _190;
-        if (_155)
+        highp vec4 _197;
+        if (_162)
         {
-            highp float _167;
-            if (_148.x <= 0.003130800090730190277099609375)
+            highp float _174;
+            if (_155.x <= 0.003130800090730190277099609375)
             {
-                _167 = _148.x * 12.9200000762939453125;
+                _174 = _155.x * 12.9200000762939453125;
             }
             else
             {
-                _167 = (1.05499994754791259765625 * pow(_148.x, 0.4166666567325592041015625)) - 0.054999999701976776123046875;
+                _174 = (1.05499994754791259765625 * pow(_155.x, 0.4166666567325592041015625)) - 0.054999999701976776123046875;
             }
-            highp float _177;
-            if (_148.y <= 0.003130800090730190277099609375)
+            highp float _184;
+            if (_155.y <= 0.003130800090730190277099609375)
             {
-                _177 = _148.y * 12.9200000762939453125;
+                _184 = _155.y * 12.9200000762939453125;
             }
             else
             {
-                _177 = (1.05499994754791259765625 * pow(_148.y, 0.4166666567325592041015625)) - 0.054999999701976776123046875;
+                _184 = (1.05499994754791259765625 * pow(_155.y, 0.4166666567325592041015625)) - 0.054999999701976776123046875;
             }
-            highp float _187;
-            if (_148.z <= 0.003130800090730190277099609375)
+            highp float _194;
+            if (_155.z <= 0.003130800090730190277099609375)
             {
-                _187 = _148.z * 12.9200000762939453125;
+                _194 = _155.z * 12.9200000762939453125;
             }
             else
             {
-                _187 = (1.05499994754791259765625 * pow(_148.z, 0.4166666567325592041015625)) - 0.054999999701976776123046875;
+                _194 = (1.05499994754791259765625 * pow(_155.z, 0.4166666567325592041015625)) - 0.054999999701976776123046875;
             }
-            highp vec3 _188 = vec3(_167, _177, _187);
-            _190 = vec4(_188.x, _188.y, _188.z, _148.w);
+            highp vec3 _195 = vec3(_174, _184, _194);
+            _197 = vec4(_195.x, _195.y, _195.z, _155.w);
         }
         else
         {
-            _190 = _148;
+            _197 = _155;
         }
-        _192 = Standard3DMaterialBlock.BaseColorFactor * _190;
+        _199 = Standard3DMaterialBlock.BaseColorFactor * _197;
     }
     else
     {
-        _192 = Standard3DMaterialBlock.BaseColorFactor;
+        _199 = Standard3DMaterialBlock.BaseColorFactor;
     }
-    bool _199;
+    bool _206;
     if (Standard3DMaterialBlock.MaterialFlags.w > 0.5)
     {
-        _199 = Standard3DMaterialBlock.MaterialFlags.w < 1.5;
+        _206 = Standard3DMaterialBlock.MaterialFlags.w < 1.5;
     }
     else
     {
-        _199 = false;
+        _206 = false;
     }
-    if (_199)
+    if (_206)
     {
-        if ((_192.w - Standard3DMaterialBlock.AlphaParams.x) < 0.0)
+        if ((_199.w - Standard3DMaterialBlock.AlphaParams.x) < 0.0)
         {
             discard;
         }
     }
-    highp vec3 _209 = normalize(v_loc0);
-    highp vec3 _236;
+    highp vec3 _216 = normalize(v_loc0);
+    highp vec3 _243;
     if (Standard3DMaterialBlock.MaterialFlags.y > 0.5)
     {
-        highp vec3 _216 = normalize(v_loc1.xyz);
-        highp vec3 _228 = (texture(u_fragment_tex1, v_loc2).xyz * 2.0) - vec3(1.0);
-        highp vec2 _232 = _228.xy * Standard3DMaterialBlock.MaterialFlags.z;
-        _236 = normalize(mat3(_216, cross(_209, _216) * v_loc1.w, _209) * vec3(_232.x, _232.y, _228.z));
+        highp vec3 _223 = normalize(v_loc1.xyz);
+        highp vec3 _235 = (texture(u_fragment_tex1, v_loc2).xyz * 2.0) - vec3(1.0);
+        highp vec2 _239 = _235.xy * Standard3DMaterialBlock.MaterialFlags.z;
+        _243 = normalize(mat3(_223, cross(_216, _223) * v_loc1.w, _216) * vec3(_239.x, _239.y, _235.z));
     }
     else
     {
-        _236 = _209;
+        _243 = _216;
     }
-    highp float _240 = clamp(Standard3DMaterialBlock.PbrParams.x, 0.0, 1.0);
-    highp float _243 = clamp(Standard3DMaterialBlock.PbrParams.y, 0.0500000007450580596923828125, 1.0);
-    highp vec3 _248 = normalize(Standard3DLightBlock.CameraPosition.xyz - v_loc4);
-    highp float _325;
+    highp vec2 _259;
+    if (Standard3DMaterialBlock.TextureFlags.x > 0.5)
+    {
+        _259 = Standard3DMaterialBlock.PbrParams.xy * texture(u_fragment_tex3, v_loc2).zy;
+    }
+    else
+    {
+        _259 = Standard3DMaterialBlock.PbrParams.xy;
+    }
+    highp float _261 = clamp(_259.x, 0.0, 1.0);
+    highp float _263 = clamp(_259.y, 0.0500000007450580596923828125, 1.0);
+    highp vec3 _268 = normalize(Standard3DLightBlock.CameraPosition.xyz - v_loc4);
+    highp float _345;
     do
     {
         if (Standard3DShadowBlock.ShadowSettings.x < 0.5)
         {
-            _325 = 1.0;
+            _345 = 1.0;
             break;
         }
-        highp vec3 _260 = v_loc3.xyz / vec3(v_loc3.w);
-        highp vec2 _263 = (_260.xy * 0.5) + vec2(0.5);
-        highp float _264 = _263.x;
-        bool _270;
-        if (!(_264 < 0.0))
+        highp vec3 _280 = v_loc3.xyz / vec3(v_loc3.w);
+        highp vec2 _283 = (_280.xy * 0.5) + vec2(0.5);
+        highp float _284 = _283.x;
+        bool _290;
+        if (!(_284 < 0.0))
         {
-            _270 = _264 > 1.0;
+            _290 = _284 > 1.0;
         }
         else
         {
-            _270 = true;
+            _290 = true;
         }
-        bool _276;
-        if (!_270)
+        bool _296;
+        if (!_290)
         {
-            _276 = _263.y < 0.0;
-        }
-        else
-        {
-            _276 = true;
-        }
-        bool _282;
-        if (!_276)
-        {
-            _282 = _263.y > 1.0;
+            _296 = _283.y < 0.0;
         }
         else
         {
-            _282 = true;
+            _296 = true;
         }
-        if (_282)
+        bool _302;
+        if (!_296)
         {
-            _325 = 1.0;
+            _302 = _283.y > 1.0;
+        }
+        else
+        {
+            _302 = true;
+        }
+        if (_302)
+        {
+            _345 = 1.0;
             break;
         }
-        highp float _292;
-        int _295;
-        _292 = 0.0;
-        _295 = -1;
-        highp float _293;
-        for (; _295 <= 1; _292 = _293, _295++)
+        highp float _312;
+        int _315;
+        _312 = 0.0;
+        _315 = -1;
+        highp float _313;
+        for (; _315 <= 1; _312 = _313, _315++)
         {
-            _293 = _292;
-            for (int _303 = -1; _303 <= 1; )
+            _313 = _312;
+            for (int _323 = -1; _323 <= 1; )
             {
-                _293 += float((_260.z - Standard3DShadowBlock.ShadowSettings.z) <= texture(u_fragment_tex2, _263 + (vec2(float(_303), float(_295)) * Standard3DShadowBlock.ShadowSettings.y)).x);
-                _303++;
+                _313 += float((_280.z - Standard3DShadowBlock.ShadowSettings.z) <= texture(u_fragment_tex2, _283 + (vec2(float(_323), float(_315)) * Standard3DShadowBlock.ShadowSettings.y)).x);
+                _323++;
                 continue;
             }
         }
-        _325 = 1.0 - (Standard3DShadowBlock.ShadowSettings.w * (1.0 - (_292 * 0.111111111938953399658203125)));
+        _345 = 1.0 - (Standard3DShadowBlock.ShadowSettings.w * (1.0 - (_312 * 0.111111111938953399658203125)));
         break;
     } while(false);
-    highp vec3 _330 = normalize(-Standard3DLightBlock.LightDirection.xyz);
-    highp vec3 _336 = normalize(_248 + _330);
-    highp float _338 = clamp(dot(_236, _330), 0.0, 1.0);
-    highp float _340 = clamp(dot(_236, _248), 0.0, 1.0);
-    highp vec3 _342 = mix(vec3(0.039999999105930328369140625), _192.xyz, vec3(_240));
-    highp vec3 _345 = vec3(1.0) - _342;
-    highp vec3 _349 = _342 + (_345 * pow(1.0 - clamp(dot(_336, _248), 0.0, 1.0), 5.0));
-    highp float _350 = _243 * _243;
-    highp float _351 = _350 * _350;
-    highp float _353 = clamp(dot(_236, _336), 0.0, 1.0);
-    highp float _355 = _351 - 1.0;
-    highp float _357 = ((_353 * _353) * _355) + 1.0;
-    highp float _361 = _243 + 1.0;
-    highp float _363 = (_361 * _361) * 0.125;
-    highp float _364 = 1.0 - _363;
-    highp float _367 = _340 / ((_340 * _364) + _363);
-    highp float _374 = 4.0 * _340;
-    highp float _375 = _374 * _338;
-    highp float _380 = 1.0 - _240;
-    int _389 = min(int(Standard3DPointLightBlock.PointLightMeta.x), 16);
-    highp vec3 _391;
-    _391 = (((((vec3(1.0) - _349) * _380) * _192.xyz) + ((_349 * ((_351 / ((3.1415927410125732421875 * _357) * _357)) * (_367 * (_338 / ((_338 * _364) + _363))))) / vec3(isnan(9.9999997473787516355514526367188e-05) ? _375 : (isnan(_375) ? 9.9999997473787516355514526367188e-05 : max(_375, 9.9999997473787516355514526367188e-05))))) * (Standard3DLightBlock.Diffuse.xyz * _325)) * _338;
-    for (int _394 = 0; _394 < _389; )
+    highp vec3 _350 = normalize(-Standard3DLightBlock.LightDirection.xyz);
+    highp vec3 _356 = normalize(_268 + _350);
+    highp float _358 = clamp(dot(_243, _350), 0.0, 1.0);
+    highp float _360 = clamp(dot(_243, _268), 0.0, 1.0);
+    highp vec3 _362 = mix(vec3(0.039999999105930328369140625), _199.xyz, vec3(_261));
+    highp vec3 _365 = vec3(1.0) - _362;
+    highp vec3 _369 = _362 + (_365 * pow(1.0 - clamp(dot(_356, _268), 0.0, 1.0), 5.0));
+    highp float _370 = _263 * _263;
+    highp float _371 = _370 * _370;
+    highp float _373 = clamp(dot(_243, _356), 0.0, 1.0);
+    highp float _375 = _371 - 1.0;
+    highp float _377 = ((_373 * _373) * _375) + 1.0;
+    highp float _381 = _263 + 1.0;
+    highp float _383 = (_381 * _381) * 0.125;
+    highp float _384 = 1.0 - _383;
+    highp float _387 = _360 / ((_360 * _384) + _383);
+    highp float _394 = 4.0 * _360;
+    highp float _395 = _394 * _358;
+    highp float _400 = 1.0 - _261;
+    int _409 = min(int(Standard3DPointLightBlock.PointLightMeta.x), 16);
+    highp vec3 _411;
+    _411 = (((((vec3(1.0) - _369) * _400) * _199.xyz) + ((_369 * ((_371 / ((3.1415927410125732421875 * _377) * _377)) * (_387 * (_358 / ((_358 * _384) + _383))))) / vec3(isnan(9.9999997473787516355514526367188e-05) ? _395 : (isnan(_395) ? 9.9999997473787516355514526367188e-05 : max(_395, 9.9999997473787516355514526367188e-05))))) * (Standard3DLightBlock.Diffuse.xyz * _345)) * _358;
+    for (int _414 = 0; _414 < _409; )
     {
-        highp vec3 _401 = Standard3DPointLightBlock.PointLightPositionRange[_394].xyz - v_loc4;
-        highp float _402 = length(_401);
-        highp float _408 = clamp(1.0 - (_402 / (isnan(0.001000000047497451305389404296875) ? Standard3DPointLightBlock.PointLightPositionRange[_394].w : (isnan(Standard3DPointLightBlock.PointLightPositionRange[_394].w) ? 0.001000000047497451305389404296875 : max(Standard3DPointLightBlock.PointLightPositionRange[_394].w, 0.001000000047497451305389404296875)))), 0.0, 1.0);
-        highp vec3 _419 = _401 / vec3(isnan(9.9999997473787516355514526367188e-05) ? _402 : (isnan(_402) ? 9.9999997473787516355514526367188e-05 : max(_402, 9.9999997473787516355514526367188e-05)));
-        highp vec3 _421 = normalize(_248 + _419);
-        highp float _423 = clamp(dot(_236, _419), 0.0, 1.0);
-        highp vec3 _429 = _342 + (_345 * pow(1.0 - clamp(dot(_421, _248), 0.0, 1.0), 5.0));
-        highp float _431 = clamp(dot(_236, _421), 0.0, 1.0);
-        highp float _434 = ((_431 * _431) * _355) + 1.0;
-        highp float _444 = _374 * _423;
-        _391 += ((((((vec3(1.0) - _429) * _380) * _192.xyz) + ((_429 * ((_351 / ((3.1415927410125732421875 * _434) * _434)) * (_367 * (_423 / ((_423 * _364) + _363))))) / vec3(isnan(9.9999997473787516355514526367188e-05) ? _444 : (isnan(_444) ? 9.9999997473787516355514526367188e-05 : max(_444, 9.9999997473787516355514526367188e-05))))) * ((Standard3DPointLightBlock.PointLightColorIntensity[_394].xyz * Standard3DPointLightBlock.PointLightColorIntensity[_394].w) * (_408 * _408))) * _423);
-        _394++;
+        highp vec3 _421 = Standard3DPointLightBlock.PointLightPositionRange[_414].xyz - v_loc4;
+        highp float _422 = length(_421);
+        highp float _428 = clamp(1.0 - (_422 / (isnan(0.001000000047497451305389404296875) ? Standard3DPointLightBlock.PointLightPositionRange[_414].w : (isnan(Standard3DPointLightBlock.PointLightPositionRange[_414].w) ? 0.001000000047497451305389404296875 : max(Standard3DPointLightBlock.PointLightPositionRange[_414].w, 0.001000000047497451305389404296875)))), 0.0, 1.0);
+        highp vec3 _439 = _421 / vec3(isnan(9.9999997473787516355514526367188e-05) ? _422 : (isnan(_422) ? 9.9999997473787516355514526367188e-05 : max(_422, 9.9999997473787516355514526367188e-05)));
+        highp vec3 _441 = normalize(_268 + _439);
+        highp float _443 = clamp(dot(_243, _439), 0.0, 1.0);
+        highp vec3 _449 = _362 + (_365 * pow(1.0 - clamp(dot(_441, _268), 0.0, 1.0), 5.0));
+        highp float _451 = clamp(dot(_243, _441), 0.0, 1.0);
+        highp float _454 = ((_451 * _451) * _375) + 1.0;
+        highp float _464 = _394 * _443;
+        _411 += ((((((vec3(1.0) - _449) * _400) * _199.xyz) + ((_449 * ((_371 / ((3.1415927410125732421875 * _454) * _454)) * (_387 * (_443 / ((_443 * _384) + _383))))) / vec3(isnan(9.9999997473787516355514526367188e-05) ? _464 : (isnan(_464) ? 9.9999997473787516355514526367188e-05 : max(_464, 9.9999997473787516355514526367188e-05))))) * ((Standard3DPointLightBlock.PointLightColorIntensity[_414].xyz * Standard3DPointLightBlock.PointLightColorIntensity[_414].w) * (_428 * _428))) * _443);
+        _414++;
         continue;
     }
-    highp vec3 _458 = _391 + (Standard3DLightBlock.Ambient.xyz * _192.xyz);
-    highp vec3 _466;
-    if (Standard3DLightBlock.ColorPipeline.x > 0.5)
+    highp float _488;
+    if (Standard3DMaterialBlock.TextureFlags.y > 0.5)
     {
-        _466 = _458;
+        _488 = mix(1.0, texture(u_fragment_tex4, v_loc2).x, Standard3DMaterialBlock.Emissive.w);
     }
     else
     {
-        _466 = clamp(_458, vec3(0.0), vec3(1.0));
+        _488 = 1.0;
     }
-    out_var_SV_Target0 = vec4(_466, _192.w);
+    highp vec3 _593;
+    if (Standard3DMaterialBlock.TextureFlags.z > 0.5)
+    {
+        highp vec4 _506 = texture(u_fragment_tex5, v_loc2);
+        bool _516;
+        if (Standard3DLightBlock.ColorPipeline.x > 0.5)
+        {
+            _516 = Standard3DMaterialBlock.TextureFlags.w < 0.5;
+        }
+        else
+        {
+            _516 = false;
+        }
+        highp vec3 _550;
+        if (_516)
+        {
+            highp float _519 = _506.x;
+            highp float _528;
+            if (_519 <= 0.040449999272823333740234375)
+            {
+                _528 = _519 * 0.077399380505084991455078125;
+            }
+            else
+            {
+                _528 = pow((_519 + 0.054999999701976776123046875) * 0.947867333889007568359375, 2.400000095367431640625);
+            }
+            highp float _529 = _506.y;
+            highp float _538;
+            if (_529 <= 0.040449999272823333740234375)
+            {
+                _538 = _529 * 0.077399380505084991455078125;
+            }
+            else
+            {
+                _538 = pow((_529 + 0.054999999701976776123046875) * 0.947867333889007568359375, 2.400000095367431640625);
+            }
+            highp float _539 = _506.z;
+            highp float _548;
+            if (_539 <= 0.040449999272823333740234375)
+            {
+                _548 = _539 * 0.077399380505084991455078125;
+            }
+            else
+            {
+                _548 = pow((_539 + 0.054999999701976776123046875) * 0.947867333889007568359375, 2.400000095367431640625);
+            }
+            _550 = vec3(_528, _538, _548);
+        }
+        else
+        {
+            _550 = _506.xyz;
+        }
+        bool _557;
+        if (Standard3DLightBlock.ColorPipeline.x < 0.5)
+        {
+            _557 = Standard3DMaterialBlock.TextureFlags.w > 0.5;
+        }
+        else
+        {
+            _557 = false;
+        }
+        highp vec3 _591;
+        if (_557)
+        {
+            highp float _569;
+            if (_550.x <= 0.003130800090730190277099609375)
+            {
+                _569 = _550.x * 12.9200000762939453125;
+            }
+            else
+            {
+                _569 = (1.05499994754791259765625 * pow(_550.x, 0.4166666567325592041015625)) - 0.054999999701976776123046875;
+            }
+            highp float _579;
+            if (_550.y <= 0.003130800090730190277099609375)
+            {
+                _579 = _550.y * 12.9200000762939453125;
+            }
+            else
+            {
+                _579 = (1.05499994754791259765625 * pow(_550.y, 0.4166666567325592041015625)) - 0.054999999701976776123046875;
+            }
+            highp float _589;
+            if (_550.z <= 0.003130800090730190277099609375)
+            {
+                _589 = _550.z * 12.9200000762939453125;
+            }
+            else
+            {
+                _589 = (1.05499994754791259765625 * pow(_550.z, 0.4166666567325592041015625)) - 0.054999999701976776123046875;
+            }
+            _591 = vec3(_569, _579, _589);
+        }
+        else
+        {
+            _591 = _550;
+        }
+        _593 = Standard3DMaterialBlock.Emissive.xyz * _591;
+    }
+    else
+    {
+        _593 = Standard3DMaterialBlock.Emissive.xyz;
+    }
+    highp vec3 _594 = (_411 + ((Standard3DLightBlock.Ambient.xyz * _199.xyz) * _488)) + _593;
+    highp vec3 _602;
+    if (Standard3DLightBlock.ColorPipeline.x > 0.5)
+    {
+        _602 = _594;
+    }
+    else
+    {
+        _602 = clamp(_594, vec3(0.0), vec3(1.0));
+    }
+    out_var_SV_Target0 = vec4(_602, _199.w);
 }
