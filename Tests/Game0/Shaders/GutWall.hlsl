@@ -5,7 +5,7 @@ cbuffer GutBlock : register(b0, space3)
     float4 Light;      // xy world position, z height, w intensity
     float4 LightColor;
     float4 Surface;    // x normal strength, y wetness, z ambient, w display mode
-    float4 Options;    // x light radius, y warm fill enabled, z light marker enabled
+    float4 Options;    // x light radius, y warm fill enabled, z light marker enabled, w height decode range
 };
 Texture2D<float4> Albedo : register(t0, space2);
 SamplerState AlbedoSampler : register(s0, space2);
@@ -41,14 +41,15 @@ float3 pointLight(float3 p, float3 n, float3 base, float roughness, float wetMas
     float dist = length(delta);
     float3 l = delta / max(dist, .001);
     float attenuation = pow(saturate(1 - dist / radius), 2);
-    float diffuse = saturate((dot(n, l) + .12) / 1.12);
+    // A small wrap term softens the terminator on the raised, translucent-looking tissue.
+    float diffuse = saturate((dot(n, l) + .40) / 1.40);
     // Orthographic viewer sits along +Z. The moving halfway vector shifts the wet highlights.
     float3 halfway = normalize(l + float3(0, 0, 1));
     float facing = saturate(dot(n, halfway));
     // Broad, subdued highlights keep the surface soft rather than metallic. A small
     // second lobe retains a wet glint without tracing every crease with a sharp wire.
-    float specular = (pow(facing, lerp(42, 14, roughness)) * .34
-        + pow(facing, 96) * .06) * Surface.y * wetMask * diffuse;
+    float specular = (pow(facing, lerp(26, 10, roughness)) * .17
+        + pow(facing, 80) * .025) * Surface.y * wetMask * diffuse;
     return (base * diffuse + specular) * color * intensity * attenuation;
 }
 
@@ -70,12 +71,13 @@ float4 fragment_main(VsOutput input) : SV_Target0
     }
     // Albedo authored as sRGB; do lighting in linear space, then encode the final image.
     float3 base = pow(albedo.rgb, 2.2);
-    float3 p = float3(world, maps.r * .6);
+    float3 p = float3(world, maps.r * Options.w);
     float3 lit = base * Surface.z * maps.b;
-    float wetMask = smoothstep(.02, .24, maps.r);
+    // Highlight control follows the local crevice mask, independently of the broad arch height.
+    float wetMask = smoothstep(.60, .98, maps.b);
     lit += pointLight(p, n, base, maps.g, wetMask, Light.xyz, LightColor.rgb, Light.w, Options.x);
-    lit += pointLight(p, n, base, maps.g, wetMask, float3(11, -4, 3), float3(1, .42, .10),
-        1.1 * Options.y, 18);
+    lit += pointLight(p, n, base, maps.g, wetMask, float3(11, -4, 4.8), float3(1, .42, .10),
+        .9 * Options.y, 18);
     float3 color = lerp(backdrop, lit, albedo.a);
     // Small analytic halo makes the controlled light position visible in the empty space too.
     float d = length(world - Light.xy);

@@ -31,8 +31,9 @@ public sealed class GutWallDemoSystem : IEcsDestroy, IUpdateSystem, IRenderSyste
     private (Vector2 Position, float Zoom, float Rotation, float Ppu) _savedCamera;
     private bool _wasActive, _followMouse = true, _orbit, _fill = true, _marker = true;
     private float _elapsed, _spacing = .28f, _bend = 1.1f, _grooveWidth = .48f, _detail = .65f;
-    private float _normalStrength = .85f, _wetness = .55f, _ambient = .38f;
-    private float _lightHeight = 2f, _lightIntensity = 5f, _lightRadius = 15f;
+    private float _wallArch = 2.1f, _foldPuffiness = .46f;
+    private float _normalStrength = 1f, _wetness = .65f, _ambient = .34f;
+    private float _lightHeight = 4.2f, _lightIntensity = 5f, _lightRadius = 15f;
     private int _seed = 42, _mode;
     private Vector2 _lightPosition = new(-5f, 0f);
     private Vector3 _lightColor = new(.025f, .95f, .85f);
@@ -90,10 +91,12 @@ public sealed class GutWallDemoSystem : IEcsDestroy, IUpdateSystem, IRenderSyste
         if (_bakeTask != null) return;
         int seed = _seed;
         float spacing = _spacing, bend = _bend, grooveWidth = _grooveWidth, detail = _detail;
+        float wallArch = _wallArch, foldPuffiness = _foldPuffiness;
         _exportStatus = "";
         // Only array generation runs on the worker. GPU upload stays on the game thread.
         var cancellation = _bakeCancellation.Token;
-        _bakeTask = Task.Run(() => GutFoldTexture.Generate(seed, spacing, bend, grooveWidth, detail, cancellation), cancellation);
+        _bakeTask = Task.Run(() => GutFoldTexture.Generate(seed, spacing, bend, grooveWidth, detail,
+            wallArch, foldPuffiness, cancellation), cancellation);
     }
 
     private void FinishBake()
@@ -166,7 +169,7 @@ public sealed class GutWallDemoSystem : IEcsDestroy, IUpdateSystem, IRenderSyste
         {
             Light = new(position, _lightHeight, _lightIntensity), LightColor = new(_lightColor, 1f),
             Surface = new(_normalStrength, _wetness, _ambient, mode),
-            Options = new(_lightRadius, _fill ? 1f : 0f, _marker ? 1f : 0f, 0f),
+            Options = new(_lightRadius, _fill ? 1f : 0f, _marker ? 1f : 0f, GutFoldTexture.HeightRange),
         });
     }
 
@@ -198,7 +201,7 @@ public sealed class GutWallDemoSystem : IEcsDestroy, IUpdateSystem, IRenderSyste
         ImGui.Checkbox("Warm fill light", ref _fill);
         ImGui.Checkbox("Show light marker", ref _marker);
         ImGui.SliderFloat2("Light XY", ref _lightPosition, -12f, 12f);
-        ImGui.SliderFloat("Light height", ref _lightHeight, .7f, 6f);
+        ImGui.SliderFloat("Light height", ref _lightHeight, 1f, 9f);
         ImGui.SliderFloat("Light intensity", ref _lightIntensity, 0f, 12f);
         ImGui.SliderFloat("Light radius", ref _lightRadius, 3f, 24f);
         ImGui.ColorEdit3("Light color", ref _lightColor);
@@ -207,6 +210,8 @@ public sealed class GutWallDemoSystem : IEcsDestroy, IUpdateSystem, IRenderSyste
         ImGui.SliderFloat("Ambient", ref _ambient, 0f, 1f);
         ImGui.Separator();
         ImGui.InputInt("Seed", ref _seed);
+        ImGui.SliderFloat("Wall arch", ref _wallArch, 0f, 2.5f);
+        ImGui.SliderFloat("Fold puffiness", ref _foldPuffiness, .15f, .8f);
         ImGui.SliderFloat("Fold scale", ref _spacing, .25f, .85f);
         ImGui.SliderFloat("Groove width", ref _grooveWidth, .25f, .85f);
         ImGui.SliderFloat("Fine striations", ref _detail, 0f, 1f);

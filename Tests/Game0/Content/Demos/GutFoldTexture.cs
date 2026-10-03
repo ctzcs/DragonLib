@@ -10,11 +10,13 @@ internal static class GutFoldTexture
 {
     public const int Width = 1400, Height = 800;
     public const float WorldWidth = 28f, WorldHeight = 16f;
+    public const float HeightRange = 4.5f;
     private const float PixelSize = WorldWidth / Width;
 
     public sealed record Maps(Color[] Albedo, Color[] Normal, Color[] Material, double BakeMilliseconds);
 
     public static Maps Generate(int seed, float spacing, float bend, float grooveWidth, float detail,
+        float wallArch, float foldPuffiness,
         CancellationToken cancellation = default)
     {
         long started = System.Diagnostics.Stopwatch.GetTimestamp();
@@ -38,20 +40,29 @@ internal static class GutFoldTexture
             float concentration = SampleField(field.Values, field.Width, field.Height,
                 (p.X + sampleOffset.X + 14f) / WorldWidth,
                 (p.Y + sampleOffset.Y + 8f) / WorldHeight);
-            float v = Smooth(0f, .44f, concentration);
+            // A continuous, expansive profile fills the space between grown bands.
+            // The concave response gives broad soft shoulders and narrow shared creases,
+            // while keeping the concentration peaks rounded without a binary contour.
+            float v = Math.Clamp(concentration / .52f, 0f, 1f);
+            float exponent = .28f + .38f * grooveWidth;
+            v = MathF.Pow(MathF.Sin(v * MathF.PI * .5f), exponent);
             profiles[i] = v;
-            float bulge = MathF.Sin(MathF.Pow(v, grooveWidth) * MathF.PI * .5f);
-            float cellTone = Fbm(p * .43f, unchecked(seed + 573));
-            variations[i] = cellTone;
+            variations[i] = Fbm(p * .43f, unchecked(seed + 573));
+            float bulge = v;
             // Nested contour lines follow the actual grown ridge instead of cutting
             // across it in a separate coordinate domain.
-            float fine = MathF.Sin(v * 12.57f + .45f * Noise(p * 1.4f, seed));
+            float fine = MathF.Sin(bulge * 12.57f + .45f * Noise(p * 1.4f, seed));
             striations[i] = fine;
             float shoulder = MathF.Sin(bulge * MathF.PI);
-            float tissue = .070f + (.19f + .045f * cellTone) * bulge
+            float tissue = .12f + foldPuffiness * (.85f + .30f * variations[i]) * bulge
                 + detail * .004f * fine * shoulder;
-            float rim = .43f * MathF.Exp(-MathF.Pow((d - .20f) / .20f, 2));
-            heights[i] = Smooth(0f, .10f, d) * (tissue + rim);
+            // A broad, softly varying arch supports the small folds. Its gradient is
+            // included in normals, so the entire wall turns towards/away from a lamp.
+            float arch = wallArch * MathF.Exp(-MathF.Pow((d - 5f) / 6f, 2))
+                * Smooth(0f, 1.2f, d) * (.88f + .12f * MathF.Sin(p.Y * .48f + .6f * MathF.Sin(p.X * .22f)));
+            float cushions = wallArch * .08f * Fbm(p * .55f, unchecked(seed + 97)) * Smooth(0f, 1f, d);
+            float rim = .38f * MathF.Exp(-MathF.Pow((d - .24f) / .24f, 2));
+            heights[i] = Smooth(0f, .10f, d) * (arch + cushions + tissue + rim);
         }
 
         // Smooth the height source before taking derivatives, keeping shared creases continuous.
@@ -79,10 +90,11 @@ internal static class GutFoldTexture
             float mask = Smooth(0f, .10f, d);
             float v = profiles[i], h = heights[i];
             float grain = Noise(p * 9f, seed), mottling = Fbm(p * .7f, seed);
-            var flesh = Vector3.Lerp(new(.10f, .065f, .030f), new(.32f, .235f, .115f), Smooth(.02f, .70f, v));
-            // A broad ochre shoulder and a finer dark line provide layered, drawn-looking contours.
+            // Let the crown carry the lighter flesh color. Bright outlines and nearly
+            // black low regions made the previous surface read as engraved grooves.
+            var flesh = Vector3.Lerp(new(.24f, .15f, .080f), new(.48f, .35f, .19f), Smooth(.08f, .92f, v));
             float shoulderBand = MathF.Exp(-MathF.Pow((v - .28f) / .11f, 2f));
-            flesh = Vector3.Lerp(flesh, new(.38f, .29f, .105f), shoulderBand * .55f);
+            flesh = Vector3.Lerp(flesh, new(.38f, .29f, .145f), shoulderBand * .12f);
             flesh *= .76f + .14f * variations[i] + .18f * mottling + .08f * grain;
             flesh *= 1f - detail * .09f * Smooth(.25f, 1f, -striations[i]);
             float rim = MathF.Exp(-MathF.Pow((d - .20f) / .30f, 2));
@@ -95,8 +107,8 @@ internal static class GutFoldTexture
             // World Y and texture Y both point down. Positive Z faces the viewer.
             var n = Vector3.Normalize(new(-dx, -dy, 1f));
             normal[i] = Encode(n * .5f + new Vector3(.5f), 1f);
-            material[i] = Encode(new(h / .6f, .50f + .17f * grain,
-                .42f + .58f * Smooth(.02f, .60f, v)), mask);
+            material[i] = Encode(new(h / HeightRange, .46f + .15f * grain,
+                .72f + .28f * Smooth(.02f, .70f, v)), mask);
         }
         return new(albedo, normal, material, System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
     }

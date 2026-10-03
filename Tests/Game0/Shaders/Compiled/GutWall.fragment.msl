@@ -24,7 +24,7 @@ struct fragment_main_in
 fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], constant type_GutBlock& GutBlock [[buffer(0)]], texture2d<float> Albedo [[texture(0)]], texture2d<float> Normals [[texture(1)]], texture2d<float> MaterialMap [[texture(2)]], sampler AlbedoSampler [[sampler(0)]], sampler NormalSampler [[sampler(1)]], sampler MaterialSampler [[sampler(2)]])
 {
     fragment_main_out out = {};
-    float4 _269;
+    float4 _271;
     do
     {
         float2 _91 = (in.in_var_TEXCOORD0 - float2(0.5)) * float2(28.0, 16.0);
@@ -56,30 +56,30 @@ fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], const
                 }
                 _143 = _142;
             }
-            _269 = float4(mix(_126, _143, float3(_95.w)), 1.0);
+            _271 = float4(mix(_126, _143, float3(_95.w)), 1.0);
             break;
         }
         float3 _152 = powr(_95.xyz, float3(2.2000000476837158203125));
-        float _153 = _99.x;
-        float3 _155 = float3(_117, _91.y, _153 * 0.60000002384185791015625);
-        float _161 = smoothstep(0.0199999995529651641845703125, 0.23999999463558197021484375, _153);
-        float3 _173 = GutBlock.Light.xyz - _155;
-        float _174 = length(_173);
-        float3 _177 = _173 / float3(precise::max(_174, 0.001000000047497451305389404296875));
-        float _185 = fast::clamp((dot(_116, _177) + 0.119999997317790985107421875) * 0.892857134342193603515625, 0.0, 1.0);
-        float _189 = fast::clamp(dot(_116, fast::normalize(_177 + float3(0.0, 0.0, 1.0))), 0.0, 1.0);
-        float _190 = mix(42.0, 14.0, _99.y);
-        float3 _211 = float3(11.0, -4.0, 3.0) - _155;
-        float _212 = length(_211);
-        float3 _215 = _211 / float3(precise::max(_212, 0.001000000047497451305389404296875));
-        float _223 = fast::clamp((dot(_116, _215) + 0.119999997317790985107421875) * 0.892857134342193603515625, 0.0, 1.0);
-        float _227 = fast::clamp(dot(_116, fast::normalize(_215 + float3(0.0, 0.0, 1.0))), 0.0, 1.0);
-        float3 _245 = mix(_126, (((_152 * GutBlock.Surface.z) * _99.z) + (((((_152 * _185) + float3(((((powr(_189, _190) * 0.3400000035762786865234375) + (powr(_189, 96.0) * 0.0599999986588954925537109375)) * GutBlock.Surface.y) * _161) * _185)) * GutBlock.LightColor.xyz) * GutBlock.Light.w) * powr(fast::clamp(1.0 - (_174 / GutBlock.Options.x), 0.0, 1.0), 2.0))) + (((((_152 * _223) + float3(((((powr(_227, _190) * 0.3400000035762786865234375) + (powr(_227, 96.0) * 0.0599999986588954925537109375)) * GutBlock.Surface.y) * _161) * _223)) * float3(1.0, 0.4199999868869781494140625, 0.100000001490116119384765625)) * (1.10000002384185791015625 * GutBlock.Options.y)) * powr(fast::clamp(1.0 - (_212 * 0.0555555559694766998291015625), 0.0, 1.0), 2.0)), float3(_95.w));
-        float _248 = length(_91 - GutBlock.Light.xy);
-        _269 = float4(powr(fast::clamp(_245 + ((GutBlock.LightColor.xyz * GutBlock.Options.z) * ((0.017999999225139617919921875 * exp(((-_248) * _248) * 0.5)) + (0.800000011920928955078125 * (1.0 - smoothstep(0.070000000298023223876953125, 0.119999997317790985107421875, _248))))), float3(0.0), float3(1.0)), float3(0.4545454680919647216796875)), 1.0);
+        float3 _157 = float3(_117, _91.y, _99.x * GutBlock.Options.w);
+        float _161 = _99.z;
+        float _163 = smoothstep(0.60000002384185791015625, 0.980000019073486328125, _161);
+        float3 _175 = GutBlock.Light.xyz - _157;
+        float _176 = length(_175);
+        float3 _179 = _175 / float3(precise::max(_176, 0.001000000047497451305389404296875));
+        float _187 = fast::clamp((dot(_116, _179) + 0.4000000059604644775390625) * 0.71428573131561279296875, 0.0, 1.0);
+        float _191 = fast::clamp(dot(_116, fast::normalize(_179 + float3(0.0, 0.0, 1.0))), 0.0, 1.0);
+        float _192 = mix(26.0, 10.0, _99.y);
+        float3 _213 = float3(11.0, -4.0, 4.80000019073486328125) - _157;
+        float _214 = length(_213);
+        float3 _217 = _213 / float3(precise::max(_214, 0.001000000047497451305389404296875));
+        float _225 = fast::clamp((dot(_116, _217) + 0.4000000059604644775390625) * 0.71428573131561279296875, 0.0, 1.0);
+        float _229 = fast::clamp(dot(_116, fast::normalize(_217 + float3(0.0, 0.0, 1.0))), 0.0, 1.0);
+        float _250 = length(_91 - GutBlock.Light.xy);
+        float3 _264 = mix(_126, (((_152 * GutBlock.Surface.z) * _161) + (((((_152 * _187) + float3(((((powr(_191, _192) * 0.17000000178813934326171875) + (powr(_191, 80.0) * 0.02500000037252902984619140625)) * GutBlock.Surface.y) * _163) * _187)) * GutBlock.LightColor.xyz) * GutBlock.Light.w) * powr(fast::clamp(1.0 - (_176 / GutBlock.Options.x), 0.0, 1.0), 2.0))) + (((((_152 * _225) + float3(((((powr(_229, _192) * 0.17000000178813934326171875) + (powr(_229, 80.0) * 0.02500000037252902984619140625)) * GutBlock.Surface.y) * _163) * _225)) * float3(1.0, 0.4199999868869781494140625, 0.100000001490116119384765625)) * (0.89999997615814208984375 * GutBlock.Options.y)) * powr(fast::clamp(1.0 - (_214 * 0.0555555559694766998291015625), 0.0, 1.0), 2.0)), float3(_95.w)) + ((GutBlock.LightColor.xyz * GutBlock.Options.z) * ((0.017999999225139617919921875 * exp(((-_250) * _250) * 0.5)) + (0.800000011920928955078125 * (1.0 - smoothstep(0.070000000298023223876953125, 0.119999997317790985107421875, _250)))));
+        _271 = float4(powr(fast::clamp(_264, float3(0.0), float3(1.0)), float3(0.4545454680919647216796875)), 1.0);
         break;
     } while(false);
-    out.out_var_SV_Target0 = _269;
+    out.out_var_SV_Target0 = _271;
     return out;
 }
 
