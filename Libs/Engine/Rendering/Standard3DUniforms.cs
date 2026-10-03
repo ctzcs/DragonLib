@@ -38,4 +38,8 @@ public struct ShadowMatrixUniforms
 public struct ShadowSettingsUniforms
 {
     public Vector4 Settings; // enabled、texel size、bias、darkness
+    public Matrix4x4 Cascade0, Cascade1, Cascade2, Cascade3;
+    public Vector4 Splits;
+    public Vector4 CascadeSettings; // count、blend fraction、debug colors
+    public Vector4 CameraForward; // xyz: forward；w: near clip
 }

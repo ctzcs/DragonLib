@@ -45,6 +45,7 @@ public sealed class Renderer3D : IDisposable
         /// <summary>蒙皮 draw 的 joint palette（非 null 即蒙皮），提交时写入材质 vertex uniform slot 2。</summary>
         public Matrix4x4[]? JointPalette;
         public VertexBuffer? InstanceBuffer;
+        public Material? InstancedDepthMaterial;
         public int InstanceCount;
         public int Sequence;
 
@@ -137,6 +138,8 @@ public sealed class Renderer3D : IDisposable
     private Material? _shadowMaterial;
     private Material? _skinnedShadowMaterial;
     private SceneLighting3D? _lighting;
+    private CascadedShadowMap? _cascades;
+    private RectInt? _shadowViewport;
     private Matrix4x4 _shadowLightViewProjection;
 
     public bool IsActive => _target != null;
@@ -154,7 +157,7 @@ public sealed class Renderer3D : IDisposable
     /// （用 <paramref name="depthMaterial"/>，面剔除翻转为 Front 消 acne），再提交颜色 pass。
     /// 须在 Begin 之后、End 之前调用。depthMaterial 的顶点 uniform 需为单个
     /// WorldLightViewProjection 矩阵（见 DepthOnly.hlsl）。
-    /// 实例化 draw 不进阴影 pass。
+    /// 实例化 draw 在提供匹配布局的 instancedDepthMaterial 时进入阴影 pass。
     /// 提供 skinnedDepthMaterial 时蒙皮 draw 使用它，并将 palette 写入 vertex slot 2。
     /// </summary>
     public void SetShadowPass(
@@ -173,6 +176,12 @@ public sealed class Renderer3D : IDisposable
         _shadowMaterial = depthMaterial;
         _skinnedShadowMaterial = skinnedDepthMaterial;
         _shadowLightViewProjection = lightViewProjection;
+    }
+
+    public void SetShadowPass(CascadedShadowMap cascades, Material depthMaterial, Material? skinnedDepthMaterial = null)
+    {
+        SetShadowPass(cascades.Target, depthMaterial, cascades.Matrices[0], skinnedDepthMaterial);
+        _cascades = cascades;
     }
 
     /// <summary>只对本次 Begin/End 生效，提交 draw 时统一写入标准管线的光照槽位。</summary>
@@ -326,7 +335,7 @@ public sealed class Renderer3D : IDisposable
     public void DrawInstances<TInstance>(
         Mesh mesh,
         Material material,
-        ReadOnlySpan<TInstance> instances)
+        ReadOnlySpan<TInstance> instances, Material? instancedDepthMaterial = null)
         where TInstance : unmanaged, IVertex
     {
         EnsureActive();
@@ -338,7 +347,7 @@ public sealed class Renderer3D : IDisposable
 
         var buffer = GetInstanceBufferPool<TInstance>().Rent();
         buffer.Upload(instances);
-        QueueInstances(mesh, material, buffer, instances.Length);
+        QueueInstances(mesh, material, buffer, instances.Length, instancedDepthMaterial);
     }
 
     /// <summary>
@@ -348,9 +357,9 @@ public sealed class Renderer3D : IDisposable
     public void DrawInstances<TInstance>(
         Mesh3D mesh,
         Material material,
-        ReadOnlySpan<TInstance> instances)
+        ReadOnlySpan<TInstance> instances, Material? instancedDepthMaterial = null)
         where TInstance : unmanaged, IVertex
-        => DrawInstances(mesh.Geometry, material, instances);
+        => DrawInstances(mesh.Geometry, material, instances, instancedDepthMaterial);
 
     /// <summary>
     /// Queues an instanced draw using a caller-owned instance buffer.
@@ -359,7 +368,7 @@ public sealed class Renderer3D : IDisposable
         Mesh mesh,
         Material material,
         VertexBuffer instanceBuffer,
-        int instanceCount)
+        int instanceCount, Material? instancedDepthMaterial = null)
     {
         EnsureActive();
         ArgumentNullException.ThrowIfNull(mesh);
@@ -375,7 +384,7 @@ public sealed class Renderer3D : IDisposable
         if (instanceCount == 0)
             return;
 
-        QueueInstances(mesh, material, instanceBuffer, instanceCount);
+        QueueInstances(mesh, material, instanceBuffer, instanceCount, instancedDepthMaterial);
     }
 
     /// <summary>
@@ -385,16 +394,16 @@ public sealed class Renderer3D : IDisposable
         Mesh3D mesh,
         Material material,
         VertexBuffer instanceBuffer,
-        int instanceCount)
-        => DrawInstances(mesh.Geometry, material, instanceBuffer, instanceCount);
+        int instanceCount, Material? instancedDepthMaterial = null)
+        => DrawInstances(mesh.Geometry, material, instanceBuffer, instanceCount, instancedDepthMaterial);
 
     private void QueueInstances(
         Mesh mesh,
         Material material,
         VertexBuffer instanceBuffer,
-        int instanceCount)
+        int instanceCount, Material? instancedDepthMaterial = null)
     {
-        // 实例化 draw 本期固定不透明：不走透明队列，也不进阴影 pass。
+        // 实例化 draw 固定不透明；深度 shader 由调用方保证实例布局和动画一致。
         _items.Add(new DrawItem
         {
             Mesh = mesh,
@@ -402,6 +411,7 @@ public sealed class Renderer3D : IDisposable
             State = RenderState3D.Opaque,
             InstanceBuffer = instanceBuffer,
             InstanceCount = instanceCount,
+            InstancedDepthMaterial = instancedDepthMaterial,
             Sequence = _sequence++
         });
     }
@@ -462,8 +472,15 @@ public sealed class Renderer3D : IDisposable
             if (_shadowTarget != null && _shadowMaterial != null)
             {
                 // 阴影 pass 只看不透明队：半透明写深度图会得到错误的实心影子，本期不进。
-                for (var i = 0; i < transparentStart; i++)
-                    SubmitShadow(_shadowTarget, _items[i]);
+                for (var cascade = 0; cascade < (_cascades != null ? 4 : 1); cascade++)
+                {
+                    if (_cascades != null)
+                    {
+                        _shadowLightViewProjection = _cascades.Matrices[cascade];
+                        _shadowViewport = _cascades.Viewport(cascade);
+                    }
+                    for (var i = 0; i < transparentStart; i++) SubmitShadow(_shadowTarget, _items[i]);
+                }
             }
 
             foreach (var item in _items)
@@ -496,6 +513,8 @@ public sealed class Renderer3D : IDisposable
             _shadowMaterial = null;
             _skinnedShadowMaterial = null;
             _lighting = null;
+            _cascades = null;
+            _shadowViewport = null;
         }
     }
 
@@ -543,34 +562,37 @@ public sealed class Renderer3D : IDisposable
 
     /// <summary>
     /// 阴影深度 pass。面剔除翻转为 Front 消除自遮挡 acne；深度比较用 Less（深度图每帧清理）。
-    /// 实例化 draw 不进阴影 pass：实例缓冲布局由调用侧 shader 自定义（TInstance : IVertex），
-    /// 且实例的顶点动画（如 Basic3DInstanced 的轨道旋转）只存在于颜色 pass 的顶点 shader 里，
-    /// 通用实例化深度变体画出的剪影是错的，需调用方提供配套变体。
+    /// 实例化 draw 仅使用调用方提供的配套深度变体，避免自定义实例动画与颜色 pass 不一致。
     /// 蒙皮 draw 仅在提供 skinnedDepthMaterial 时提交，并写入与颜色 pass 相同的 palette。
     /// </summary>
     private void SubmitShadow(IDrawableTarget shadowTarget, DrawItem item)
     {
-        if (item.IsInstanced)
-            return;
-
-        var material = item.JointPalette != null ? _skinnedShadowMaterial : _shadowMaterial;
+        var material = item.IsInstanced ? item.InstancedDepthMaterial
+            : item.JointPalette != null ? _skinnedShadowMaterial : _shadowMaterial;
         if (material == null)
             return;
         material.Vertex.SetUniformBuffer(new ShadowDirectVertexUniforms
         {
-            WorldLightViewProjection = item.World * _shadowLightViewProjection,
+            WorldLightViewProjection = item.IsInstanced ? _shadowLightViewProjection : item.World * _shadowLightViewProjection,
         });
 
         if (item.JointPalette != null)
             material.Vertex.SetUniformBuffer(MemoryMarshal.AsBytes(item.JointPalette.AsSpan()), 2);
 
-        _graphicsDevice.Draw(new DrawCommand(shadowTarget, item.Mesh, material)
+        var command = new DrawCommand(shadowTarget, item.Mesh, material)
         {
             CullMode = CullMode.Front,
             DepthCompare = DepthCompare.Less,
             DepthTestEnabled = true,
             DepthWriteEnabled = true,
-        });
+            Viewport = _shadowViewport,
+        };
+        if (item.IsInstanced)
+        {
+            command.VertexBuffers.Add((item.InstanceBuffer!, true));
+            command.InstanceCount = item.InstanceCount;
+        }
+        _graphicsDevice.Draw(command);
     }
 
     private void EnsureActive()

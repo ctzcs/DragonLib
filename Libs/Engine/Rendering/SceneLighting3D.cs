@@ -16,6 +16,7 @@ public sealed class SceneLighting3D
     public float ShadowBias = 0.0015f;
     public float ShadowDarkness = 0.65f;
     public ShadowMap? ShadowMap;
+    public CascadedShadowMap? Cascades;
     public bool HdrEnabled;
     private readonly float[] _packedLights = new float[PointLight3D.PackedFloatCount];
 
@@ -37,15 +38,27 @@ public sealed class SceneLighting3D
     public void Apply(Material material, Camera3D camera)
     {
         material.Fragment.SetUniformBuffer(GetLightUniforms(camera.Position));
-        material.Fragment.SetUniformBuffer(GetShadowUniforms(), 2);
+        var shadow = GetShadowUniforms();
+        if (Cascades != null)
+        {
+            shadow.Settings.X = ShadowsEnabled ? 1 : 0;
+            shadow.Settings.Y = 1f / Cascades.Target.Width;
+            shadow.Cascade0 = Cascades.Matrices[0]; shadow.Cascade1 = Cascades.Matrices[1];
+            shadow.Cascade2 = Cascades.Matrices[2]; shadow.Cascade3 = Cascades.Matrices[3];
+            shadow.Splits = Cascades.Splits;
+            shadow.CascadeSettings = new Vector4(4, Math.Clamp(Cascades.BlendFraction, 0, .5f), Cascades.DebugColors ? 1 : 0, 0);
+            shadow.CameraForward = new Vector4(camera.Forward, camera.NearClip);
+        }
+        material.Fragment.SetUniformBuffer(shadow, 2);
         PointLight3D.Pack(CollectionsMarshal.AsSpan(PointLights), _packedLights);
         material.Fragment.SetUniformBuffer(_packedLights.AsSpan(), 3);
         material.Vertex.SetUniformBuffer(new ShadowMatrixUniforms
         {
             LightViewProjection = ShadowMap?.LightViewProjection ?? Matrix4x4.Identity,
         }, 1);
-        if (ShadowMap != null)
-            material.Fragment.Samplers[2] = new BoundSampler(ShadowMap.DepthTexture,
+        var depth = Cascades?.DepthTexture ?? ShadowMap?.DepthTexture;
+        if (depth != null)
+            material.Fragment.Samplers[2] = new BoundSampler(depth,
                 new TextureSampler(TextureFilter.Linear, TextureWrap.Clamp));
     }
 }

@@ -32,6 +32,10 @@ cbuffer Standard3DMaterialBlock : register(b1, space3)
 cbuffer Standard3DShadowBlock : register(b2, space3)
 {
     float4 ShadowSettings; // x: enabled, y: texel size, z: bias, w: darkness
+    float4x4 CascadeMatrices[4];
+    float4 CascadeSplits;
+    float4 CascadeSettings; // count、blend fraction、debug colors
+    float4 ShadowCameraForward;
 };
 
 #define MAX_POINT_LIGHTS 16
@@ -70,34 +74,50 @@ struct VsOutput
     float4 Position : SV_Position;
 };
 
-float ComputeShadow(VsOutput input)
+int SelectCascade(float depth)
 {
-    if (ShadowSettings.x < 0.5)
-        return 1.0;
+    return depth <= CascadeSplits.x ? 0 : depth <= CascadeSplits.y ? 1 : depth <= CascadeSplits.z ? 2 : 3;
+}
 
-    // 行向量矩阵乘出的裁剪空间：xyz 除以 w 后 x/y ∈ [-1,1]（映射到 uv），z 即深度。
-    float3 ndc = input.ShadowPosition.xyz / input.ShadowPosition.w;
-    float2 uv = ndc.xy * 0.5 + 0.5;
-    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)
-        return 1.0; // 光照正交框外：不投影。
-
-    float texel = ShadowSettings.y;
-    float bias = ShadowSettings.z;
-    float darkness = ShadowSettings.w;
-
-    float lit = 0.0;
+float SampleShadow(float4 position, int cascade, bool atlas)
+{
+    float3 ndc = position.xyz / position.w;
+    // 深度附件与颜色附件都用左上角纹理坐标；NDC 的 y 朝上，因此这里要反转。
+    float2 uv = float2(ndc.x, -ndc.y) * 0.5 + 0.5;
+    if (any(uv < 0) || any(uv > 1) || ndc.z < 0 || ndc.z > 1) return 1;
+    float2 lo = atlas ? float2(cascade % 2, cascade / 2) * 0.5 : float2(0, 0);
+    float2 hi = lo + (atlas ? 0.5 : 1.0);
+    uv = atlas ? lo + uv * 0.5 : uv;
+    float lit = 0;
     for (int y = -1; y <= 1; y++)
-    {
         for (int x = -1; x <= 1; x++)
         {
-            float2 offset = float2(x, y) * texel;
-            float depth = ShadowMapTexture.Sample(ShadowSampler, uv + offset).r;
-            lit += (ndc.z - bias) <= depth ? 1.0 : 0.0;
+            // clamp 到当前 tile，PCF 不跨级联污染相邻深度。
+            float2 sampleUv = clamp(uv + float2(x, y) * ShadowSettings.y,
+                lo + ShadowSettings.y * 0.5, hi - ShadowSettings.y * 0.5);
+            float depth = ShadowMapTexture.Sample(ShadowSampler, sampleUv).r;
+            lit += ndc.z - ShadowSettings.z <= depth ? 1.0 : 0.0;
         }
-    }
+    return 1.0 - ShadowSettings.w * (1.0 - lit / 9.0);
+}
 
-    float shadow = lit / 9.0;
-    return 1.0 - darkness * (1.0 - shadow);
+float ComputeShadow(VsOutput input)
+{
+    if (ShadowSettings.x < 0.5) return 1;
+    if (CascadeSettings.x < 0.5) return SampleShadow(input.ShadowPosition, 0, false);
+    float depth = dot(input.WorldPosition - CameraPosition.xyz, ShadowCameraForward.xyz);
+    if (depth > CascadeSplits.w) return 1;
+    int cascade = SelectCascade(depth);
+    float value = SampleShadow(mul(CascadeMatrices[cascade], float4(input.WorldPosition, 1)), cascade, true);
+    if (cascade < 3 && CascadeSettings.y > 0)
+    {
+        float start = cascade == 0 ? ShadowCameraForward.w : CascadeSplits[cascade - 1];
+        float width = max((CascadeSplits[cascade] - start) * CascadeSettings.y, 0.0001);
+        float blend = saturate((depth - CascadeSplits[cascade] + width) / width);
+        if (blend > 0) value = lerp(value,
+            SampleShadow(mul(CascadeMatrices[cascade + 1], float4(input.WorldPosition, 1)), cascade + 1, true), blend);
+    }
+    return value;
 }
 
 // Cook-Torrance GGX 三件：NDF / Geometry / Fresnel。
@@ -222,5 +242,13 @@ float4 fragment_main(VsOutput input) : SV_Target0
         emission *= sampleColor;
     }
     color += emission;
+    if (CascadeSettings.z > 0.5 && CascadeSettings.x > 0.5)
+    {
+        float depth = dot(input.WorldPosition - CameraPosition.xyz, ShadowCameraForward.xyz);
+        int cascade = SelectCascade(depth);
+        float3 tint = cascade == 0 ? float3(1, .2, .2) : cascade == 1 ? float3(.2, 1, .2)
+            : cascade == 2 ? float3(.2, .2, 1) : float3(1, 1, .2);
+        color = lerp(color, tint, .4);
+    }
     return float4(ColorPipeline.x > 0.5 ? color : saturate(color), baseColor.a);
 }
