@@ -55,7 +55,10 @@ internal sealed class GraphicsDeviceWeb(App app) : GraphicsDevice(app)
     internal override void PerformDispatch(ComputeCommand command) => throw Unsupported("compute dispatch");
     internal override void Clear(IDrawableTarget target, ReadOnlySpan<Color> color, float depth, int stencil, ClearMask mask)
     {
-        var colors = color.ToArray().Select(c => new[] { c.R / 255f, c.G / 255f, c.B / 255f, c.A / 255f }).ToArray();
+        // 不用 LINQ 处理结构体：wasm AOT 下解释执行的 Select<Color, T> 经 gsharedvt 包装调用 AOT lambda 会越界崩溃。
+        var colors = new float[color.Length][];
+        for (int i = 0; i < color.Length; i++)
+            colors[i] = [color[i].R / 255f, color[i].G / 255f, color[i].B / 255f, color[i].A / 255f];
         WebInterop.Clear(target is Target t ? Handle(t.Resource) : 0, Json(colors), depth, stencil, (int)mask);
     }
     internal override void PerformDraw(DrawCommand command)
@@ -73,10 +76,19 @@ internal sealed class GraphicsDeviceWeb(App app) : GraphicsDevice(app)
             }
             vertices.Add(new { handle = Handle(buffer.Resource), stride = buffer.Format.Stride, instance, attributes });
         }
-        static object[] Samplers(StackList16<BoundSampler> samplers) => samplers.ToArray().Select(s => (object)new {
-            handle = s.Texture == null ? 0 : Handle(s.Texture.Resource),
-            filter = (int)s.Sampler.Filter, wrapX = (int)s.Sampler.WrapX, wrapY = (int)s.Sampler.WrapY
-        }).ToArray();
+        static object[] Samplers(StackList16<BoundSampler> samplers)
+        {
+            var result = new object[samplers.Count];
+            for (int i = 0; i < samplers.Count; i++)
+            {
+                var s = samplers[i];
+                result[i] = new {
+                    handle = s.Texture == null ? 0 : Handle(s.Texture.Resource),
+                    filter = (int)s.Sampler.Filter, wrapX = (int)s.Sampler.WrapX, wrapY = (int)s.Sampler.WrapY
+                };
+            }
+            return result;
+        }
         var blend = command.BlendMode;
         WebInterop.BeginDraw(Json(new {
             target = command.Target is Target t ? Handle(t.Resource) : 0,

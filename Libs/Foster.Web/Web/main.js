@@ -10,7 +10,7 @@ try {
     const framework = await runtime.getAssemblyExports('Foster.Framework.dll');
     backend.attach(framework.Foster.Framework.WebRuntime);
     // Assets are fetched before Startup so Foster's synchronous title-storage API works.
-    // Entries with "vfs": true go to the in-memory file system instead, for code that uses System.IO.
+    // Entries with "vfs": true go to the in-memory file system instead, for native code that opens files by path.
     const manifestResponse = await fetch('./assets.json');
     if (!manifestResponse.ok) throw new Error(`Asset manifest failed: ${manifestResponse.status}`);
     const manifest = await manifestResponse.json();

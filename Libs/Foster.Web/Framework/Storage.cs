@@ -13,7 +13,11 @@ public sealed class Storage : StorageContainer
     internal bool Ready => true;
     private Storage(string prefix, bool writable) { this.prefix = prefix; Writable = writable; }
     internal static Storage OpenUserStorage(string name) => new($"foster:{Uri.EscapeDataString(name)}:", true);
-    internal static Storage OpenTitleStorage(string? path) => new(string.IsNullOrEmpty(path) ? "" : Normalize(path) + "/", false);
+    /// <summary>
+    /// Web only: title assets are preloaded by main.js before Main runs, so they can be read before an App exists
+    /// (e.g. to load configuration that decides how the App is created). Inside an App prefer FileSystem.OpenTitleStorage.
+    /// </summary>
+    public static Storage OpenTitleStorage(string? path) => new(string.IsNullOrEmpty(path) ? "" : Normalize(path) + "/", false);
     internal static string Normalize(string path)
     {
         var parts = path.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);

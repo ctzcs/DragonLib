@@ -89,8 +89,10 @@ public abstract class App : IDisposable
         {
             if (Exiting) { Stop(); return false; }
             var delta = TimeSpan.FromSeconds(Math.Clamp(seconds, 0, .25));
+            bool updated = false;
             void UpdateStep(TimeSpan elapsed)
             {
+                updated = true;
                 Time = Time.Advance(elapsed);
                 provider.Poll();
                 provider.Update(Time);
@@ -111,7 +113,11 @@ public abstract class App : IDisposable
                 }
             }
             else UpdateStep(delta);
-            if (!Exiting)
+            // Desktop Foster (FixedWaitEnabled) sleeps until a fixed update is due, so every Render follows an Update.
+            // The browser cannot block: on >60 Hz displays or rAF jitter a frame may have no update. Skip rendering it
+            // (the canvas keeps the previous frame) instead of drawing state that games only prepare in Update.
+            bool render = UpdateMode.Mode != UpdateMode.Modes.Fixed || !UpdateMode.FixedWaitEnabled || updated;
+            if (!Exiting && render)
             {
                 Time = Time.AdvanceRenderFrame();
                 Render();

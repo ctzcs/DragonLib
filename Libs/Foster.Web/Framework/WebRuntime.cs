@@ -18,9 +18,9 @@ public static partial class WebRuntime
     public static void AddAsset(string path, byte[] bytes) => Storage.Assets[Storage.Normalize(path)] = bytes;
 
     /// <summary>
-    /// Preload a file into the WebAssembly in-memory file system (relative to the current directory),
-    /// so existing System.IO code such as File.ReadAllText("Content/x.json") works unchanged.
-    /// Writes there are not persisted; use user storage for saves.
+    /// Preload a file into the WebAssembly in-memory file system (relative to the current directory).
+    /// Only for native code that opens files by path (e.g. Foster.Audio's Sound(path) / streaming);
+    /// managed game data should go through title storage. Writes there are not persisted.
     /// </summary>
     [JSExport]
     public static void AddFile(string path, byte[] bytes)

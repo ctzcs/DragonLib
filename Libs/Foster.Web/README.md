@@ -63,6 +63,10 @@ dotnet pack .\Framework\Foster.Framework.Web.csproj -c Release -o .\artifacts\pa
 
 通过 `build.ps1 -Project <你的 csproj>` 发布。示例和后端暂时使用反射 JSON 生成绘制描述，必须保留 `PublishTrimmed=false`。
 
+.NET 10 的 wasm AOT 强制要求 `PublishTrimmed=true`。AOT 发布时改用 `TrimMode=partial`（只裁 .NET 框架，游戏和本后端保留反射元数据）并设置 `JsonSerializerIsReflectionEnabledByDefault=true`；用 JSON 反序列化不可变集合时还要 `<TrimmerRootAssembly Include="System.Collections.Immutable" />`。参考 Proj_TD 的 `Scripts/Game.Web/Game.Web.csproj`。
+
+AOT 下避免对结构体使用 LINQ（如 `colors.Select(c => ...)`，`c` 为 `Color`）：解释执行的泛型方法经 gsharedvt 包装回调 AOT lambda 时会出现 `memory access out of bounds`。后端内部已改为普通循环。排查原生崩溃时加 `-p:WasmEmitSymbolMap=true` 发布，用 `obj/.../dotnet.native.js.symbols` 对照报错里的 `wasm-function[N]`。
+
 命名空间仍是 `Foster.Framework`，程序集仍是 `Foster.Framework.dll`。**一个游戏项目只能引用桌面 Foster 或 Foster.Web 中的一个。** 不能同时引用这两个项目，也不能间接引入已经编译过的桌面 Foster；其他库若引用桌面项目，需要单独建立 Web 构建配置并切换该引用。
 
 DragonLib 的 `Engine` 与 `DragonLib.Box2D` 已按这种方式多目标：`net10.0` 引用桌面 Foster，`net10.0-browser` 引用本项目。游戏库同样写 `<TargetFrameworks>net10.0;net10.0-browser</TargetFrameworks>`，Web 入口项目写 `<TargetFramework>net10.0-browser</TargetFramework>`，引用链就会整条切到 Foster.Web；桌面入口只构建 `net10.0` 那一份。完整示例见 Proj_TD 的 `Scripts/Game.Web`。
@@ -76,7 +80,7 @@ var app = new MyGame();
 app.Run(); // WebRuntime 在循环期间持有 App
 ```
 
-`Exit()` 在当前帧结束时触发一次 `Shutdown()` 并停止循环；`Shutdown()` 负责释放游戏资源。窗口隐藏后可以显式调用 `Dispose()` 释放后端。后台恢复时帧时间最多 250ms，固定步长不会使用 `Thread.Sleep`。
+`Exit()` 在当前帧结束时触发一次 `Shutdown()` 并停止循环；`Shutdown()` 负责释放游戏资源。窗口隐藏后可以显式调用 `Dispose()` 释放后端。后台恢复时帧时间最多 250ms，固定步长不会使用 `Thread.Sleep`。与桌面 `FixedWaitEnabled` 一致，固定步长下没有执行 `Update` 的浏览器帧（高刷新率屏幕或 rAF 抖动）不调用 `Render`，画布保留上一帧；否则只在 `Update` 中准备的 UI 等状态会隔帧缺失，表现为闪烁、画面发浅。
 
 ### 资源与存档
 
@@ -103,7 +107,9 @@ FileSystem.OpenTitleStorage(storage => {
 
 不要使用 `File.ReadAllBytes("Content/...")` 加载 HTTP 资源；它不会自动访问预加载资源表。
 
-已有代码直接用 `System.IO` 读文件时，给条目加 `"vfs": true`：`main.js` 会调用 `WebRuntime.AddFile` 把它写进 WebAssembly 内存文件系统（相对当前目录，即 `/`），之后 `File.ReadAllText("Content/level.json")` 无需修改。这类文件不进 title storage；写入只留在本次页面内存，刷新即丢失，存档仍应走 `OpenUserStorage`。
+托管代码的游戏数据一律经 `StorageContainer` 读取：桌面用 title storage 或自己的 `LocalStorage`，Web 用上面的 title storage。需要在创建 `App` 之前读取配置时（例如入口先加载地图、数值再决定怎样构造游戏），Web 可直接调用 `Storage.OpenTitleStorage(null)`：`main.js` 在 `Main` 之前就已预加载资源。
+
+只有按路径打开文件的原生代码（如 Foster.Audio 的 `new Sound(path)`、流式播放）才给条目加 `"vfs": true`：`main.js` 会调用 `WebRuntime.AddFile` 把它写进 WebAssembly 内存文件系统（相对当前目录，即 `/`）。这类文件不进 title storage；写入只留在本次页面内存，刷新即丢失。
 
 `OpenUserStorage` 对应按 App 名称隔离的 `localStorage`，二进制文件使用 Base64；Stream 的 `Flush/Dispose` 写入。配额不足或存储被浏览器禁用会抛出异常，不会伪装为保存成功。目录从文件路径推导，不保存空目录；不允许 `..` 越过根路径。`UserPath` 是逻辑路径，不能通过桌面 `System.IO` API 访问。
 
