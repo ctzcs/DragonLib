@@ -31,8 +31,8 @@ public sealed class SceneLighting3D
 
     public ShadowSettingsUniforms GetShadowUniforms() => new()
     {
-        Settings = new Vector4(ShadowsEnabled && ShadowMap != null ? 1f : 0f,
-            ShadowMap != null ? 1f / ShadowMap.Target.Width : 0f, ShadowBias, ShadowDarkness),
+        Settings = new Vector4(ShadowsEnabled && (Cascades != null || ShadowMap != null) ? 1f : 0f,
+            Cascades != null ? 1f / Cascades.Target.Width : ShadowMap != null ? 1f / ShadowMap.Target.Width : 0f, ShadowBias, ShadowDarkness),
     };
 
     public void Apply(Material material, Camera3D camera)

@@ -39,3 +39,7 @@ WebGL2 原生支持 `SRGB8_ALPHA8` 采样、颜色附件和半浮点纹理过滤
 换用迁移前相同的 SPIR-V→DXIL 构建路径仍可复现，排除了新 shader 去重或 HDR 改动。
 Rendering README 对 SDL front-face 的解释与实际设备结果不符。计划要求 CCW，也要求未注明的设计取舍先询问；已询问用户选择保留 CCW 修正后端，还是保留后端并调整资产约定。
 用户随后明确正面应为 CCW；修正 SDL front_face 为 COUNTER_CLOCKWISE。固定几何的四组对照在 D3D12 与 Vulkan 全部通过。永久 GPU 验证位于相邻测试仓库 `Rendering3D.Smoke/`。WebGL 已有与离屏 shader y 翻转配套的正面设置，保持该设置。
+
+## 动画 palette 的 Vulkan 约束（阶段 6 补充）
+
+SDL 3.4.0 的 [Vulkan 后端源码](https://github.com/libsdl-org/SDL/blob/release-3.4.0/src/gpu/vulkan/SDL_gpu_vulkan.c) 定义 `MAX_UBO_SECTION_SIZE = 4096`，绑定 uniform descriptor 时将 range 固定为该值。实测单块 8KB palette 在 D3D12 正常，在 Vulkan 无法读取第 127 号关节。为保持 128 关节能力和 WebGL2 兼容，将 palette 拆为 vertex b2/b3 各 64 个矩阵（4KB），顶点阶段总共四个槽位。颜色和蒙皮深度的第 127 号关节读回在两驱动均通过。

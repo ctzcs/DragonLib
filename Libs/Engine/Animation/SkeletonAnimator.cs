@@ -18,12 +18,12 @@ public struct JointPose
 /// palette[i] = InverseBindMatrix[i] * global[i]。实体世界矩阵提供骨架挂点以上的变换，
 /// bind pose 下渲染结果与 glTF 场景摆放一致。
 ///
-/// 后续路径（本期不做）：动画混合/过渡、多剪辑状态机、morph target、根运动。
+/// 多剪辑状态机、morph target 和根运动由游戏层另行实现。
 /// </summary>
 public static class SkeletonAnimator
 {
     /// <summary>shader 侧 joint palette cbuffer 的容量上限（Standard3DSkinned 的 MAX_JOINTS）。</summary>
-    public const int MaxJoints = 64;
+    public const int MaxJoints = 128;
 
     /// <summary>
     /// 采样剪辑得到逐关节本地姿态：先填 bind pose，再按 channel 覆盖（越界 clamp 到端点）。
@@ -116,34 +116,67 @@ public static class SkeletonAnimator
             : Math.Clamp(time, 0f, duration);
     }
 
-    /// <summary>单 channel 线性插值采样；时间越界 clamp 到端点；Rotation 走球面插值。</summary>
-    public static Vector4 SampleChannel(DassetAnimationChannel channel, float time)
+    /// <summary>保守包围当前蒙皮姿态：非负归一化混权是各关节变换点的凸组合，落在联合 AABB 内。</summary>
+    public static DassetBounds ComputeSkinnedBounds(in DassetBounds bindBounds, ReadOnlySpan<Matrix4x4> palette)
     {
-        var times = channel.Times;
-        var values = channel.Values;
-        if (times.Length == 0)
-            return Vector4.Zero;
-        if (times.Length == 1 || time <= times[0])
-            return values[0];
-        if (time >= times[^1])
-            return values[^1];
-
-        // 线性扫描找区间（关键帧数量小；二分对几十个键没有实际收益）。
-        var segment = 0;
-        while (segment + 1 < times.Length && times[segment + 1] <= time)
-            segment++;
-
-        var t0 = times[segment];
-        var t1 = times[segment + 1];
-        var factor = t1 > t0 ? (time - t0) / (t1 - t0) : 0f;
-
-        if (channel.Path == DassetAnimPath.Rotation)
-        {
-            var q = Quaternion.Slerp(ToQuaternion(values[segment]), ToQuaternion(values[segment + 1]), factor);
-            return new Vector4(q.X, q.Y, q.Z, q.W);
-        }
-        return Vector4.Lerp(values[segment], values[segment + 1], factor);
+        if (palette.IsEmpty) return bindBounds;
+        var bounds = DassetBounds.Empty;
+        foreach (var matrix in palette) bounds.Encapsulate(bindBounds.Transformed(matrix));
+        return bounds;
     }
 
+    public static void BlendPoses(ReadOnlySpan<JointPose> a, ReadOnlySpan<JointPose> b, float t, Span<JointPose> result)
+    {
+        if (a.Length != b.Length || result.Length < a.Length) throw new ArgumentException("Pose sizes must match.");
+        t = Math.Clamp(t, 0, 1);
+        for (var i = 0; i < a.Length; i++)
+            result[i] = new JointPose
+            {
+                Translation = Vector3.Lerp(a[i].Translation, b[i].Translation, t),
+                Scale = Vector3.Lerp(a[i].Scale, b[i].Scale, t),
+                Rotation = ShortestSlerp(a[i].Rotation, b[i].Rotation, t),
+            };
+    }
+
+    /// <summary>STEP 保持前键；cubic tangent 按区间秒数缩放，四元数按 glTF 要求插值后归一化。</summary>
+    public static Vector4 SampleChannel(DassetAnimationChannel channel, float time)
+    {
+        var times = channel.Times; var values = channel.Values;
+        if (times.Length == 0) return channel.Path == DassetAnimPath.Rotation ? Vector4.UnitW : Vector4.Zero;
+        Vector4 Finish(Vector4 value)
+        {
+            if (channel.Path != DassetAnimPath.Rotation) return value;
+            var q = Normalize(ToQuaternion(value)); return new(q.X, q.Y, q.Z, q.W);
+        }
+        if (times.Length == 1 || time <= times[0]) return Finish(values[0]);
+        if (time >= times[^1]) return Finish(values[^1]);
+        var segment = 0;
+        while (segment + 1 < times.Length && times[segment + 1] <= time) segment++;
+        var dt = times[segment + 1] - times[segment];
+        var t = dt > 0 ? (time - times[segment]) / dt : 0;
+        if (channel.Interpolation == DassetInterpolation.Step) return Finish(values[segment]);
+        if (channel.Interpolation == DassetInterpolation.CubicSpline)
+        {
+            var t2 = t * t; var t3 = t2 * t;
+            return Finish((2 * t3 - 3 * t2 + 1) * values[segment]
+                + (t3 - 2 * t2 + t) * dt * channel.OutTangents[segment]
+                + (-2 * t3 + 3 * t2) * values[segment + 1]
+                + (t3 - t2) * dt * channel.InTangents[segment + 1]);
+        }
+        if (channel.Path == DassetAnimPath.Rotation)
+        {
+            var q = ShortestSlerp(ToQuaternion(values[segment]), ToQuaternion(values[segment + 1]), t);
+            return new(q.X, q.Y, q.Z, q.W);
+        }
+        return Vector4.Lerp(values[segment], values[segment + 1], t);
+    }
+
+    private static Quaternion Normalize(Quaternion value) => value.LengthSquared() > 1e-12f ? Quaternion.Normalize(value) : Quaternion.Identity;
+    private static Quaternion ShortestSlerp(Quaternion a, Quaternion b, float t)
+    {
+        a = Normalize(a); b = Normalize(b);
+        if (Quaternion.Dot(a, b) < 0) b = new(-b.X, -b.Y, -b.Z, -b.W);
+        return Normalize(Quaternion.Slerp(a, b, t));
+    }
     private static Quaternion ToQuaternion(Vector4 value) => new(value.X, value.Y, value.Z, value.W);
 }

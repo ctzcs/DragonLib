@@ -12,7 +12,7 @@ public static class DassetFormat
     public const uint Magic = 0x54534144;
 
     /// <summary>当前格式版本。布局变更时 bump，并同步升级 Reader/Writer；Reader 兼容 v1。</summary>
-    public const int Version = 3; // v3：材质增加 MR/AO/emissive 贴图、强度与法线缩放。
+    public const int Version = 4; // v3：PBR 材质；v4：channel 插值类型及 cubic in/value/out 三元组。
 }
 
 /// <summary>顶点布局标记（随 v2 的 primitive 写入文件）。</summary>

@@ -42,7 +42,7 @@ public sealed class Renderer3D : IDisposable
         /// <summary>局部空间 AABB；null 表示不做视锥剔除（实例化 draw 等拿不到 bounds 的场景，保守提交）。</summary>
         public DassetBounds? LocalBounds;
 
-        /// <summary>蒙皮 draw 的 joint palette（非 null 即蒙皮），提交时写入材质 vertex uniform slot 2。</summary>
+        /// <summary>蒙皮 draw 的 joint palette（非 null 即蒙皮），提交时写入材质 vertex uniform slots 2/3。</summary>
         public Matrix4x4[]? JointPalette;
         public VertexBuffer? InstanceBuffer;
         public Material? InstancedDepthMaterial;
@@ -158,7 +158,7 @@ public sealed class Renderer3D : IDisposable
     /// 须在 Begin 之后、End 之前调用。depthMaterial 的顶点 uniform 需为单个
     /// WorldLightViewProjection 矩阵（见 DepthOnly.hlsl）。
     /// 实例化 draw 在提供匹配布局的 instancedDepthMaterial 时进入阴影 pass。
-    /// 提供 skinnedDepthMaterial 时蒙皮 draw 使用它，并将 palette 写入 vertex slot 2。
+    /// 提供 skinnedDepthMaterial 时蒙皮 draw 使用它，并将 palette 写入 vertex slots 2/3。
     /// </summary>
     public void SetShadowPass(
         IDrawableTarget shadowTarget,
@@ -172,6 +172,8 @@ public sealed class Renderer3D : IDisposable
         if (!ReferenceEquals(shadowTarget.GraphicsDevice, _graphicsDevice))
             throw new InvalidOperationException("Shadow target and Renderer3D must belong to the same GraphicsDevice.");
 
+        _cascades = null;
+        _shadowViewport = null;
         _shadowTarget = shadowTarget;
         _shadowMaterial = depthMaterial;
         _skinnedShadowMaterial = skinnedDepthMaterial;
@@ -276,7 +278,7 @@ public sealed class Renderer3D : IDisposable
     /// <summary>
     /// Queues one skinned mesh transform for a direct draw shader：joint palette 随 draw 拷贝一份
     /// （调用侧的数组可能被后续帧复用）。材质须用蒙皮变体 shader（Standard3DSkinned），
-    /// palette 在提交时写入 vertex uniform slot 2。
+    /// palette 在提交时写入 vertex uniform slots 2/3。
     /// </summary>
     public void Draw(Mesh mesh, Material material, in Matrix4x4 world, in RenderState3D state,
         ReadOnlySpan<Matrix4x4> jointPalette, in DassetBounds? localBounds = null)
@@ -292,7 +294,7 @@ public sealed class Renderer3D : IDisposable
             Material = material,
             World = world,
             State = state,
-            LocalBounds = localBounds,
+            LocalBounds = localBounds is { } bindBounds ? SkeletonAnimator.ComputeSkinnedBounds(bindBounds, jointPalette) : null,
             JointPalette = PadPalette(jointPalette),
             Sequence = _sequence++
         });
@@ -527,7 +529,7 @@ public sealed class Renderer3D : IDisposable
         });
 
         if (item.JointPalette != null)
-            item.Material.Vertex.SetUniformBuffer(MemoryMarshal.AsBytes(item.JointPalette.AsSpan()), 2);
+            UploadPalette(item.Material, item.JointPalette);
 
         item.Mesh.GraphicsDevice.Draw(new DrawCommand(target, item.Mesh, item.Material)
         {
@@ -577,7 +579,7 @@ public sealed class Renderer3D : IDisposable
         });
 
         if (item.JointPalette != null)
-            material.Vertex.SetUniformBuffer(MemoryMarshal.AsBytes(item.JointPalette.AsSpan()), 2);
+            UploadPalette(material, item.JointPalette);
 
         var command = new DrawCommand(shadowTarget, item.Mesh, material)
         {
@@ -593,6 +595,13 @@ public sealed class Renderer3D : IDisposable
             command.InstanceCount = item.InstanceCount;
         }
         _graphicsDevice.Draw(command);
+    }
+
+    private static void UploadPalette(Material material, Matrix4x4[] palette)
+    {
+        // 两块各 64×64B，兼容 SDL Vulkan 的 4KB descriptor range 与 WebGL2。
+        material.Vertex.SetUniformBuffer(MemoryMarshal.AsBytes(palette.AsSpan(0, 64)), 2);
+        material.Vertex.SetUniformBuffer(MemoryMarshal.AsBytes(palette.AsSpan(64, 64)), 3);
     }
 
     private void EnsureActive()

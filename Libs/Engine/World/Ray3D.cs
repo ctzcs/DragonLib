@@ -84,7 +84,8 @@ public static class Intersections3D
                 for (var j = 0; j < 4; j++)
                 {
                     var index = (int)((v.Joints >> (j * 8)) & 255);
-                    if (v.Weights[j] != 0 && index < palette.Length)
+                    if (index >= palette.Length) index = 0;
+                    if (v.Weights[j] != 0)
                         position += Vector3.Transform(v.Position, palette[index]) * v.Weights[j];
                 }
             }

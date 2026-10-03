@@ -12,7 +12,7 @@ public sealed class DassetMeshPrimitive
     public required DassetMaterial Material { get; init; }
 
     /// <summary>模型局部空间的 AABB（cook 时算出），视锥剔除用：由 Renderer3D 随世界矩阵变换后测试。
-    /// 蒙皮 primitive 是 bind pose 的静态包围盒，动画姿态可能超出（保守剔除的已知误差）。</summary>
+    /// 蒙皮 primitive 保存 bind AABB，Renderer3D 按当前 palette 求联合保守盒再剔除。</summary>
     public required DassetBounds Bounds { get; init; }
 
     /// <summary>蒙皮 primitive 的骨架下标（查 <see cref="DassetModelAsset.Skeletons"/>）；静态为 -1。</summary>

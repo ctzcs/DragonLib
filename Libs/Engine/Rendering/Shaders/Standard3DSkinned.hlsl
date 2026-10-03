@@ -1,11 +1,13 @@
 #include "Standard3DCommon.hlsli"
-#define MAX_JOINTS 64
+#define MAX_JOINTS 128
 
-// joint palette：与 C# 侧 SkeletonAnimator.MaxJoints 对齐，由 Renderer3D 提交时写入（slot 2）。
-cbuffer JointPaletteBlock : register(b2, space1)
+// SDL 3.4 Vulkan 每槽 descriptor range 只有 4KB；分成两块，128 关节不能放一个 8KB UBO。
+cbuffer JointPaletteBlock0 : register(b2, space1) { float4x4 JointMatrices0[64]; };
+cbuffer JointPaletteBlock1 : register(b3, space1) { float4x4 JointMatrices1[64]; };
+float4x4 JointMatrix(uint index)
 {
-    float4x4 JointMatrices[MAX_JOINTS];
-};
+    return index < 64 ? JointMatrices0[index] : JointMatrices1[index - 64];
+}
 
 struct VsInput
 {
@@ -20,11 +22,16 @@ struct VsInput
 VsOutput vertex_main(VsInput input)
 {
     // LBS：蒙皮矩阵加权和（权重和为 1，cook 时已归一化），实体 World 照常乘在后面。
+    // 旧资产和超限骨架都可能含越界下标；即使权重为零，也不能越界读取 cbuffer。
+    uint4 joints = uint4(input.Joints.x < MAX_JOINTS ? input.Joints.x : 0,
+        input.Joints.y < MAX_JOINTS ? input.Joints.y : 0,
+        input.Joints.z < MAX_JOINTS ? input.Joints.z : 0,
+        input.Joints.w < MAX_JOINTS ? input.Joints.w : 0);
     float4x4 skin =
-        JointMatrices[input.Joints.x] * input.Weights.x +
-        JointMatrices[input.Joints.y] * input.Weights.y +
-        JointMatrices[input.Joints.z] * input.Weights.z +
-        JointMatrices[input.Joints.w] * input.Weights.w;
+        JointMatrix(joints.x) * input.Weights.x +
+        JointMatrix(joints.y) * input.Weights.y +
+        JointMatrix(joints.z) * input.Weights.z +
+        JointMatrix(joints.w) * input.Weights.w;
 
     VsOutput output;
     float4 skinned = mul(skin, float4(input.Position, 1.0));

@@ -6,7 +6,7 @@ using Engine.Rendering;
 namespace Engine.Assets.Dasset;
 
 /// <summary>
-/// 把 <see cref="DassetModel"/> 按 <see cref="DassetFormat"/> 布局写成二进制流（v2）。
+/// 把 <see cref="DassetModel"/> 按 <see cref="DassetFormat"/> 布局写成二进制流（当前 v4）。
 /// 顶点/索引是 unmanaged 数组，整块按字节写，不做逐字段序列化。
 /// </summary>
 public static class DassetWriter
@@ -85,12 +85,22 @@ public static class DassetWriter
             foreach (var channel in clip.Channels)
             {
                 writer.Write(channel.JointIndex);
+                if (channel.Times.Length != channel.Values.Length || !Enum.IsDefined(channel.Interpolation)
+                    || (channel.Interpolation == DassetInterpolation.CubicSpline
+                        && (channel.InTangents.Length != channel.Times.Length || channel.OutTangents.Length != channel.Times.Length)))
+                    throw new InvalidDataException("Animation channel key/tangent counts are inconsistent.");
                 writer.Write((int)channel.Path);
+                writer.Write((int)channel.Interpolation);
                 writer.Write(channel.Times.Length);
                 foreach (var time in channel.Times)
                     writer.Write(time);
                 foreach (var value in channel.Values)
                     Write(writer, value);
+                if (channel.Interpolation == DassetInterpolation.CubicSpline)
+                {
+                    foreach (var tangent in channel.InTangents) Write(writer, tangent);
+                    foreach (var tangent in channel.OutTangents) Write(writer, tangent);
+                }
             }
         }
     }

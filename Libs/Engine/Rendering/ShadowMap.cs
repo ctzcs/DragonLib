@@ -53,9 +53,7 @@ public sealed class ShadowMap : IDisposable
     public void UpdateLight(Vector3 direction, Vector3 sceneCenter, float sceneRadius)
     {
         sceneRadius = MathF.Max(0.1f, sceneRadius);
-        var dir = Vector3.Normalize(direction);
-        if (dir == Vector3.Zero)
-            dir = -Vector3.UnitY;
+        var dir = direction.LengthSquared() > 1e-8f ? Vector3.Normalize(direction) : -Vector3.UnitY;
 
         // up 不能与视线平行；光斜照时用 UnitY，正俯视时退到 UnitZ。
         var up = MathF.Abs(Vector3.Dot(dir, Vector3.UnitY)) > 0.99f ? Vector3.UnitZ : Vector3.UnitY;

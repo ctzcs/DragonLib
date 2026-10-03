@@ -134,13 +134,21 @@ public static class DassetReader
                     };
                     if (!Enum.IsDefined(channel.Path))
                         throw new InvalidDataException($"DassetReader: '{source}' 剪辑 '{clip.Name}' 的 channel 路径值非法。");
-                    var keyCount = ReadCount(reader, stream, source, 4);
+                    if (version >= 4) channel.Interpolation = (DassetInterpolation)reader.ReadInt32();
+                    if (!Enum.IsDefined(channel.Interpolation)) throw new InvalidDataException($"DassetReader: '{source}' 插值类型非法。");
+                    var keyCount = ReadCount(reader, stream, source, channel.Interpolation == DassetInterpolation.CubicSpline ? 52 : 20);
                     channel.Times = new float[keyCount];
                     for (var k = 0; k < keyCount; k++)
                         channel.Times[k] = reader.ReadSingle();
                     channel.Values = new Vector4[keyCount];
                     for (var k = 0; k < keyCount; k++)
                         channel.Values[k] = ReadVector4(reader);
+                    if (channel.Interpolation == DassetInterpolation.CubicSpline)
+                    {
+                        channel.InTangents = new Vector4[keyCount]; channel.OutTangents = new Vector4[keyCount];
+                        for (var k = 0; k < keyCount; k++) channel.InTangents[k] = ReadVector4(reader);
+                        for (var k = 0; k < keyCount; k++) channel.OutTangents[k] = ReadVector4(reader);
+                    }
                     clip.Channels.Add(channel);
                 }
                 model.Clips.Add(clip);

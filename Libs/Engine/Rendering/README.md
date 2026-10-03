@@ -119,3 +119,7 @@ shader 源码位于 `Rendering/Shaders/`，运行 `build.ps1` 生成四种后端
 HDR 合成需传入 `Tonemapper3D`，支持 ACES/Reinhard 和曝光；普通屏幕输出显式 sRGB 编码。
 合成到 sRGB 颜色附件时传 `outputSrgb:false`，避免重复编码。原 LDR Batcher 合成路径保留。
 后端调查及限制见 `COLOR_PIPELINE_FEASIBILITY.md`。
+
+## 扩展接口
+
+材质贴图、HDR、CSM atlas、拾取、DebugDraw3D 和动画过渡见 [FEATURES_3D.md](FEATURES_3D.md)。当前 palette 上限为 128（vertex b2/b3 各 4KB）；蒙皮颜色 pass 用当前 palette 的保守联合 AABB 剔除。D3D12/Vulkan smoke 锁定 CCW、阴影采样 y 方向及第 127 号关节的颜色/深度变换。

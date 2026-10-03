@@ -40,13 +40,18 @@ public sealed class DassetSkeleton
     public List<DassetJoint> Joints = [];
 }
 
-/// <summary>一条动画 channel：某个关节的某个分量的关键帧序列（仅 LINEAR 插值）。Values 对 Rotation 存四元数 xyzw，其余用 xyz。</summary>
+public enum DassetInterpolation { Linear, Step, CubicSpline }
+
+/// <summary>关键帧值与 cubic 入/出切线分别存储；Rotation 是 xyzw，其余用 xyz。</summary>
 public sealed class DassetAnimationChannel
 {
     public int JointIndex;
     public DassetAnimPath Path;
     public float[] Times = [];
     public Vector4[] Values = [];
+    public DassetInterpolation Interpolation;
+    public Vector4[] InTangents = [];
+    public Vector4[] OutTangents = [];
 }
 
 /// <summary>一条动画剪辑。MVP 只收目标是关节的 channel（其余 cook 时警告跳过）。</summary>

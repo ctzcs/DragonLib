@@ -18,12 +18,9 @@ namespace DragonLib.Gltf;
 /// - 静态 primitive：场景图节点变换烘焙进顶点。蒙皮 primitive（节点带 skin 且 primitive
 ///   有 JOINTS_0/WEIGHTS_0）：顶点保持 mesh bind 空间，JOINTS_0 下标按拓扑序重映射，
 ///   WEIGHTS_0 归一化；bind pose 下 palette ≈ 骨架挂点空间的恒等摆放。
-/// - 动画：只收目标是关节的 channel（其余警告跳过）；只支持 LINEAR 插值（STEP/CUBICSPLINE
-///   警告跳过该 channel）。一条剪辑的所有 channel 须同属一个骨架，跨骨架 channel 跳过。
-/// - 绕序：glTF 与 Foster 的正面都是从外侧看逆时针（CCW）——Foster 在 SDL_GPU 上
-///   front_face=CLOCKWISE 是像素坐标（y 向下）的顺时针，而 SDL NDC y+ 向上，
-///   NDC→像素有一次 y 翻转，等价到相机视角就是 CCW。因此 glTF 的 CCW 绕序**保留不翻**；
-///   只有镜像（负行列式）的节点矩阵会反转绕序，需要翻一次补偿（见 WindingTests）。
+/// - 动画：只收关节 channel，支持 LINEAR/STEP/CUBICSPLINE；一条剪辑须同属一个骨架。
+/// - 绕序：正面从外侧看 CCW，SDL front_face=COUNTER_CLOCKWISE；glTF 绕序保留，
+///   仅负行列式的节点矩阵翻转补偿（见 WindingTests 与 Rendering3D.Smoke）。
 /// - 缺 NORMAL 时累积面法线补齐；缺 TANGENT 且有 UV 时按 UV 梯度计算（w = 手性符号）。
 /// - 贴图只收 PNG/JPG 原始字节（不解码，运行时 Foster Image 解码路径不变）；webp/dds/ktx2 跳过并警告。
 /// - AlphaMode/AlphaCutoff 从 glTF 材质读出写入 DassetMaterial；逐 primitive 与模型级 AABB 一并算出
@@ -221,22 +218,6 @@ public static class GltfModelCooker
                     continue;
                 }
 
-                var times = default(IEnumerable<(float Key, Vector4 Value)>);
-                switch (channel.TargetNodePath)
-                {
-                    case PropertyPath.translation:
-                        times = GetLinearKeys(channel.GetTranslationSampler(), assetName, clip.Name);
-                        break;
-                    case PropertyPath.rotation:
-                        times = GetLinearKeys(channel.GetRotationSampler(), assetName, clip.Name);
-                        break;
-                    case PropertyPath.scale:
-                        times = GetLinearKeys(channel.GetScaleSampler(), assetName, clip.Name);
-                        break;
-                }
-                if (times == null)
-                    continue;
-
                 var cookedChannel = new DassetAnimationChannel
                 {
                     JointIndex = mapping.Joint,
@@ -247,14 +228,11 @@ public static class GltfModelCooker
                         _ => DassetAnimPath.Scale,
                     },
                 };
-                foreach (var (time, value) in times)
+                switch (channel.TargetNodePath)
                 {
-                    // 键值先收到列表再定长，避免二次枚举。
-                    var keyIndex = cookedChannel.Times.Length;
-                    Array.Resize(ref cookedChannel.Times, keyIndex + 1);
-                    Array.Resize(ref cookedChannel.Values, keyIndex + 1);
-                    cookedChannel.Times[keyIndex] = time;
-                    cookedChannel.Values[keyIndex] = value;
+                    case PropertyPath.translation: ReadKeys(channel.GetTranslationSampler(), cookedChannel); break;
+                    case PropertyPath.rotation: ReadKeys(channel.GetRotationSampler(), cookedChannel); break;
+                    case PropertyPath.scale: ReadKeys(channel.GetScaleSampler(), cookedChannel); break;
                 }
                 if (cookedChannel.Times.Length > 0)
                     clip.Channels.Add(cookedChannel);
@@ -265,30 +243,36 @@ public static class GltfModelCooker
         }
     }
 
-    /// <summary>读 LINEAR 关键帧；非 LINEAR（STEP/CUBICSPLINE）警告并返回 null（该 channel 跳过）。</summary>
-    private static IEnumerable<(float, Vector4)>? GetLinearKeys<T>(
-        IAnimationSampler<T>? sampler,
-        string assetName,
-        string clipName)
+    private static Vector4 ToVector<T>(T value) => value switch
     {
-        if (sampler == null)
-            return null;
-        if (sampler.InterpolationMode != AnimationInterpolationMode.LINEAR)
-        {
-            Log.Warning($"GltfModelCooker: '{assetName}' 剪辑 '{clipName}' 有 {sampler.InterpolationMode} 插值的 channel，本期只支持 LINEAR，已跳过。");
-            return null;
-        }
+        Quaternion q => new(q.X, q.Y, q.Z, q.W),
+        Vector3 v => new(v, 0),
+        _ => throw new InvalidDataException("Unsupported animation key type."),
+    };
 
-        return sampler.GetLinearKeys().Select(key =>
+    private static void ReadKeys<T>(IAnimationSampler<T>? sampler, DassetAnimationChannel channel)
+    {
+        if (sampler == null) return;
+        channel.Interpolation = sampler.InterpolationMode switch
         {
-            var value = key.Value;
-            return (key.Key, value switch
+            AnimationInterpolationMode.STEP => DassetInterpolation.Step,
+            AnimationInterpolationMode.CUBICSPLINE => DassetInterpolation.CubicSpline,
+            _ => DassetInterpolation.Linear,
+        };
+        var times = new List<float>(); var values = new List<Vector4>();
+        var ins = new List<Vector4>(); var outs = new List<Vector4>();
+        if (channel.Interpolation == DassetInterpolation.CubicSpline)
+        {
+            foreach (var key in sampler.GetCubicKeys())
             {
-                Quaternion q => new Vector4(q.X, q.Y, q.Z, q.W),
-                Vector3 v => new Vector4(v, 0f),
-                _ => Vector4.Zero,
-            });
-        });
+                times.Add(key.Key); ins.Add(ToVector(key.Value.Item1));
+                values.Add(ToVector(key.Value.Item2)); outs.Add(ToVector(key.Value.Item3));
+            }
+        }
+        else
+            foreach (var key in sampler.GetLinearKeys()) { times.Add(key.Key); values.Add(ToVector(key.Value)); }
+        channel.Times = times.ToArray(); channel.Values = values.ToArray();
+        channel.InTangents = ins.ToArray(); channel.OutTangents = outs.ToArray();
     }
 
     private static DassetPrimitive? CookPrimitive(

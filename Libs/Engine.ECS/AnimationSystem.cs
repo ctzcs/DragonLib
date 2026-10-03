@@ -21,6 +21,16 @@ public struct AnimatorComp : IEcsComponent
     public float Time;
     public float Speed = 1f;
     public bool Loop = true;
+    public int NextClipIndex = -1;
+    public float BlendDuration;
+    public float BlendTime;
+    public float NextTime;
+
+    public void CrossFadeTo(int clipIndex, float duration)
+    {
+        NextClipIndex = clipIndex; BlendDuration = MathF.Max(0, duration);
+        BlendTime = 0; NextTime = 0;
+    }
 
     public AnimatorComp()
     {
@@ -78,10 +88,6 @@ public sealed class AnimationSystem : IUpdateSystem
                 ? model.Clips[animator.ClipIndex]
                 : null;
 
-            // 时间推进：循环取模（负速度也能落到 [0, Duration)），非循环钳到末尾停住。
-            animator.Time = SkeletonAnimator.AdvanceTime(
-                animator.Time, deltaTime, animator.Speed, animator.Loop, clip?.Duration ?? 0f);
-
             var skeleton = clip != null && clip.SkinIndex >= 0 && clip.SkinIndex < model.Skeletons.Count
                 ? model.Skeletons[clip.SkinIndex]
                 : model.Skeletons[0];
@@ -90,13 +96,45 @@ public sealed class AnimationSystem : IUpdateSystem
             var matrices = palettePool.Has(e) ? palettePool.Get(e).Matrices : [];
             if (matrices.Length != jointCount)
                 matrices = new Matrix4x4[jointCount];
-            SkeletonAnimator.ComputePalette(skeleton, clip, animator.Time, matrices);
+            var next = animator.NextClipIndex >= 0 && animator.NextClipIndex < model.Clips.Count
+                ? model.Clips[animator.NextClipIndex] : null;
+            // 两条剪辑必须属于同一骨架；配置错误时取消过渡，不能把另一套关节索引套过来。
+            if (next != null && next.SkinIndex != (clip?.SkinIndex ?? 0)) next = null;
+            if (next == null) animator.NextClipIndex = -1;
+            Evaluate(skeleton, clip, next, ref animator, deltaTime, matrices);
 
             var palette = new SkinPaletteComp { Matrices = matrices };
             if (palettePool.Has(e))
                 palettePool.Get(e) = palette;
             else
                 palettePool.Add(e) = palette;
+        }
+    }
+
+    /// <summary>推进双剪辑播放状态并输出 palette；纯数据入口便于测试过渡完成后的时间接续。</summary>
+    public static void Evaluate(DassetSkeleton skeleton, DassetAnimationClip? clip, DassetAnimationClip? next,
+        ref AnimatorComp animator, float deltaTime, Span<Matrix4x4> matrices)
+    {
+        animator.Time = SkeletonAnimator.AdvanceTime(animator.Time, deltaTime, animator.Speed, animator.Loop, clip?.Duration ?? 0);
+        if (next == null)
+        {
+            SkeletonAnimator.ComputePalette(skeleton, clip, animator.Time, matrices);
+            return;
+        }
+        animator.NextTime = SkeletonAnimator.AdvanceTime(animator.NextTime, deltaTime, animator.Speed, animator.Loop, next.Duration);
+        animator.BlendTime += MathF.Max(0, deltaTime);
+        var weight = animator.BlendDuration > 0 ? Math.Clamp(animator.BlendTime / animator.BlendDuration, 0, 1) : 1;
+        var count = skeleton.Joints.Count;
+        Span<JointPose> a = count <= SkeletonAnimator.MaxJoints ? stackalloc JointPose[count] : new JointPose[count];
+        Span<JointPose> b = count <= SkeletonAnimator.MaxJoints ? stackalloc JointPose[count] : new JointPose[count];
+        SkeletonAnimator.SamplePose(skeleton, clip, animator.Time, a);
+        SkeletonAnimator.SamplePose(skeleton, next, animator.NextTime, b);
+        SkeletonAnimator.BlendPoses(a, b, weight, a);
+        SkeletonAnimator.ComputePalette(skeleton, a, matrices);
+        if (weight >= 1)
+        {
+            animator.ClipIndex = animator.NextClipIndex; animator.Time = animator.NextTime;
+            animator.NextClipIndex = -1; animator.BlendTime = 0; animator.NextTime = 0;
         }
     }
 }

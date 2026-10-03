@@ -11,3 +11,7 @@
 `Camera3D.ScreenPointToRay(pixel)` 接收绘制目标的像素坐标，原点在 near 平面，方向已归一化。`Intersections3D` 返回世界单位距离，AABB/球内起点返回 0，三角形支持双面，平面用点和法线定义。逐三角形拾取用 `Primitive`，蒙皮可传当前 palette；`DassetModelLoader.Load(..., retainCpuGeometry: true)` 才会保留 `CpuGeometry`。
 
 `DebugDraw3D` 提供 Line/Aabb/Sphere/Frustum/Axis/Grid/Skeleton；排队后 `Render(target, camera)` 会清空。`DepthTestEnabled` 控制遮挡，始终不写深度。Skeleton 默认接收 palette，通过 inverse IBM 重建 globals；也可传 `isPalette: false`。GltfScene 左键选择实体并显示 AABB，Skeletons / Light ranges 开关显示调试线。
+
+`.dasset` 当前写 v4，读取兼容 v1–v4。v3 扩展材质，v4 增加动画插值和 cubic 入/出切线；旧 channel 默认 Linear。`AnimatorComp.CrossFadeTo(index, duration)` 重置目标时间，`AnimationSystem` 推进两个剪辑并做 TRS 混合，完成后延续目标播放时间；仅支持同一骨架的过渡。
+
+关节上限 128，palette 分 vertex b2/b3 两块各 4KB（SDL 3.4 Vulkan 每槽 range 只有 4KB）；颜色/阴影 shader 对旧资产越界下标回退关节 0。蒙皮 draw 按当前 palette 变换 bind AABB 后求联合盒：非负归一化权重的顶点是这些点的凸组合，因此盒子保守覆盖当前姿态和剪辑混合；每 draw 约 8×关节数个角点变换，可能比实际姿态宽。Skinning 的 Blend wave / rest 按钮检查过渡和动画阴影。
