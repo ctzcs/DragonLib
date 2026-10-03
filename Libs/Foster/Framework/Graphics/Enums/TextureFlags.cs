@@ -17,4 +17,7 @@ public enum TextureFlags
 	/// Allows the Texture to be used during Compute Storage Writes
 	/// </summary>
 	ComputeWrite = 1 << 1,
+
+	// DragonLib 扩展：采样颜色纹理上传后生成完整 mip 链。
+	GenerateMipmaps = 1 << 2,
 }

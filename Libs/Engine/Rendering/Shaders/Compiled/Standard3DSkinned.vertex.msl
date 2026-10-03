@@ -61,4 +61,3 @@ vertex vertex_main_out vertex_main(vertex_main_in in [[stage_in]], constant type
     out.gl_Position = VertexMatrixBlock.WorldViewProjection * _118;
     return out;
 }
-

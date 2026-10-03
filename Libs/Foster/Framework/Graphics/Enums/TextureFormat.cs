@@ -59,7 +59,11 @@ public enum TextureFormat
 	/// <summary>
 	/// Shorthand for R8G8B8A8
 	/// </summary>
-	Color = R8G8B8A8
+	Color = R8G8B8A8,
+
+	// DragonLib 扩展：追加数值，保持 Web 侧既有格式编号稳定。
+	R8G8B8A8Srgb = 8,
+	R16G16B16A16Float = 9,
 }
 
 public static class TextureFormatExt
@@ -71,6 +75,8 @@ public static class TextureFormatExt
 		=> format switch
 		{
 			TextureFormat.R8G8B8A8 => 4,
+			TextureFormat.R8G8B8A8Srgb => 4,
+			TextureFormat.R16G16B16A16Float => 8,
 			TextureFormat.R8 => 1,
 			TextureFormat.R8G8 => 2,
 			TextureFormat.Depth24Stencil8 => 4,
@@ -88,6 +94,8 @@ public static class TextureFormatExt
 		=> format switch
 		{
 			TextureFormat.R8G8B8A8 => true,
+			TextureFormat.R8G8B8A8Srgb => true,
+			TextureFormat.R16G16B16A16Float => true,
 			TextureFormat.R8 => true,
 			TextureFormat.R8G8 => true,
 			TextureFormat.Depth24Stencil8 => false,

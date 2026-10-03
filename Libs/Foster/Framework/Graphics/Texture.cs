@@ -43,6 +43,15 @@ public class Texture : IGraphicResource
 	/// </summary>
 	public readonly TextureFormat Format;
 
+	// DragonLib 扩展：完整 mip 链的层数，便于诊断采样状态。
+	public readonly TextureFlags Flags;
+	public int MipLevelCount => Flags.HasFlag(TextureFlags.GenerateMipmaps) ? CalculateMipLevelCount(Width, Height) : 1;
+	public static int CalculateMipLevelCount(int width, int height)
+	{
+		if (width <= 0 || height <= 0) throw new ArgumentOutOfRangeException(nameof(width));
+		return 1 + (int)MathF.Floor(MathF.Log2(Math.Max(width, height)));
+	}
+
 	/// <summary>
 	/// The Texture Sample Count. This is always <see cref="SampleCount.One"/> unless created as a <see cref="Target"/> attachment.
 	/// </summary>
@@ -84,11 +93,15 @@ public class Texture : IGraphicResource
 		if (width <= 0 || height <= 0)
 			throw new Exception("Texture must have a size larger than 0");
 
+		if (flags.HasFlag(TextureFlags.GenerateMipmaps) &&
+			(format.IsDepthStencilFormat() || sampleCount != SampleCount.One || targetBinding != null))
+			throw new NotSupportedException("Mipmaps require a sampled, non-multisampled color texture.");
 		Resource = graphicsDevice.CreateTexture(name, width, height, format, flags, sampleCount, targetBinding?.Resource);
 		Name = name ?? string.Empty;
 		Width = width;
 		Height = height;
 		Format = format;
+		Flags = flags;
 		SampleCount = sampleCount;
 		IsTargetAttachment = targetBinding != null;
 	}

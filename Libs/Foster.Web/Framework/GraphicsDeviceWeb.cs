@@ -29,13 +29,14 @@ internal sealed class GraphicsDeviceWeb(App app) : GraphicsDevice(app)
     internal override void Present() => Flush();
     private void Flush() { while (destroying.TryDequeue(out int handle)) WebInterop.Destroy(handle); }
     internal override void DestroyResource(ResourceHandle resource) { if (!disposed) destroying.Enqueue(Handle(resource)); }
-    public override bool IsTextureFormatSupported(TextureFormat format) => format is TextureFormat.Color or TextureFormat.R8 or TextureFormat.R8G8 or TextureFormat.Depth24Stencil8 or TextureFormat.Depth16 or TextureFormat.Depth24 or TextureFormat.Depth32;
+    public override bool IsTextureFormatSupported(TextureFormat format) => WebInterop.TextureFormatSupported((int)format);
     public override bool IsTextureMultiSampleSupported(TextureFormat format, SampleCount sampleCount) => sampleCount == SampleCount.One && IsTextureFormatSupported(format);
     internal override ResourceHandle CreateTexture(string? name, int width, int height, TextureFormat format, TextureFlags flags, SampleCount sampleCount, nint? targetBinding)
     {
         if (!IsTextureFormatSupported(format)) throw Unsupported($"texture format {format}");
-        if (sampleCount != SampleCount.One || flags != TextureFlags.None) throw Unsupported("multisampled or compute textures");
-        return (nint)WebInterop.Create("texture", Json(new TextureDesc(width, height, (int)format, (int)(targetBinding ?? 0)), WebJson.Default.TextureDesc));
+        if (sampleCount != SampleCount.One || (flags & ~TextureFlags.GenerateMipmaps) != 0) throw Unsupported("multisampled or compute textures");
+        var levels = flags.HasFlag(TextureFlags.GenerateMipmaps) ? Texture.CalculateMipLevelCount(width, height) : 1;
+        return (nint)WebInterop.Create("texture", Json(new TextureDesc(width, height, (int)format, (int)(targetBinding ?? 0), levels), WebJson.Default.TextureDesc));
     }
     internal override unsafe void SetTextureData(ResourceHandle texture, nint data, int length, RectInt destRegion)
         => WebInterop.Upload(Handle(texture), new Span<byte>((void*)data, length), 0, Json(Region(destRegion)));
@@ -92,7 +93,7 @@ internal sealed class GraphicsDeviceWeb(App app) : GraphicsDevice(app)
             {
                 var s = samplers[i];
                 result[i] = new SamplerDesc(s.Texture == null ? 0 : Handle(s.Texture.Resource),
-                    (int)s.Sampler.Filter, (int)s.Sampler.WrapX, (int)s.Sampler.WrapY);
+                    (int)s.Sampler.Filter, (int)s.Sampler.WrapX, (int)s.Sampler.WrapY, s.Sampler.Mipmaps);
             }
             return result;
         }

@@ -24,4 +24,3 @@ vertex vertex_main_out vertex_main(vertex_main_in in [[stage_in]], constant type
     out.gl_Position = ShadowVertexBlock.WorldLightViewProjection * float4(in.in_var_TEXCOORD0, 1.0);
     return out;
 }
-

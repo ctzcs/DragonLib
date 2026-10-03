@@ -16,16 +16,26 @@ public static class StandardMaterial3D
 
     public static (Material Material, RenderState3D State) Create(Standard3DShaders shaders,
         DassetMaterial data, IReadOnlyList<Texture> textures, bool skinned = false)
+        => CreateResolved(shaders, data, Resolve(textures, data.AlbedoTextureIndex),
+            Resolve(textures, data.NormalTextureIndex), skinned);
+
+    public static (Material Material, RenderState3D State) Create(Standard3DShaders shaders,
+        DassetMaterial data, DassetModelAsset model, bool skinned = false)
+        => CreateResolved(shaders, data, model.GetTexture(data.AlbedoTextureIndex, color: true),
+            model.GetTexture(data.NormalTextureIndex), skinned);
+
+    private static (Material Material, RenderState3D State) CreateResolved(Standard3DShaders shaders,
+        DassetMaterial data, Texture? albedo, Texture? normal, bool skinned)
     {
         var material = (skinned ? shaders.Skinned : shaders.Standard).Clone();
-        var albedo = Resolve(textures, data.AlbedoTextureIndex);
-        var normal = Resolve(textures, data.NormalTextureIndex);
-        var sampler = new TextureSampler(TextureFilter.Linear, TextureWrap.Repeat);
+        var sampler = new TextureSampler(TextureFilter.Linear, TextureWrap.Repeat, TextureWrap.Repeat, Mipmaps: true);
         material.Fragment.Samplers[0] = new BoundSampler(albedo ?? shaders.WhiteTexture, sampler);
         material.Fragment.Samplers[1] = new BoundSampler(normal ?? shaders.WhiteTexture, sampler);
         material.Fragment.Samplers[2] = new BoundSampler(shaders.WhiteTexture,
             new TextureSampler(TextureFilter.Linear, TextureWrap.Clamp));
-        material.Fragment.SetUniformBuffer(Pack(data, albedo != null, normal != null), 1);
+        var uniforms = Pack(data, albedo != null, normal != null);
+        uniforms.PbrParams.Z = albedo?.Format == TextureFormat.R8G8B8A8Srgb ? 1f : 0f;
+        material.Fragment.SetUniformBuffer(uniforms, 1);
         return (material, data.ToRenderState());
     }
 
@@ -52,7 +62,7 @@ public sealed class MaterialCache
         for (var i = 0; i < materials.Length; i++)
         {
             var primitive = model.Primitives[i];
-            materials[i] = StandardMaterial3D.Create(shaders, primitive.Material, model.Textures, primitive.IsSkinned);
+            materials[i] = StandardMaterial3D.Create(shaders, primitive.Material, model, primitive.IsSkinned);
         }
         _models.Add(model, materials);
         return materials;

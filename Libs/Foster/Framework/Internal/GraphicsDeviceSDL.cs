@@ -20,6 +20,7 @@ internal unsafe class GraphicsDeviceSDL(App app, GraphicsDriver preferred) : Gra
 		public int Width;
 		public int Height;
 		public SDL_GPUTextureFormat Format;
+		public uint MipLevels; // DragonLib 扩展
 		public SDL_GPUSampleCount SampleCount;
 
 		/// <summary>
@@ -565,7 +566,7 @@ internal unsafe class GraphicsDeviceSDL(App app, GraphicsDriver preferred) : Gra
 			width = (uint)width,
 			height = (uint)height,
 			layer_count_or_depth = 1,
-			num_levels = 1,
+			num_levels = flags.Has(TextureFlags.GenerateMipmaps) ? (uint)Texture.CalculateMipLevelCount(width, height) : 1,
 			sample_count = GetSampleCount(sampleCount),
 			props = props
 		};
@@ -585,6 +586,9 @@ internal unsafe class GraphicsDeviceSDL(App app, GraphicsDriver preferred) : Gra
 		}
 
 		// compute flags
+		// DragonLib 扩展：SDL 的 mip 生成通过颜色 blit，需要 COLOR_TARGET 用途。
+		if (flags.Has(TextureFlags.GenerateMipmaps))
+			info.usage |= SDL_GPUTextureUsageFlags.SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
 		if (flags.Has(TextureFlags.ComputeRead))
 			info.usage |= SDL_GPUTextureUsageFlags.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_READ;
 		if (flags.Has(TextureFlags.ComputeWrite))
@@ -612,6 +616,7 @@ internal unsafe class GraphicsDeviceSDL(App app, GraphicsDriver preferred) : Gra
 			Width = width,
 			Height = height,
 			Format = info.format,
+			MipLevels = info.num_levels,
 			SampleCount = GetSampleCount(sampleCount),
 			MultiSampleResolve = resolveTexture
 		};
@@ -727,6 +732,13 @@ internal unsafe class GraphicsDeviceSDL(App app, GraphicsDriver preferred) : Gra
 		}
 
 		// transfer buffer management
+		// DragonLib 扩展：生成操作必须在 pass 外，且跟随上传命令缓冲保证顺序。
+		if (res.MipLevels > 1)
+		{
+			EndCopyPass();
+			SDL_GenerateMipmapsForGPUTexture(cmdUpload, res.Texture);
+		}
+
 		if (usingTemporaryTransferBuffer)
 			SDL_ReleaseGPUTransferBuffer(device, transferBuffer);
 		else
@@ -1865,7 +1877,9 @@ internal unsafe class GraphicsDeviceSDL(App app, GraphicsDriver preferred) : Gra
 						CullMode.Back => SDL_GPUCullMode.SDL_GPU_CULLMODE_BACK,
 						_ => throw new NotImplementedException()
 					},
-					front_face = SDL_GPUFrontFace.SDL_GPU_FRONTFACE_CLOCKWISE,
+					// DragonLib 扩展：资产正面为 CCW。SDL 的 winding 枚举直接表达此约定，
+					// 不能把 NDC→framebuffer 的 y 翻转再手工补一次（GPU smoke 已锁定）。
+					front_face = SDL_GPUFrontFace.SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE,
 					enable_depth_bias = false
 				},
 				multisample_state = new()
@@ -2032,6 +2046,9 @@ internal unsafe class GraphicsDeviceSDL(App app, GraphicsDriver preferred) : Gra
 			{
 				min_filter = GetFilter(sampler.Filter),
 				mag_filter = GetFilter(sampler.Filter),
+				// DragonLib 扩展：mip 层间线性插值；未开启时限制在第 0 层。
+				mipmap_mode = SDL_GPUSamplerMipmapMode.SDL_GPU_SAMPLERMIPMAPMODE_LINEAR,
+				max_lod = sampler.Mipmaps ? 1000f : 0f,
 				address_mode_u = GetWrapMode(sampler.WrapX),
 				address_mode_v = GetWrapMode(sampler.WrapY),
 				address_mode_w = SDL_GPUSamplerAddressMode.SDL_GPU_SAMPLERADDRESSMODE_REPEAT,
@@ -2082,6 +2099,8 @@ internal unsafe class GraphicsDeviceSDL(App app, GraphicsDriver preferred) : Gra
 	private static SDL_GPUTextureFormat GetTextureFormat(TextureFormat format) => format switch
 	{
 		TextureFormat.R8G8B8A8 => SDL_GPUTextureFormat.SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
+		TextureFormat.R8G8B8A8Srgb => SDL_GPUTextureFormat.SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB,
+		TextureFormat.R16G16B16A16Float => SDL_GPUTextureFormat.SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT,
 		TextureFormat.R8 => SDL_GPUTextureFormat.SDL_GPU_TEXTUREFORMAT_R8_UNORM,
 		TextureFormat.R8G8 => SDL_GPUTextureFormat.SDL_GPU_TEXTUREFORMAT_R8G8_UNORM,
 		TextureFormat.Depth24Stencil8 => SDL_GPUTextureFormat.SDL_GPU_TEXTUREFORMAT_D24_UNORM_S8_UINT,

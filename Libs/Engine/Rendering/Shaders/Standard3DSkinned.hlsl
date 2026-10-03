@@ -41,4 +41,3 @@ VsOutput vertex_main(VsInput input)
     output.ShadowPosition = mul(LightViewProjection, worldPosition);
     return output;
 }
-

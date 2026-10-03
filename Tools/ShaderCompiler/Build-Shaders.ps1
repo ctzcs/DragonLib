@@ -27,6 +27,10 @@ foreach ($shader in $Shaders) {
             $target = Join-Path $Output "$name.$stage.$format"
             & $Compiler $source -s HLSL -t $stage -e $entry -o $target
             if ($LASTEXITCODE -ne 0) { throw "Shader compilation failed: $name.$stage.$format" }
+            if ($format -eq 'msl') {
+                $code = [System.IO.File]::ReadAllText($target).Replace("`r`n", "`n").TrimEnd() + "`n"
+                [System.IO.File]::WriteAllText($target, $code, [System.Text.UTF8Encoding]::new($false))
+            }
         }
         $glslArgs = @{ Spv = (Join-Path $Output "$name.$stage.spv"); Output = (Join-Path $Output "$name.$stage.glsl") }
         if ($SpirvCross) { $glslArgs.SpirvCross = $SpirvCross }

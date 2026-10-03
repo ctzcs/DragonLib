@@ -14,4 +14,3 @@ fragment fragment_main_out fragment_main()
     out.out_var_SV_Target0 = float4(0.0);
     return out;
 }
-

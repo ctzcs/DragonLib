@@ -1,2 +1,8 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# 标准 3D shader 的哈希清单跨 Windows/Linux 保持相同字节。
+Libs/Engine/Rendering/Shaders/*.hlsl text eol=lf
+Libs/Engine/Rendering/Shaders/*.hlsli text eol=lf
+Libs/Engine/Rendering/Shaders/Compiled/*.glsl text eol=lf
+Libs/Engine/Rendering/Shaders/Compiled/*.msl text eol=lf

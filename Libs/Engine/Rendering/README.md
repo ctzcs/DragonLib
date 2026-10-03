@@ -8,15 +8,16 @@
 
 **约定：正面 = 从外侧看逆时针（CCW）。glTF 资产本来就是这个约定——cook 时不要再翻转。**
 
-推导依据（不要凭直觉，链条每一环都有出处）：
+后端设置与验证：
 
-- Foster 在 SDL_GPU 上固定 `front_face = SDL_GPU_FRONTFACE_CLOCKWISE`，`CullMode.Back` 直映射
-  （`Libs/Foster/Framework/Internal/GraphicsDeviceSDL.cs:1861-1868`）。
-- 光栅化绕序在 **framebuffer 像素坐标**判定（y 向下）。
-- SDL_GPU 的 NDC 是 **y+ 向上**（D3D/Metal 风格；Vulkan 后端的差异由 SDL 内部转换，
-  见 [SDL3 CategoryGPU - Coordinate System](https://wiki.libsdl.org/SDL3/CategoryGPU)）。
-- NDC(y 向上) → 像素(y 向下) 有一次 y 翻转 ⇒ 「像素 CW」≡「NDC CCW」≡「相机视角 CCW」。
-- 透视投影不翻转 x/y，所以相机视角绕向 = 世界空间从外侧看的绕向。
+- SDL_GPU 使用 `SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE`，`CullMode.Back/Front` 直接映射。
+  不在此枚举上再补 NDC→framebuffer 的 y 翻转；SDL 已处理各图形 API 的坐标差异。
+- 旧设置为 `CLOCKWISE`。D3D12 GPU 读回证明它剔除了面向相机的 CCW 三角形；
+  旧文档以像素坐标 y 向下推导出“CW 等于 CCW”并不符合 SDL 实际语义，已更正。
+- `../DragonLib.Tests/Rendering3D.Smoke` 使用叉积朝 +Z、相机从 +Z 观察的固定三角形，
+  对照 CCW/CW × Back/Front 四种组合。D3D12 和 Vulkan 均验证：Back 保留 CCW，Front 剔除 CCW。
+- WebGL 的离屏 shader 会乘 `u_target_flip=-1`，所以离屏目标使用 `gl.CW`、屏幕使用 `gl.CCW`；
+  这是与 shader 配套的坐标转换，资产仍是同一个 CCW 几何。
 
 推论：
 
@@ -109,3 +110,12 @@ ECS 游戏可用 `MeshRenderSystem.Submit` 排队，Begin/End 和目标的生命
 
 shader 源码位于 `Rendering/Shaders/`，运行 `build.ps1` 生成四种后端产物。
 `Verify-Shaders.ps1` 同时校验入口、递归 include 依赖和产物，修改公共片元逻辑后必须重新生成。
+
+## 色彩管线
+
+`RenderTarget3D.HdrEnabled` 请求 RGBA16F；`IsHdr` 反映当前设备实际是否启用，缺失格式/扩展时回退 Color。
+`SceneLighting3D.HdrEnabled` 应使用目标的 `IsHdr`：HDR 计算线性光照，LDR 保留原有 gamma 光照观感。
+模型颜色贴图使用 sRGB，数据贴图使用线性格式，共用源图时分别上传；模型贴图生成 mip 链并使用 mip sampler。
+HDR 合成需传入 `Tonemapper3D`，支持 ACES/Reinhard 和曝光；普通屏幕输出显式 sRGB 编码。
+合成到 sRGB 颜色附件时传 `outputSrgb:false`，避免重复编码。原 LDR Batcher 合成路径保留。
+后端调查及限制见 `COLOR_PIPELINE_FEASIBILITY.md`。

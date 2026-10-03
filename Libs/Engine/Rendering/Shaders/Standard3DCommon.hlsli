@@ -16,6 +16,7 @@ cbuffer Standard3DLightBlock : register(b0, space3)
     float4 Ambient;
     float4 Diffuse;
     float4 CameraPosition; // xyz: 相机世界位置（镜面项要 view 方向）
+    float4 ColorPipeline; // x: HDR 开关，LDR 保留原有 gamma 光照。
 };
 
 cbuffer Standard3DMaterialBlock : register(b1, space3)
@@ -23,7 +24,7 @@ cbuffer Standard3DMaterialBlock : register(b1, space3)
     float4 BaseColorFactor;
     float4 MaterialFlags; // x: has albedo, y: has normal map, z: normal strength, w: alpha mode (0 opaque, 1 mask, 2 blend)
     float4 AlphaParams;   // x: alpha cutoff (mask mode)
-    float4 PbrParams;     // x: metallic, y: roughness
+    float4 PbrParams;     // x: metallic, y: roughness, z: albedo 已由 sRGB 纹理硬件解码
 };
 
 cbuffer Standard3DShadowBlock : register(b2, space3)
@@ -132,11 +133,29 @@ float3 ShadeCookTorrance(
     return (diffuse + specular) * radiance * nDotL;
 }
 
+float3 SrgbToLinear(float3 v)
+{
+    return float3(v.x <= 0.04045 ? v.x / 12.92 : pow((v.x + 0.055) / 1.055, 2.4),
+                  v.y <= 0.04045 ? v.y / 12.92 : pow((v.y + 0.055) / 1.055, 2.4),
+                  v.z <= 0.04045 ? v.z / 12.92 : pow((v.z + 0.055) / 1.055, 2.4));
+}
+float3 LinearToSrgb(float3 v)
+{
+    return float3(v.x <= 0.0031308 ? v.x * 12.92 : 1.055 * pow(v.x, 1.0 / 2.4) - 0.055,
+                  v.y <= 0.0031308 ? v.y * 12.92 : 1.055 * pow(v.y, 1.0 / 2.4) - 0.055,
+                  v.z <= 0.0031308 ? v.z * 12.92 : 1.055 * pow(v.z, 1.0 / 2.4) - 0.055);
+}
+
 float4 fragment_main(VsOutput input) : SV_Target0
 {
     float4 baseColor = BaseColorFactor;
     if (MaterialFlags.x > 0.5)
-        baseColor *= AlbedoTexture.Sample(AlbedoSampler, input.Uv);
+    {
+        float4 albedoSample = AlbedoTexture.Sample(AlbedoSampler, input.Uv);
+        if (ColorPipeline.x > 0.5 && PbrParams.z < 0.5) albedoSample.rgb = SrgbToLinear(albedoSample.rgb);
+        if (ColorPipeline.x < 0.5 && PbrParams.z > 0.5) albedoSample.rgb = LinearToSrgb(albedoSample.rgb);
+        baseColor *= albedoSample;
+    }
 
     // alpha cutout：mask 模式下低于 cutoff 的像素直接丢弃（仍在不透明队列，正常写深度）。
     if (MaterialFlags.w > 0.5 && MaterialFlags.w < 1.5)
@@ -180,5 +199,5 @@ float4 fragment_main(VsOutput input) : SV_Target0
 
     // 环境光：无 IBL，平面环境项。
     color += Ambient.rgb * albedo;
-    return float4(saturate(color), baseColor.a);
+    return float4(ColorPipeline.x > 0.5 ? color : saturate(color), baseColor.a);
 }

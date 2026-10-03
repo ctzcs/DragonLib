@@ -33,6 +33,7 @@ public sealed class DassetModelAsset : IAsset, IDisposable
 
     private readonly List<DassetMeshPrimitive> _primitives = [];
     private readonly List<Texture> _textures = [];
+    private readonly Dictionary<int, Texture> _colorTextures = [];
 
     public IReadOnlyList<DassetMeshPrimitive> Primitives => _primitives;
 
@@ -51,6 +52,15 @@ public sealed class DassetModelAsset : IAsset, IDisposable
 
     internal void AddTexture(Texture texture) => _textures.Add(texture);
 
+    internal void AddColorTexture(int index, Texture texture) => _colorTextures.Add(index, texture);
+
+    /// <summary>同一源图兼作颜色和数据贴图时，颜色用途拥有独立 sRGB 上传，避免法线被 gamma 解码。</summary>
+    public Texture? GetTexture(int index, bool color = false)
+    {
+        if (index < 0 || index >= _textures.Count) return null;
+        return color && _colorTextures.TryGetValue(index, out var texture) ? texture : _textures[index];
+    }
+
     internal void AddSkeleton(DassetSkeleton skeleton) => _skeletons.Add(skeleton);
 
     internal void AddClip(DassetAnimationClip clip) => _clips.Add(clip);
@@ -64,5 +74,8 @@ public sealed class DassetModelAsset : IAsset, IDisposable
         foreach (var texture in _textures)
             texture.Dispose();
         _textures.Clear();
+        foreach (var texture in _colorTextures.Values)
+            texture.Dispose();
+        _colorTextures.Clear();
     }
 }

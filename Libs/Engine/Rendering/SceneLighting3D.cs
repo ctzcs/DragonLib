@@ -16,6 +16,7 @@ public sealed class SceneLighting3D
     public float ShadowBias = 0.0015f;
     public float ShadowDarkness = 0.65f;
     public ShadowMap? ShadowMap;
+    public bool HdrEnabled;
     private readonly float[] _packedLights = new float[PointLight3D.PackedFloatCount];
 
     public LightUniforms GetLightUniforms(Vector3 cameraPosition) => new()
@@ -24,6 +25,7 @@ public sealed class SceneLighting3D
         Ambient = new Vector4(AmbientColor, 1f),
         Diffuse = new Vector4(DirectionalColor, 1f),
         CameraPosition = new Vector4(cameraPosition, 1f),
+        ColorPipeline = new Vector4(HdrEnabled ? 1f : 0f, 0f, 0f, 0f),
     };
 
     public ShadowSettingsUniforms GetShadowUniforms() => new()

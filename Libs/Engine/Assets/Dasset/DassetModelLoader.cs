@@ -32,10 +32,22 @@ public static class DassetModelLoader
         var asset = new DassetModelAsset { Name = assetName };
 
         // 贴图表按下标原样上传，材质里的索引才能对齐。cook 端只收 PNG/JPG（Foster Image 能处理的格式）。
-        foreach (var entry in model.Textures)
+        var colorUses = new bool[model.Textures.Count];
+        var dataUses = new bool[model.Textures.Count];
+        foreach (var primitive in model.Primitives)
         {
+            MarkTextureUse(colorUses, primitive.Material.AlbedoTextureIndex);
+            MarkTextureUse(dataUses, primitive.Material.NormalTextureIndex);
+        }
+        for (var i = 0; i < model.Textures.Count; i++)
+        {
+            var entry = model.Textures[i];
             using var image = new Image(entry.Bytes);
-            asset.AddTexture(new Texture(device, image, name: $"dasset:{assetName}:{entry.Name}"));
+            var srgb = colorUses[i] && device.IsTextureFormatSupported(TextureFormat.R8G8B8A8Srgb);
+            var format = srgb && !dataUses[i] ? TextureFormat.R8G8B8A8Srgb : TextureFormat.Color;
+            asset.AddTexture(UploadTexture(device, image, format, $"dasset:{assetName}:{entry.Name}"));
+            if (srgb && dataUses[i])
+                asset.AddColorTexture(i, UploadTexture(device, image, TextureFormat.R8G8B8A8Srgb, $"dasset:{assetName}:{entry.Name}:sRGB"));
         }
 
         foreach (var skeleton in model.Skeletons)
@@ -62,5 +74,17 @@ public static class DassetModelLoader
         }
 
         return asset;
+    }
+
+    private static void MarkTextureUse(bool[] uses, int index)
+    {
+        if (index >= 0 && index < uses.Length) uses[index] = true;
+    }
+
+    private static Texture UploadTexture(GraphicsDevice device, Image image, TextureFormat format, string name)
+    {
+        var texture = new Texture(device, image.Width, image.Height, format, TextureFlags.GenerateMipmaps, name);
+        texture.SetData<Color>(image.Data);
+        return texture;
     }
 }

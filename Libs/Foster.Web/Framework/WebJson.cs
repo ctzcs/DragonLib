@@ -7,13 +7,13 @@ namespace Foster.Framework;
 // no reflection per draw call, and safe under trimming/AOT.
 #pragma warning disable IDE1006 // naming: JSON keys
 
-internal sealed record TextureDesc(int width, int height, int format, int target);
+internal sealed record TextureDesc(int width, int height, int format, int target, int mipLevels);
 internal sealed record TargetDesc(int width, int height);
 internal sealed record ShaderDesc(int stage, string code);
 internal sealed record BufferDesc(int type);
 internal sealed record AttributeDesc(int location, int type, bool normalized, int offset);
 internal sealed record VertexBufferDesc(int handle, int stride, bool instance, AttributeDesc[] attributes);
-internal sealed record SamplerDesc(int handle, int filter, int wrapX, int wrapY);
+internal sealed record SamplerDesc(int handle, int filter, int wrapX, int wrapY, bool mipmaps);
 
 internal sealed record DrawDesc(
     int target, int vertexShader, int fragmentShader,

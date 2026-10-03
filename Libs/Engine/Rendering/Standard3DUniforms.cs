@@ -11,6 +11,7 @@ public struct LightUniforms
     public Vector4 Ambient;
     public Vector4 Diffuse;
     public Vector4 CameraPosition;
+    public Vector4 ColorPipeline; // x: HDR 线性光照；0 保留 LDR gamma 光照观感。
 }
 
 /// <summary>Standard3D fragment b1, space3。</summary>

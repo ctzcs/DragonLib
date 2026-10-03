@@ -13,6 +13,8 @@ public sealed class RenderTarget3D : IDisposable
     private readonly TextureFormat _depthFormat;
     private Target? _target;
     private Subtexture _color;
+    public bool HdrEnabled { get; set; }
+    public bool IsHdr => _target != null && ColorTexture.Format == TextureFormat.R16G16B16A16Float;
 
     public Target Target => _target ?? throw new InvalidOperationException("The 3D render target has not been sized.");
     public Texture ColorTexture => Target.Attachments[0];
@@ -35,8 +37,10 @@ public sealed class RenderTarget3D : IDisposable
     {
         width = Math.Max(1, width);
         height = Math.Max(1, height);
+        var colorFormat = HdrEnabled && _graphicsDevice.IsTextureFormatSupported(TextureFormat.R16G16B16A16Float)
+            ? TextureFormat.R16G16B16A16Float : TextureFormat.Color;
         if (_target is { Width: var currentWidth, Height: var currentHeight } &&
-            currentWidth == width && currentHeight == height)
+            currentWidth == width && currentHeight == height && ColorTexture.Format == colorFormat)
             return;
 
         _target?.Dispose();
@@ -44,7 +48,7 @@ public sealed class RenderTarget3D : IDisposable
             _graphicsDevice,
             width,
             height,
-            [TextureFormat.Color, _depthFormat],
+            [colorFormat, _depthFormat],
             name: "Engine 3D Target");
         _color = new Subtexture(_target.Attachments[0]);
     }
@@ -54,8 +58,11 @@ public sealed class RenderTarget3D : IDisposable
         Target.Clear(color, 1f, 0, ClearMask.Color | ClearMask.Depth);
     }
 
-    public void Composite(Batcher batcher, int width, int height)
+    public void Composite(Batcher batcher, int width, int height, Tonemapper3D? tonemapper = null, bool outputSrgb = true)
     {
+        if (IsHdr && tonemapper == null)
+            throw new InvalidOperationException("HDR targets require Tonemapper3D when compositing.");
+        if (IsHdr) tonemapper!.Push(batcher, outputSrgb);
         batcher.PushMatrix(Matrix3x2.Identity, relative: false);
         try
         {
@@ -64,6 +71,7 @@ public sealed class RenderTarget3D : IDisposable
         finally
         {
             batcher.PopMatrix();
+            if (IsHdr) batcher.PopMaterial();
         }
     }
 

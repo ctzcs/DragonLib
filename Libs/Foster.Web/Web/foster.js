@@ -7,6 +7,7 @@ export function createFosterBackend(canvas, reportError = console.error) {
     const events = [], heldKeys = new Set(), heldButtons = new Set(), pads = new Map();
     const objects = new Map(), programs = new Map(), samplers = new Map();
     let nextHandle = 1, white, vao, currentCommand, currentProgram;
+    let colorBufferFloat = false; // DragonLib 扩展
     const retain = value => { const id = nextHandle++; objects.set(id, value); return id; };
     const get = (id, kind) => {
         const value = objects.get(id);
@@ -71,6 +72,7 @@ export function createFosterBackend(canvas, reportError = console.error) {
         resizable = canResize;
         gl = canvas.getContext("webgl2", { alpha: false, antialias, depth: true, stencil: true, preserveDrawingBuffer: false });
         if (!gl) throw new Error("WebGL2 is required to run Foster.Web.");
+        colorBufferFloat = !!gl.getExtension("EXT_color_buffer_float");
         abort = new AbortController();
         gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1); gl.pixelStorei(gl.PACK_ALIGNMENT, 1);
         vao = gl.createVertexArray(); gl.bindVertexArray(vao);
@@ -203,6 +205,10 @@ export function createFosterBackend(canvas, reportError = console.error) {
     function checkFramebuffer() {
         if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error("Incomplete WebGL framebuffer.");
     }
+    // DragonLib 扩展：RGBA16F 采样虽为 core，Foster 的能力查询也承诺颜色附件可用。
+    function textureFormatSupported(format) {
+        return !!gl && ([0, 1, 2, 3, 5, 6, 7, 8].includes(format) || format === 9 && colorBufferFloat);
+    }
     function create(kind, descriptor) {
         const d = JSON.parse(descriptor);
         if (kind === "target") return retain({ kind, object: gl.createFramebuffer(), width: d.width, height: d.height, colors: [], attachments: [] });
@@ -220,15 +226,17 @@ export function createFosterBackend(canvas, reportError = console.error) {
                 [gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, 4], [gl.R8, gl.RED, gl.UNSIGNED_BYTE, 1], [gl.RG8, gl.RG, gl.UNSIGNED_BYTE, 2],
                 [gl.DEPTH24_STENCIL8, gl.DEPTH_STENCIL, gl.UNSIGNED_INT_24_8, 4], null,
                 [gl.DEPTH_COMPONENT16, gl.DEPTH_COMPONENT, gl.UNSIGNED_SHORT, 2],
-                [gl.DEPTH_COMPONENT24, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, 4], [gl.DEPTH_COMPONENT32F, gl.DEPTH_COMPONENT, gl.FLOAT, 4]
+                [gl.DEPTH_COMPONENT24, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, 4], [gl.DEPTH_COMPONENT32F, gl.DEPTH_COMPONENT, gl.FLOAT, 4],
+                [gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, 4], [gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, 8]
             ];
             const format = formats[d.format]; if (!format) throw new Error("Unsupported texture format");
             const object = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, object);
-            gl.texStorage2D(gl.TEXTURE_2D, 1, format[0], d.width, d.height);
+            gl.texStorage2D(gl.TEXTURE_2D, d.mipLevels, format[0], d.width, d.height);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-            const id = retain({ kind, object, ...d, format, depth: d.format >= 3 });
+            const isDepth = d.format >= 3 && d.format <= 7;
+            const id = retain({ kind, object, ...d, format, depth: isDepth });
             if (d.target) {
-                const t = target(d.target), depth = d.format >= 3;
+                const t = target(d.target), depth = isDepth;
                 if (t.attachments.some(handle => get(handle).depth && depth)) throw new Error("Only one depth attachment is allowed");
                 const point = depth ? d.format === 3 ? gl.DEPTH_STENCIL_ATTACHMENT : gl.DEPTH_ATTACHMENT : gl.COLOR_ATTACHMENT0 + t.colors.length;
                 gl.framebufferTexture2D(gl.FRAMEBUFFER, point, gl.TEXTURE_2D, object, 0);
@@ -267,7 +275,9 @@ export function createFosterBackend(canvas, reportError = console.error) {
             if (r.depth) throw new Error("Depth texture uploads are not supported");
             const [x, y, w, h] = JSON.parse(region);
             gl.bindTexture(gl.TEXTURE_2D, r.object);
-            gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, w, h, r.format[1], r.format[2], bytes);
+            const data = r.format[2] === gl.HALF_FLOAT ? new Uint16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 2) : bytes;
+            gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, w, h, r.format[1], r.format[2], data);
+            if (r.mipLevels > 1) gl.generateMipmap(gl.TEXTURE_2D);
         } else throw new Error("Resource cannot receive uploads");
     }
     function temporaryFramebuffer(texture) {
@@ -280,6 +290,18 @@ export function createFosterBackend(canvas, reportError = console.error) {
         const r = get(id, "texture"), [x, y, w, h] = JSON.parse(region);
         const fbo = temporaryFramebuffer(r);
         try {
+            // DragonLib 扩展：RGBA16F readPixels 只能读 FLOAT，再还原半浮点字节。
+            if (r.format[2] === gl.HALF_FLOAT) {
+                const floats = new Float32Array(w * h * 4);
+                gl.readPixels(x, y, w, h, gl.RGBA, gl.FLOAT, floats);
+                const halves = new Uint16Array(floats.length);
+                const bits = new Uint32Array(floats.buffer);
+                for (let i = 0; i < halves.length; i++) {
+                    const sign = (bits[i] >>> 16) & 0x8000, exp = ((bits[i] >>> 23) & 255) - 127 + 15, mant = bits[i] & 0x7fffff;
+                    halves[i] = exp >= 31 ? sign | 0x7c00 : exp <= 0 ? exp < -10 ? sign : sign | ((mant | 0x800000) >>> (14 - exp)) : sign | (exp << 10) | (mant >>> 13);
+                }
+                view.set(new Uint8Array(halves.buffer)); return;
+            }
             // WebGL color readback is RGBA8. Extract R/RG channels when necessary.
             const rgba = new Uint8Array(w * h * 4); gl.readPixels(x, y, w, h, gl.RGBA, gl.UNSIGNED_BYTE, rgba);
             const result = new Uint8Array(w * h * r.format[3]);
@@ -317,9 +339,9 @@ export function createFosterBackend(canvas, reportError = console.error) {
         programs.set(key, p); return p;
     }
     function sampler(d) {
-        const key = `${d.filter},${d.wrapX},${d.wrapY}`; if (samplers.has(key)) return samplers.get(key);
+        const key = `${d.filter},${d.wrapX},${d.wrapY},${d.mipmaps}`; if (samplers.has(key)) return samplers.get(key);
         const object = gl.createSampler(), wrap = [gl.REPEAT, gl.MIRRORED_REPEAT, gl.CLAMP_TO_EDGE];
-        gl.samplerParameteri(object, gl.TEXTURE_MIN_FILTER, d.filter === 0 ? gl.NEAREST : gl.LINEAR);
+        gl.samplerParameteri(object, gl.TEXTURE_MIN_FILTER, d.mipmaps ? d.filter === 0 ? gl.NEAREST_MIPMAP_NEAREST : gl.LINEAR_MIPMAP_LINEAR : d.filter === 0 ? gl.NEAREST : gl.LINEAR);
         gl.samplerParameteri(object, gl.TEXTURE_MAG_FILTER, d.filter === 0 ? gl.NEAREST : gl.LINEAR);
         gl.samplerParameteri(object, gl.TEXTURE_WRAP_S, wrap[d.wrapX]); gl.samplerParameteri(object, gl.TEXTURE_WRAP_T, wrap[d.wrapY]);
         samplers.set(key, object); return object;
@@ -409,7 +431,7 @@ export function createFosterBackend(canvas, reportError = console.error) {
     return {
         attach(exports) { runtime = exports; },
         imports: {
-            init, windowGet, windowSet, startLoop, dispose, create, destroy, upload, readTexture, blit, beginDraw, uniform, draw, clear,
+            init, windowGet, windowSet, startLoop, dispose, create, destroy, upload, readTexture, blit, beginDraw, uniform, draw, clear, textureFormatSupported,
             pollEvents() { pollGamepads(); return JSON.stringify(events.splice(0)); },
             storageGet: key => localStorage.getItem(key),
             storageSet: (key, value) => value === null ? localStorage.removeItem(key) : localStorage.setItem(key, value),

@@ -4,6 +4,9 @@ namespace Foster.Framework;
 
 internal static partial class WebInterop
 {
+    // DragonLib 扩展：由实际 WebGL 上下文和扩展结果回答颜色附件能力。
+    [JSImport("textureFormatSupported", "foster-web")]
+    internal static partial bool TextureFormatSupported(int format);
     [JSImport("init", "foster-web")]
     internal static partial void Init(string title, int width, int height, bool resizable, bool antialias);
     [JSImport("windowGet", "foster-web")]
