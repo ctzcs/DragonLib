@@ -29,6 +29,9 @@
     </ItemGroup>
 
     <ItemGroup>
+      <EmbeddedResource Include="$(ProjectDir)Rendering/Shaders/Compiled/**" Visible="false">
+        <LogicalName>Engine/Shaders/%(Filename)%(Extension)</LogicalName>
+      </EmbeddedResource>
       <EmbeddedResource Include="$(ProjectDir)Paper/Shaders/Compiled/**" Visible="false">
         <LogicalName>Shaders/%(Filename)%(Extension)</LogicalName>
       </EmbeddedResource>

@@ -2,6 +2,7 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Engine.Assets.Dasset;
+using Engine.Animation;
 using Engine.World;
 using Foster.Framework;
 
@@ -134,6 +135,8 @@ public sealed class Renderer3D : IDisposable
     private bool _disposed;
     private IDrawableTarget? _shadowTarget;
     private Material? _shadowMaterial;
+    private Material? _skinnedShadowMaterial;
+    private SceneLighting3D? _lighting;
     private Matrix4x4 _shadowLightViewProjection;
 
     public bool IsActive => _target != null;
@@ -152,11 +155,13 @@ public sealed class Renderer3D : IDisposable
     /// 须在 Begin 之后、End 之前调用。depthMaterial 的顶点 uniform 需为单个
     /// WorldLightViewProjection 矩阵（见 DepthOnly.hlsl）。
     /// 实例化 draw 不进阴影 pass。
+    /// 提供 skinnedDepthMaterial 时蒙皮 draw 使用它，并将 palette 写入 vertex slot 2。
     /// </summary>
     public void SetShadowPass(
         IDrawableTarget shadowTarget,
         Material depthMaterial,
-        in Matrix4x4 lightViewProjection)
+        in Matrix4x4 lightViewProjection,
+        Material? skinnedDepthMaterial = null)
     {
         EnsureActive();
         ArgumentNullException.ThrowIfNull(shadowTarget);
@@ -166,7 +171,48 @@ public sealed class Renderer3D : IDisposable
 
         _shadowTarget = shadowTarget;
         _shadowMaterial = depthMaterial;
+        _skinnedShadowMaterial = skinnedDepthMaterial;
         _shadowLightViewProjection = lightViewProjection;
+    }
+
+    /// <summary>只对本次 Begin/End 生效，提交 draw 时统一写入标准管线的光照槽位。</summary>
+    public void SetLighting(SceneLighting3D lighting)
+    {
+        EnsureActive();
+        ArgumentNullException.ThrowIfNull(lighting);
+        _lighting = lighting;
+    }
+
+    public void DrawModel(DassetModelAsset model, IReadOnlyList<(Material, RenderState3D)> materials,
+        in Matrix4x4 world, ReadOnlySpan<Matrix4x4> palette = default, int meshIndex = -1)
+    {
+        EnsureActive();
+        ArgumentNullException.ThrowIfNull(model);
+        ArgumentNullException.ThrowIfNull(materials);
+        if (materials.Count != model.Primitives.Count)
+            throw new ArgumentException("Material count must match model primitives.", nameof(materials));
+        for (var i = 0; i < model.Primitives.Count; i++)
+        {
+            if (meshIndex >= 0 && i != meshIndex)
+                continue;
+            var primitive = model.Primitives[i];
+            var (material, state) = materials[i];
+            if (!primitive.IsSkinned)
+            {
+                Draw(primitive.Mesh, material, world, state, primitive.Bounds);
+                continue;
+            }
+            // 无动画组件也应绘制 bind pose，而不是静默丢掉蒙皮 primitive。
+            var joints = palette;
+            if (joints.IsEmpty)
+            {
+                var skeleton = model.Skeletons[primitive.SkinIndex];
+                var bind = new Matrix4x4[Math.Min(skeleton.Joints.Count, SkeletonAnimator.MaxJoints)];
+                SkeletonAnimator.ComputePalette(skeleton, null, 0f, bind);
+                joints = bind;
+            }
+            Draw(primitive.Mesh, material, world, state, joints, primitive.Bounds);
+        }
     }
 
     /// <summary>
@@ -238,9 +284,20 @@ public sealed class Renderer3D : IDisposable
             World = world,
             State = state,
             LocalBounds = localBounds,
-            JointPalette = jointPalette.ToArray(),
+            JointPalette = PadPalette(jointPalette),
             Sequence = _sequence++
         });
+    }
+
+    /// <summary>cbuffer 必须完整上传；剩余关节填 identity，避免驱动读取短 buffer 越界。</summary>
+    public static Matrix4x4[] PadPalette(ReadOnlySpan<Matrix4x4> palette)
+    {
+        if (palette.Length > SkeletonAnimator.MaxJoints)
+            throw new ArgumentOutOfRangeException(nameof(palette));
+        var result = new Matrix4x4[SkeletonAnimator.MaxJoints];
+        Array.Fill(result, Matrix4x4.Identity);
+        palette.CopyTo(result);
+        return result;
     }
 
     /// <summary>
@@ -423,6 +480,7 @@ public sealed class Renderer3D : IDisposable
                     }
                 }
 
+                _lighting?.Apply(item.Material, camera);
                 if (item.IsInstanced)
                     SubmitInstances(target, camera, item);
                 else
@@ -436,6 +494,8 @@ public sealed class Renderer3D : IDisposable
             _camera = null;
             _shadowTarget = null;
             _shadowMaterial = null;
+            _skinnedShadowMaterial = null;
+            _lighting = null;
         }
     }
 
@@ -485,21 +545,26 @@ public sealed class Renderer3D : IDisposable
     /// 阴影深度 pass。面剔除翻转为 Front 消除自遮挡 acne；深度比较用 Less（深度图每帧清理）。
     /// 实例化 draw 不进阴影 pass：实例缓冲布局由调用侧 shader 自定义（TInstance : IVertex），
     /// 且实例的顶点动画（如 Basic3DInstanced 的轨道旋转）只存在于颜色 pass 的顶点 shader 里，
-    /// 通用实例化深度变体画出的剪影是错的。要支持需按 shader 配套深度变体，本期不做。
-    /// 蒙皮 draw 同样不进：DepthOnly 不读 joint palette，画出来的是 bind pose 的剪影；
-    /// 后续路径是 DepthOnly 的蒙皮顶点变体（读同一个 palette cbuffer）。
+    /// 通用实例化深度变体画出的剪影是错的，需调用方提供配套变体。
+    /// 蒙皮 draw 仅在提供 skinnedDepthMaterial 时提交，并写入与颜色 pass 相同的 palette。
     /// </summary>
     private void SubmitShadow(IDrawableTarget shadowTarget, DrawItem item)
     {
-        if (item.IsInstanced || item.JointPalette != null)
+        if (item.IsInstanced)
             return;
 
-        _shadowMaterial!.Vertex.SetUniformBuffer(new ShadowDirectVertexUniforms
+        var material = item.JointPalette != null ? _skinnedShadowMaterial : _shadowMaterial;
+        if (material == null)
+            return;
+        material.Vertex.SetUniformBuffer(new ShadowDirectVertexUniforms
         {
             WorldLightViewProjection = item.World * _shadowLightViewProjection,
         });
 
-        _graphicsDevice.Draw(new DrawCommand(shadowTarget, item.Mesh, _shadowMaterial)
+        if (item.JointPalette != null)
+            material.Vertex.SetUniformBuffer(MemoryMarshal.AsBytes(item.JointPalette.AsSpan()), 2);
+
+        _graphicsDevice.Draw(new DrawCommand(shadowTarget, item.Mesh, material)
         {
             CullMode = CullMode.Front,
             DepthCompare = DepthCompare.Less,

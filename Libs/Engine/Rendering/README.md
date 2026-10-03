@@ -54,8 +54,9 @@
 - 阴影 pass **不做相机视锥剔除**：屏外物体仍可能把阴影投进画面。
 - 实例化 draw 不进阴影 pass：实例缓冲布局由调用侧 shader 自定义，且实例顶点动画只存在于颜色 pass，
   通用深度变体画出的剪影是错的。
-- 蒙皮 draw 不进阴影 pass：DepthOnly 不读 joint palette（画出来的是 bind pose）。
-  后续路径：按 shader 配套深度变体（实例化）/ DepthOnly 蒙皮变体读同一 palette cbuffer（蒙皮）。
+- 蒙皮 draw 在 `SetShadowPass` 提供 `skinnedDepthMaterial` 时进入阴影 pass：
+  Engine 内置 `DepthOnlySkinned` 读取与颜色 pass 相同的 vertex slot 2 palette。未提供变体时跳过。
+  关节 palette 上传完整 cbuffer，未使用的关节填 identity；深度顶点关节属性固定 location 4/5，避免后端压缩槽位。
 
 ## 透明与双面材质
 
@@ -95,3 +96,16 @@ demo 的轨道相机（SkinningDemo/GltfSceneDemo/GltfModelDemo/LightSandboxDemo
 
 - 资产管线/格式：[`Libs/Engine/Assets/README.md`](../Assets/README.md)
 - FBX→glTF→dasset cook 工具链：[`Tools/FbxToGltf/README.md`](../../../Tools/FbxToGltf/README.md)
+
+## 标准 3D 管线
+
+`Standard3DShaders` 持有 Engine 内嵌的静态、蒙皮与两种深度 shader，以及白色默认贴图。
+`MaterialCache.Get(model, shaders)` 按模型对象缓存逐 primitive 材质；卸载/热重载模型时清空缓存。
+游戏在 `Renderer3D.Begin` 后调用 `SetLighting(SceneLighting3D)`，需要阴影时再调用
+`SetShadowPass(shadow.Target, shaders.Depth, shadow.LightViewProjection, shaders.SkinnedDepth)`。
+`DrawModel` 统一处理材质、蒙皮 palette、primitive 选择和局部包围盒；无 palette 时使用 bind pose。
+ECS 游戏可用 `MeshRenderSystem.Submit` 排队，Begin/End 和目标的生命周期仍由游戏管理。
+方向光和点光配置可以随 level/prefab 序列化，`SceneLight3DCollector` 收集到光照对象。
+
+shader 源码位于 `Rendering/Shaders/`，运行 `build.ps1` 生成四种后端产物。
+`Verify-Shaders.ps1` 同时校验入口、递归 include 依赖和产物，修改公共片元逻辑后必须重新生成。

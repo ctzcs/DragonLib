@@ -9,15 +9,16 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'ShaderCommon.ps1')
-$expected = 1 + $ShaderStages.Count * $ShaderFormats.Count
 foreach ($name in $Names) {
     $manifest = Join-Path $ManifestDir "$name.sha256"
     if (!(Test-Path -LiteralPath $manifest)) { throw "Missing $name shader manifest. Run $Rebuild." }
     $entries = @(Get-Content -LiteralPath $manifest)
+    $sources = @(Get-ShaderSources (Join-Path $SourceDir "$name.hlsl"))
+    $expected = $sources.Count + $ShaderStages.Count * $ShaderFormats.Count
     if ($entries.Count -ne $expected) { throw "Incomplete $name shader manifest ($($entries.Count)/$expected). Run $Rebuild." }
     foreach ($entry in $entries) {
         $file, $hash = $entry -split ' ', 2
-        $path = if ($file -like '*.hlsl') { Join-Path $SourceDir $file } else { Join-Path $Output $file }
+        $path = if ($file -match '\.hlsli?$') { Join-Path $SourceDir $file } else { Join-Path $Output $file }
         if (!(Test-Path -LiteralPath $path) -or (Get-ShaderHash $path) -ne $hash) { throw "Stale shader: $file. Run $Rebuild." }
     }
 }
