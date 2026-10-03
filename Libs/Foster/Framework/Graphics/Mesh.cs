@@ -1,7 +1,7 @@
 namespace Foster.Framework;
 
 /// <summary>
-/// The Mesh contains a vertex buffer, index buffer, and optionally an instance buffer, used for drawing.
+/// Mesh is a utility class that holds a vertex buffer, index buffer, and optionally an instance buffer, used for drawing.<br/>
 /// Use <see cref="Mesh{T}"/> to create a mesh of your given Vertex Format.
 /// </summary>
 public class Mesh : IGraphicResource

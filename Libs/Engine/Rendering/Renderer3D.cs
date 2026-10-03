@@ -249,6 +249,7 @@ public sealed class Renderer3D : IDisposable
     /// <summary>
     /// Queues one mesh transform for a direct draw shader.
     /// </summary>
+    /// <remarks>自建 Mesh 应通过 MeshUpload3D 上传 CCW 三角形索引，遵循 Foster 的原生正面设置。</remarks>
     public void Draw(Mesh mesh, Material material, in Matrix4x4 world)
         => Draw(mesh, material, world, RenderState3D.Opaque);
 

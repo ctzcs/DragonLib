@@ -1,7 +1,7 @@
 namespace Foster.Framework;
 
 /// <summary>
-/// A Vertex struct to be used in a Mesh
+/// Provides a Vertex struct format information to be used in a <see cref="VertexBuffer"/>
 /// </summary>
 public interface IVertex
 {

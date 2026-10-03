@@ -71,10 +71,7 @@ public enum AppFlags
 	/// </summary>
 	NoHeaderLog = 1 << 2,
 
-	/// <summary>
-	/// 窗口显示时不抢占前台焦点(Windows 上等同 SW_SHOWNOACTIVATE),
-	/// 用于 CLI 后台调试:窗口照常渲染,但终端保持输入焦点
-	/// </summary>
+	/// <summary>Shows the window without activating it, for background CLI debugging.</summary>
 	NoWindowFocus = 1 << 3,
 }
 
@@ -169,7 +166,7 @@ public abstract class App : IDisposable
 	/// to mount and read/write data.<br/>
 	/// <br/>
 	/// If you intend to target non-desktop platforms, you should implement user data
-	/// through the <see cref="FileSystem.OpenUserStorage(Action{Storage})"/> API via <see cref="FileSystem"/>
+	/// through the <see cref="FileSystem.OpenUserStorage(Action{ContentStorage})"/> API via <see cref="FileSystem"/>
 	/// </summary>
 	public string UserPath
 	{
@@ -235,8 +232,6 @@ public abstract class App : IDisposable
 		// by default allow controller presses while unfocused,
 		// let game decide if it should handle them
 		SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
-
-		// CLI 后台调试:窗口显示时不激活,终端保持输入焦点
 		if (config.Flags.Has(AppFlags.NoWindowFocus))
 			SDL_SetHint(SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN, "0");
 

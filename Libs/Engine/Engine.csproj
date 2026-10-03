@@ -7,6 +7,8 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <!-- 可指向独立 MyFoster 仓库，在推送和同步前验证定制分支。 -->
+        <FosterFrameworkProject Condition="'$(FosterFrameworkProject)' == ''">$(MSBuildThisFileDirectory)..\Foster\Framework\Foster.Framework.csproj</FosterFrameworkProject>
     </PropertyGroup>
 
     <ItemGroup>
@@ -15,7 +17,7 @@
 
     <!-- 桌面 Foster 与 Foster.Web 的程序集同名(Foster.Framework)，只能二选一。 -->
     <ItemGroup Condition="'$(IsBrowser)' != 'true'">
-      <ProjectReference Include="..\Foster\Framework\Foster.Framework.csproj" />
+      <ProjectReference Include="$(FosterFrameworkProject)" />
       <ProjectReference Include="..\Foster.Audio\Foster.Audio\Foster.Audio.csproj" />
     </ItemGroup>
     <ItemGroup Condition="'$(IsBrowser)' == 'true'">

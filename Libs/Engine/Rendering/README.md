@@ -4,27 +4,41 @@
 任何一层的约定错位都会以「内外颠倒 / 光照反向 / 跟相机转」的形式爆发，且每层单看都自洽。
 本文件是唯一权威约定来源；改动任一层的相关代码前，先核对这里。**约定变更必须同步更新本文件与锁定测试。**
 
+Foster 是第三方库，优先遵循其已有行为，兼容处理放在 Engine。
+确需框架改动时，在独立 Foster 仓库的 `MyFoster` 分支实现、验证并推送到 `origin/MyFoster`，
+随后同步固定提交到 `Libs/Foster`，记录上游基线和定制提交 SHA；不要直接在 vendored 副本维护定制改动。
+该仓库的 `origin` 为 `ctzcs/Foster`，`upstream` 为 `FosterFramework/Foster`。
+上游更新先在独立仓库获取并合入定制分支，再用上游与定制分支的差异追踪扩展。
+自有 `Libs/Foster.Web` 可扩展，并用独立覆盖文件复用第三方通用源码。
+当前固定版本和定制来源见 [Foster/UPSTREAM.md](../../Foster/UPSTREAM.md)，原生正面设置保持 CW。
+
 ## 正面绕序（front face）
 
-**约定：正面 = 从外侧看逆时针（CCW）。glTF 资产本来就是这个约定——cook 时不要再翻转。**
+**优先遵循 Foster 框架的既有设置，在 Engine 层适配。桌面 GPU 使用 Foster 默认的 CW 正面。**
+
+glTF、`.dasset` 和 CPU 几何仍采用从外侧看 CCW 的索引，法线朝外。统一经
+`MeshUpload3D.SetTriangleIndices` 上传：桌面交换每个三角形的后两个索引，Web 保留原序。
+`Mesh3D` 构造、Dasset 静态/蒙皮加载都使用此入口；自建 Foster Mesh 也应使用它。
+转换只发生在 GPU 上传时，不修改源数组或模型文件，拾取和资产测试仍使用 CCW 数据。
 
 后端设置与验证：
 
-- SDL_GPU 使用 `SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE`，`CullMode.Back/Front` 直接映射。
-  不在此枚举上再补 NDC→framebuffer 的 y 翻转；SDL 已处理各图形 API 的坐标差异。
-- 旧设置为 `CLOCKWISE`。D3D12 GPU 读回证明它剔除了面向相机的 CCW 三角形；
-  旧文档以像素坐标 y 向下推导出“CW 等于 CCW”并不符合 SDL 实际语义，已更正。
+- SDL_GPU 保留上游的 `SDL_GPU_FRONTFACE_CLOCKWISE`，`CullMode.Back/Front` 直接映射。
+  不修改 Foster 的 front-face 或交换 CullMode；颜色、阴影及实例化共用上传后的索引。
+- 原生 CCW 索引直接提交到桌面后端时，Back 剔除它、Front 保留它；原生 CW 则相反。
+  “像素坐标 y 向下，所以 CW 等于 CCW”的旧解释不符合实际结果。
 - `../DragonLib.Tests/Rendering3D.Smoke` 使用叉积朝 +Z、相机从 +Z 观察的固定三角形，
-  对照 CCW/CW × Back/Front 四种组合。D3D12 和 Vulkan 均验证：Back 保留 CCW，Front 剔除 CCW。
+  分别对照原生提交和 Engine 上传的 CCW/CW × Back/Front 组合，并验证 Dasset 静态/蒙皮上传。
+  适配后，CCW 源几何在 Back 下可见、Front 下不可见；CPU 源索引保持不变。
 - WebGL 的离屏 shader 会乘 `u_target_flip=-1`，所以离屏目标使用 `gl.CW`、屏幕使用 `gl.CCW`；
-  这是与 shader 配套的坐标转换，资产仍是同一个 CCW 几何。
+  沿用这组配套设置，Engine 在 Web 上传时保留 CCW，避免重复翻转。
 
 推论：
 
 - 镜像矩阵（负行列式）会反转绕序，cook 时**仅此时**翻一次补偿
   （`GltfModelCooker` 的 `flipWinding = determinant < 0`）。
-- 反面教材：本仓库曾误以为「Foster front = CW」并参照同样错误的 Mesh3D 索引序，
-  全链路一致地反——每层自洽、整体颠倒。锁定测试：`Tests/Game0/Tests/WindingTests.cs`。
+- GPU CW 索引的叉积与朝外法线反向是绕序转换的结果；不能用它重算法线或切线。
+  资产层的几何真值仍由 `Tests/Game0/Tests/WindingTests.cs` 锁定。
 
 ## 矩阵约定
 
@@ -71,7 +85,7 @@
 
 ## 出错史与教训
 
-1. **绕序全链路做反**（cooker 翻转 + Mesh3D 索引序）：每层都自洽，整体颠倒。
+1. **资产数据与后端绕序混淆**：转换只在上传边界做一次，法线和切线保持原值。
    教训：约定横跨多层时，**必须有「几何真值测试」**——断言相对**绝对参照物**
    （如「三角形叉积背离柱体中轴」「叉积与资产的顶点法线同向」），而不是层内自洽测试
    （「叉积与顶点法线一致」在法线也错时会双双通过）。
@@ -113,13 +127,15 @@ shader 源码位于 `Rendering/Shaders/`，运行 `build.ps1` 生成四种后端
 
 ## 色彩管线
 
-`RenderTarget3D.HdrEnabled` 请求 RGBA16F；`IsHdr` 反映当前设备实际是否启用，缺失格式/扩展时回退 Color。
+桌面 MyFoster 与 Web 均提供浮点颜色、硬件 sRGB 和 mipmap 扩展。
+`RenderTarget3D.HdrEnabled` 请求 RGBA16F；`IsHdr` 反映实际是否启用，缺失支持时回退 Color。
 `SceneLighting3D.HdrEnabled` 应使用目标的 `IsHdr`：HDR 计算线性光照，LDR 保留原有 gamma 光照观感。
 模型颜色贴图使用 sRGB，数据贴图使用线性格式，共用源图时分别上传；模型贴图生成 mip 链并使用 mip sampler。
+`DebugDraw3D` 使用 MyFoster/Web 的线段拓扑，逐帧清空顶点缓冲计数，避免线段减少时绘制残留几何。
 HDR 合成需传入 `Tonemapper3D`，支持 ACES/Reinhard 和曝光；普通屏幕输出显式 sRGB 编码。
 合成到 sRGB 颜色附件时传 `outputSrgb:false`，避免重复编码。原 LDR Batcher 合成路径保留。
 后端调查及限制见 `COLOR_PIPELINE_FEASIBILITY.md`。
 
 ## 扩展接口
 
-材质贴图、HDR、CSM atlas、拾取、DebugDraw3D 和动画过渡见 [FEATURES_3D.md](FEATURES_3D.md)。当前 palette 上限为 128（vertex b2/b3 各 4KB）；蒙皮颜色 pass 用当前 palette 的保守联合 AABB 剔除。D3D12/Vulkan smoke 锁定 CCW、阴影采样 y 方向及第 127 号关节的颜色/深度变换。
+材质贴图、HDR、CSM atlas、拾取、DebugDraw3D 和动画过渡见 [FEATURES_3D.md](FEATURES_3D.md)。当前 palette 上限为 128（vertex b2/b3 各 4KB）；蒙皮颜色 pass 用当前 palette 的保守联合 AABB 剔除。D3D12/Vulkan smoke 锁定 Foster 原生 CW、Engine 上传适配、阴影采样 y 方向及第 127 号关节的颜色/深度变换。

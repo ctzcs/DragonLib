@@ -1,7 +1,7 @@
 namespace Foster.Framework;
 
 /// <summary>
-/// Class that provides kerning data for Sprite Fonts
+/// Class that provides kerning data for <see cref="SpriteFont"/> 
 /// </summary>
 public interface IProvideKerning
 {

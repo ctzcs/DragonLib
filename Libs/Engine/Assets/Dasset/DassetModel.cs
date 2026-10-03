@@ -102,6 +102,7 @@ public sealed class DassetPrimitive
     /// <summary>蒙皮 primitive 使用的骨架在 <see cref="DassetModel.Skeletons"/> 里的下标；静态为 -1。</summary>
     public int SkinIndex = -1;
 
+    /// <summary>从外侧看 CCW 的三角形列表；GPU 上传时由 MeshUpload3D 适配 Foster 后端绕序。</summary>
     public uint[] Indices = [];
     public DassetMaterial Material = new();
     public DassetBounds Bounds;

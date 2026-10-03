@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 env:
-  SDL_VERSION: release-3.4.0
+  SDL_VERSION: release-3.4.12
 
 jobs:
   Build:
@@ -20,8 +20,23 @@ jobs:
           - os: ubuntu-latest
             target: linux-x64
             lib: libSDL3.so
+          - os: ubuntu-22.04-arm
+            target: linux-arm64
+            lib: libSDL3.so
+          - os: ubuntu-22.04-arm
+            target: linux-arm
+            lib: libSDL3.so
+            container: arm32v7/ubuntu:jammy
     runs-on: ${{matrix.os}}
+    container: ${{matrix.container}}
     steps:
+      - name: Setup ARM32 Container Pre-Depends
+        if: ${{ matrix.target == 'linux-arm' }}
+        run: |
+          # add arm64 architecture for arm64 nodeJS for actions/upload-artifact inherited from the host
+          dpkg --add-architecture arm64
+          apt-get update
+          apt-get install -y sudo git libc6:arm64 libstdc++6:arm64
       - name: Clone SDL3
         run: git clone --depth 1 --branch ${{env.SDL_VERSION}} https://github.com/libsdl-org/sdl sdl3-src
       - name: Setup macOS universal build
@@ -31,7 +46,7 @@ jobs:
         if: ${{ runner.os == 'Linux' }}
         run: |
           sudo apt-get update
-          sudo apt-get install build-essential git make \
+          sudo apt-get install -y build-essential git make \
             pkg-config cmake ninja-build gnome-desktop-testing libasound2-dev libpulse-dev \
             libaudio-dev libfribidi-dev libjack-dev libsndio-dev libx11-dev libxext-dev \
             libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxtst-dev \

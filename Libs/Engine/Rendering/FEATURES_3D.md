@@ -6,11 +6,14 @@
 
 实例阴影需要在 `DrawInstances` 传入 `instancedDepthMaterial`：顶点 b0 是光源 ViewProjection，实例缓冲布局与颜色 shader 相同，顶点变换和动画也必须一致。未提供时不会投影；通用管线无法推断自定义实例动画。阴影 pass 使用 Cull.Front，不做相机视锥剔除。四级矩阵等设置共用 fragment b2，未增加 SDL uniform 槽位。
 
-检查 GltfScene 的 Cascaded shadows / Cascade colors 开关；GltfModel 的 DamagedHelmet 开关检查 MR、AO、自发光。`Rendering3D.Smoke` 在 D3D12/Vulkan 实际读回验证 CCW、HDR，以及非对称遮挡物在简单阴影/CSM 中的上下投影方向。
+检查 GltfScene 的 Cascaded shadows / Cascade colors 开关；GltfModel 的 DamagedHelmet 开关检查 MR、AO、自发光。`Rendering3D.Smoke` 在 D3D12/Vulkan 实际读回验证 MyFoster 原生 CW、Engine 索引上传适配、HDR/sRGB/mipmap，以及非对称遮挡物在简单阴影/CSM 中的上下投影方向。
 
 `Camera3D.ScreenPointToRay(pixel)` 接收绘制目标的像素坐标，原点在 near 平面，方向已归一化。`Intersections3D` 返回世界单位距离，AABB/球内起点返回 0，三角形支持双面，平面用点和法线定义。逐三角形拾取用 `Primitive`，蒙皮可传当前 palette；`DassetModelLoader.Load(..., retainCpuGeometry: true)` 才会保留 `CpuGeometry`。
 
 `DebugDraw3D` 提供 Line/Aabb/Sphere/Frustum/Axis/Grid/Skeleton；排队后 `Render(target, camera)` 会清空。`DepthTestEnabled` 控制遮挡，始终不写深度。Skeleton 默认接收 palette，通过 inverse IBM 重建 globals；也可传 `isPalette: false`。GltfScene 左键选择实体并显示 AABB，Skeletons / Light ranges 开关显示调试线。
+
+调试线使用 MyFoster/Web 的线段拓扑，顶点缓冲在每次上传前清空计数。
+桌面定制先在独立 MyFoster 分支验证并推送，再同步固定版本；版本与上游差异见 Foster/UPSTREAM.md。
 
 `.dasset` 当前写 v4，读取兼容 v1–v4。v3 扩展材质，v4 增加动画插值和 cubic 入/出切线；旧 channel 默认 Linear。`AnimatorComp.CrossFadeTo(index, duration)` 重置目标时间，`AnimationSystem` 推进两个剪辑并做 TRS 混合，完成后延续目标播放时间；仅支持同一骨架的过渡。
 

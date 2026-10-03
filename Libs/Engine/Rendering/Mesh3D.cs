@@ -34,6 +34,7 @@ public struct PositionNormalColorVertex : IVertex
 /// <summary>
 /// Owns 3D vertex/index data.
 /// Rendering is performed by <see cref="Renderer3D"/>.
+/// Input triangles use outward CCW winding; GPU indices follow Foster through <see cref="MeshUpload3D"/>.
 /// </summary>
 public sealed class Mesh3D : IDisposable
 {
@@ -50,7 +51,7 @@ public sealed class Mesh3D : IDisposable
     {
         Geometry = new Mesh<PositionNormalColorVertex, uint>(graphicsDevice, name);
         Geometry.SetVertices(vertices);
-        Geometry.SetIndices(indices);
+        MeshUpload3D.SetTriangleIndices(Geometry, indices);
 
         var bounds = DassetBounds.Empty;
         foreach (var vertex in vertices)

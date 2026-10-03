@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 namespace Foster.Framework;
 
 /// <summary>
-/// A 2D RGBA image representation stored offline.<br/>
+/// A 2D RGBA image representation.<br/>
 /// To draw images to the screen using the GPU, use a <see cref="Texture"/>.
 /// </summary>
 public class Image : IDisposable

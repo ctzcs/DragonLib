@@ -6,7 +6,8 @@ using System.Text;
 namespace Foster.Framework;
 
 /// <summary>
-/// Parses Aseprite files
+/// An Aseprite File parser:<br/>
+/// https://www.aseprite.org/
 /// </summary>
 public class Aseprite : Aseprite.IUserDataTarget
 {

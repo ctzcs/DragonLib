@@ -43,13 +43,16 @@ public class Texture : IGraphicResource
 	/// </summary>
 	public readonly TextureFormat Format;
 
-	// DragonLib 扩展：完整 mip 链的层数，便于诊断采样状态。
+	/// <summary>The flags used when creating this texture.</summary>
 	public readonly TextureFlags Flags;
+	/// <summary>The number of mip levels, including the base level.</summary>
 	public int MipLevelCount => Flags.HasFlag(TextureFlags.GenerateMipmaps) ? CalculateMipLevelCount(Width, Height) : 1;
+	/// <summary>Calculates the length of a complete mip chain.</summary>
 	public static int CalculateMipLevelCount(int width, int height)
 	{
-		if (width <= 0 || height <= 0) throw new ArgumentOutOfRangeException(nameof(width));
-		return 1 + (int)MathF.Floor(MathF.Log2(Math.Max(width, height)));
+		ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
+		ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
+		return 1 + System.Numerics.BitOperations.Log2((uint)Math.Max(width, height));
 	}
 
 	/// <summary>
@@ -65,7 +68,22 @@ public class Texture : IGraphicResource
 	/// <summary>
 	/// The Memory Size of the Texture, in bytes
 	/// </summary>
-	public int MemorySize => Width * Height * Format.Size();
+	public int MemorySize
+	{
+		get
+		{
+			var width = Width;
+			var height = Height;
+			var bytes = 0;
+			for (var level = 0; level < MipLevelCount; level++)
+			{
+				bytes = checked(bytes + width * height * Format.Size());
+				width = Math.Max(1, width / 2);
+				height = Math.Max(1, height / 2);
+			}
+			return bytes;
+		}
+	}
 
 	internal readonly GraphicsDevice.ResourceHandle Resource;
 

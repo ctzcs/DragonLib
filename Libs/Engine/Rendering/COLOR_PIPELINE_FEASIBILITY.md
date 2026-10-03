@@ -38,8 +38,34 @@ WebGL2 原生支持 `SRGB8_ALPHA8` 采样、颜色附件和半浮点纹理过滤
 但这个验证暴露现有绕序冲突：同一个朝 +Z 的 CCW 三角形，相机从 +Z 看它，Cull.Back 不绘制，Cull.Front 绘制。
 换用迁移前相同的 SPIR-V→DXIL 构建路径仍可复现，排除了新 shader 去重或 HDR 改动。
 Rendering README 对 SDL front-face 的解释与实际设备结果不符。计划要求 CCW，也要求未注明的设计取舍先询问；已询问用户选择保留 CCW 修正后端，还是保留后端并调整资产约定。
-用户随后明确正面应为 CCW；修正 SDL front_face 为 COUNTER_CLOCKWISE。固定几何的四组对照在 D3D12 与 Vulkan 全部通过。永久 GPU 验证位于相邻测试仓库 `Rendering3D.Smoke/`。WebGL 已有与离屏 shader y 翻转配套的正面设置，保持该设置。
+阶段 2 曾按 CCW 要求把 SDL front_face 改为 COUNTER_CLOCKWISE，四组对照在 D3D12 与 Vulkan 通过。
+用户随后决定优先遵循 Foster 框架：已恢复上游 CLOCKWISE，改由 Engine 的 MeshUpload3D 在桌面上传时转换索引，Web 保留 CCW。
+资产文件、CPU 几何和法线保持原值。永久 GPU 验证位于相邻测试仓库 `Rendering3D.Smoke/`，分别锁定原生 CW 设置和 Engine 上传适配，另检查静态/蒙皮加载及源索引不变。
 
-## 动画 palette 的 Vulkan 约束（阶段 6 补充）
+## 阶段性回退记录（2026-10-04，已被后续 MyFoster 同步取代）
+
+用户明确 `Libs/Foster` 为第三方库，本计划对它的六个文件修改全部恢复到计划前提交 `0466793`。
+恢复范围包括纹理格式/flags、Texture mip 逻辑、TextureSampler、DrawCommand 图元扩展和 SDL 后端。
+对该提交比较 `Libs/Foster` 的差异为零；本轮未新增提交，也未改写此前阶段提交。
+桌面 Engine 使用 LDR 普通 Color 纹理，不支持本计划新增的 HDR/硬件 sRGB/mipmap；调试线由 Engine 展开三角形带。
+Web 后端获准保留：五个共享类型的扩展移入 Foster.Web/Framework 同名覆盖文件，Web 自身的 GPU/JS 扩展继续使用。
+Engine 的 TextureSupport3D 按构建目标区分能力，CCW 源索引仍通过 MeshUpload3D 适配桌面 Foster 的默认 CW。
+
+### 动画 palette 的 Vulkan 约束（阶段 6 补充）
 
 SDL 3.4.0 的 [Vulkan 后端源码](https://github.com/libsdl-org/SDL/blob/release-3.4.0/src/gpu/vulkan/SDL_gpu_vulkan.c) 定义 `MAX_UBO_SECTION_SIZE = 4096`，绑定 uniform descriptor 时将 range 固定为该值。实测单块 8KB palette 在 D3D12 正常，在 Vulkan 无法读取第 127 号关节。为保持 128 关节能力和 WebGL2 兼容，将 palette 拆为 vertex b2/b3 各 64 个矩阵（4KB），顶点阶段总共四个槽位。颜色和蒙皮深度的第 127 号关节读回在两驱动均通过。
+
+## 当前实现：通过 MyFoster 恢复完整能力（2026-10-04）
+
+用户授权必要定制先在独立 Foster 仓库的 MyFoster 分支提交、验证并推送，再同步到 DragonLib。
+当前同步版本为 `08c3d7f999c9ea4cfd730ad3b608d5ef6bff4517`，上游基线为 Foster 0.4.2 的 `730cc6a`；来源与比较链接见 [Foster/UPSTREAM.md](../../Foster/UPSTREAM.md)。
+应用配置/输入时序、HDR/sRGB/mipmap/线段拓扑、浏览器字体兼容分别保留独立提交。
+`Libs/Foster` 的 168 个来源文件与该版本逐字节一致，仅增加本地来源记录；不在该副本直接维护定制。
+桌面恢复 HDR、硬件 sRGB、mipmap 和原生调试线；Web 复用共享图形类型，独立适配新版 ContentStorage 和 GraphicsDevice 接口。
+Foster 默认 CW 正面保持不变，Engine 上传 CCW 模型索引时适配；资产与 CPU 几何仍为 CCW。
+
+桌面解决方案、Engine browser 和独立 WebDemo 构建通过；128 项 CPU 测试及六组 shader 哈希校验通过。
+D3D12/Vulkan 使用同步后的 Foster 0.4.2 / SDL 3.4.12，HDR 读回 4、硬件 sRGB 误差小于 0.01、4×4 mip 链三层共 84 字节、ACES 峰值 252。
+半白半黑 sRGB 贴图通过大 UV 梯度强制采样最小 mip，读回 2.015625（线性期望 2，容差 0.03），确认实际生成与 mip 过滤路径。
+八组绕序/剔除、静态/蒙皮加载、源索引不变、简单/CSM 阴影、线段减少后的缓冲计数、关节 127 颜色/深度验证均通过。
+浏览器/Metal 实际画面仍待验证。

@@ -5,11 +5,11 @@ public class FileSystem
     private readonly App app;
     internal FileSystem(App app) => this.app = app;
     private void Check() { if (app.Disposed) throw app.DisposedException; }
-    public void OpenUserStorage(Action<Storage> onReady) { Check(); onReady(Storage.OpenUserStorage(app.Name)); }
-    public Task<Storage> OpenUserStorageAsync() { Check(); return Task.FromResult(Storage.OpenUserStorage(app.Name)); }
-    public void OpenTitleStorage(Action<Storage> onReady) => OpenTitleStorage(null, onReady);
-    public void OpenTitleStorage(string? path, Action<Storage> onReady) { Check(); onReady(Storage.OpenTitleStorage(path)); }
-    public Task<Storage> OpenTitleStorageAsync(string? path = null) { Check(); return Task.FromResult(Storage.OpenTitleStorage(path)); }
+    public void OpenUserStorage(Action<ContentStorage> onReady) { Check(); onReady(ContentStorage.OpenUserStorage(app.Name)); }
+    public Task<ContentStorage> OpenUserStorageAsync() { Check(); return Task.FromResult(ContentStorage.OpenUserStorage(app.Name)); }
+    public void OpenTitleStorage(Action<ContentStorage> onReady) => OpenTitleStorage(null, onReady);
+    public void OpenTitleStorage(string? path, Action<ContentStorage> onReady) { Check(); onReady(ContentStorage.OpenTitleStorage(path)); }
+    public Task<ContentStorage> OpenTitleStorageAsync(string? path = null) { Check(); return Task.FromResult(ContentStorage.OpenTitleStorage(path)); }
     public enum DialogResult { Success, Cancelled, Failed }
     public delegate void DialogCallback(string[] paths, DialogResult result);
     public delegate void DialogCallbackSingleFile(string path, DialogResult result);

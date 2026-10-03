@@ -18,6 +18,6 @@ public enum TextureFlags
 	/// </summary>
 	ComputeWrite = 1 << 1,
 
-	// DragonLib 扩展：采样颜色纹理上传后生成完整 mip 链。
+	/// <summary>Generates a full mip chain after uploading a sampled color texture.</summary>
 	GenerateMipmaps = 1 << 2,
 }

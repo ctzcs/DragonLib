@@ -3,9 +3,8 @@ using System.Runtime.InteropServices;
 namespace Foster.Framework;
 
 /// <summary>
-/// The Packer takes source image data and packs them into large texture
-/// pages that can then be used for Atlases. This is useful for sprite fonts,
-/// sprite sheets, etc.
+/// Takes source image data and packs them into pages that can then be used as an atlas.<br/>
+/// Common use cases are for sprite fonts, sprite sheets, texture atlases, and so on.
 /// </summary>
 public class Packer
 {

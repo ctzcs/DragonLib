@@ -1,4 +1,5 @@
 ﻿using System.Collections;
+using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -282,6 +283,25 @@ public struct Rect(float x, float y, float w, float h) : IConvexShape, IEquatabl
 	public readonly bool Contains(in Rect rect)
 		=> Left <= rect.Left && Top <= rect.Top && Bottom >= rect.Bottom && Right >= rect.Right;
 
+	/// <summary>
+	/// Get the <see cref="Vector2"/> representing the difference between our closest edge and the point.
+	/// (0, 0) if the point is within the rectangle.
+	/// </summary>
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public readonly Vector2 Difference(in Vector2 point)
+	=> new(
+		point.X < X
+			? point.X - X
+			: point.X > Right
+				? point.X - Right
+				: 0,
+		point.Y < Y
+			? point.Y - Y
+			: point.Y > Bottom
+				? point.Y - Bottom
+				: 0
+		);
+
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public readonly bool Overlaps(in Rect against)
 		=> X + Width > against.X && Y + Height > against.Y && X < against.X + against.Width && Y < against.Y + against.Height;
@@ -319,13 +339,13 @@ public struct Rect(float x, float y, float w, float h) : IConvexShape, IEquatabl
 	}
 
 	/// <summary>
-	/// Return the sector that the point falls within (see diagram in comments below). A result of zero indicates a point inside the rectangle
+	/// Return the sector that the point falls within (see diagram in comments below). A result of 0b0000 indicates a point inside the rectangle<br/>
+	///<c>0101 | 0100 | 0110</c><br/>
+	///<c>-----+------+-----</c><br/>
+	///<c>0001 | 0000 | 0010</c><br/>
+	///<c>-----+------+-----</c><br/>
+	///<c>1001 | 1000 | 1010</c>
 	/// </summary>
-	//  0101 | 0100 | 0110
-	// ------+------+------
-	//  0001 | 0000 | 0010
-	// ------+------+------
-	//  1001 | 1000 | 1010
 	public readonly byte GetPointSector(in Vector2 pt)
 	{
 		byte sector = 0;
@@ -340,17 +360,21 @@ public struct Rect(float x, float y, float w, float h) : IConvexShape, IEquatabl
 		return sector;
 	}
 
-	public readonly Vector2 ClosestPoint(in Vector2 pt)
-		=> GetPointSector(pt) switch
+	/// <summary>
+	/// Get the closest point on the <see cref="Rect"/> to the <paramref name="point"/>.
+	/// If the point is inside the <see cref="Rect"/>, its value is returned.
+	/// </summary>
+	public readonly Vector2 ClosestPoint(in Vector2 point)
+		=> GetPointSector(point) switch
 		{
 			// left of rect
-			0b0001 => new(X, pt.Y),
+			0b0001 => point with { X = X },
 			// right of rect
-			0b0010 => new(X + Width, pt.Y),
+			0b0010 => point with { X = X + Width },
 			// above rect
-			0b0100 => new(pt.X, Y),
+			0b0100 => point with { Y = Y },
 			// below rect
-			0b1000 => new(pt.X, Y + Height),
+			0b1000 => point with { Y = Y + Height },
 			// above & left of rect
 			0b0101 => TopLeft,
 			// above & right of rect
@@ -359,7 +383,43 @@ public struct Rect(float x, float y, float w, float h) : IConvexShape, IEquatabl
 			0b1001 => BottomLeft,
 			// below & right of rect
 			0b1010 => BottomRight,
-			_ => pt,
+			// inside rect
+			_ => point,
+		};
+
+
+	/// <summary>
+	/// Get the closest along the edges of the <see cref="Rect"/> to the <paramref name="point"/>.
+	/// </summary>
+	public readonly Vector2 ClosestPointOnEdges(in Vector2 point)
+		=> GetPointSector(point) switch
+		{
+			// left of rect
+			0b0001 => point with { X = X },
+			// right of rect
+			0b0010 => point with { X = X + Width },
+			// above rect
+			0b0100 => point with { Y = Y },
+			// below rect
+			0b1000 => point with { Y = Y + Height },
+			// above & left of rect
+			0b0101 => TopLeft,
+			// above & right of rect
+			0b0110 => TopRight,
+			// below & left of rect
+			0b1001 => BottomLeft,
+			// below & right of rect
+			0b1010 => BottomRight,
+			// inside rect
+			_      => Calc.IndexOfSmallest(point.X - X, X + Width - point.X, point.Y - Y, Y + Height - point.Y) switch
+			{
+				// left edge
+				0 => point with { X = X },
+				1 => point with { X = X + Width },
+				2 => point with { Y = Y },
+				3 => point with { Y = Y + Height },
+				_ => throw new UnreachableException(),
+			}
 		};
 
 	#endregion
@@ -583,15 +643,22 @@ public struct Rect(float x, float y, float w, float h) : IConvexShape, IEquatabl
 	/// Get a rect justified around the origin point
 	/// </summary>
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static Rect Justified(float originX, float originY, float width, float height, float justifyX, float justifyY)
+		=> new(originX - justifyX * width, originY - justifyY * height, width, height);
+
+	/// <summary>
+	/// Get a rect justified around the origin point
+	/// </summary>
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static Rect Justified(in Vector2 origin, float width, float height, float justifyX, float justifyY)
-		=> new(origin.X - (justifyX * width), origin.Y - (justifyY * height), width, height);
+		=> new(origin.X - justifyX * width, origin.Y - justifyY * height, width, height);
 
 	/// <summary>
 	/// Get a rect justified around the origin point
 	/// </summary>
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static Rect Justified(in Vector2 origin, in Vector2 size, in Vector2 justify)
-		=> new(origin.X - (justify.X * size.X), origin.Y - (justify.Y * size.Y), size.X, size.Y);
+		=> new(origin.X - justify.X * size.X, origin.Y - justify.Y * size.Y, size.X, size.Y);
 
 	/// <summary>
 	/// Get a rect justified around the origin point
@@ -608,7 +675,7 @@ public struct Rect(float x, float y, float w, float h) : IConvexShape, IEquatabl
 		=> new(justify.X * -size.X, justify.Y * -size.Y, size.X, size.Y);
 
 	/// <summary>
-	/// Get the rect with positive width and height that stretches from point a to point b
+	/// Get the <see cref="Rect"/> with positive width and height that stretches from point a to point b
 	/// </summary>
 	public static Rect Between(in Vector2 a, in Vector2 b)
 	{
@@ -620,6 +687,16 @@ public struct Rect(float x, float y, float w, float h) : IConvexShape, IEquatabl
 		rect.Height = (a.Y > b.Y ? a.Y : b.Y) - rect.Y;
 
 		return rect;
+	}
+
+	/// <summary>
+	/// Get the smallest <see cref="Rect"/> with positive width and height that contains all of the points
+	/// </summary>
+	public static Rect Containing(params ReadOnlySpan<Vector2> points)
+	{
+		if (points.Length > 0)
+			return Between(Calc.Min(points), Calc.Max(points));
+		return default;
 	}
 
 	#endregion

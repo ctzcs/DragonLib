@@ -1,10 +1,14 @@
 # Foster.Web
 
+纹理格式、mipmap、采样器和线段拓扑类型复用固定 MyFoster 版本，来源见 `../Foster/UPSTREAM.md`。
+Web 的 GPU/JS 实现独立维护；`ContentStorage.cs` 覆盖新版 Foster 的原生存储类，保留浏览器存储。
+已有 `Storage` API 继续可用。新版 GPU 名称在浏览器报告 Unknown，调试标签忽略；wireframe 明确报告不支持。
+
 Foster 的独立 **.NET 10 WebAssembly + WebGL2** 后端。参考 OFoster 的浏览器架构，使用 JavaScript 提供图形、DOM 输入和存储，由 `requestAnimationFrame` 驱动 C# 游戏。
 
 所有新增实现、着色器、示例和打包脚本都在本目录。`../Foster` 的源码、项目和桌面 SDL3 后端无需修改；通用数学、Batcher、Mesh、纹理、字体、输入绑定等代码通过项目中的 `Compile Link` 复用。构建 Web 项目也不会构建或向原 Foster 项目写入 `bin/obj`。本目录依赖仓库里的 `../Foster/Framework`，不是该源码的完整复制。
 
-`Framework/` 里与 Foster 源文件**同名**的文件(App、Window、Storage、FileSystem、Cursor、ImageData、GraphicsDriver)替换对应的 Foster 源码，排除列表按文件名自动生成；只有 SDL 后端三个文件(GraphicsDeviceSDL、InputProviderSDL、SDL3)是显式排除的。新增替换文件时直接放进 `Framework/` 即可。共享源码里的浏览器差异直接写在 Foster 中(例如 `SpriteFont.AddCharacters` 在 `OperatingSystem.IsBrowser()` 时顺序生成字形，避开 `Task.WaitAll`)，不再维护副本。`AppConfig.cs` 保留桌面配置类型的接口。
+`Framework/` 里与 Foster 源文件**同名**的文件(App、Window、ContentStorage、FileSystem、Cursor、ImageData、GraphicsDriver)替换对应的 Foster 源码，排除列表按文件名自动生成；只有 SDL 后端三个文件(GraphicsDeviceSDL、InputProviderSDL、SDL3)是显式排除的。新增替换文件时直接放进 `Framework/` 即可。共享源码需要的浏览器兼容改动先在独立 MyFoster 分支提交、验证并推送，再同步固定版本(例如 `SpriteFont.AddCharacters` 在 `OperatingSystem.IsBrowser()` 时顺序生成字形，避开 `Task.WaitAll`)。`Storage.cs` 保留旧版浏览器存储 API，`AppConfig.cs` 保留桌面配置类型的接口。
 
 ## 快速打包和运行
 

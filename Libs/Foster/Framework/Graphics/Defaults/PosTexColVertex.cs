@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 namespace Foster.Framework;
 
 /// <summary>
-/// A Position, TexCoord, Color Vertex
+/// A 2D Position, TexCoord, Color Vertex
 /// </summary>
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
 public struct PosTexColVertex(Vector2 position, Vector2 texcoord, Color color) : IVertex

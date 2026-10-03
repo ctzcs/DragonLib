@@ -18,6 +18,12 @@ public abstract class GraphicsDevice
 	public abstract GraphicsDriver Driver { get; }
 
 	/// <summary>
+	/// The adapter name of the GPU used by this GraphicsDevice.
+	/// Returns <c>Unknown</c> if the name could not be determined.
+	/// </summary>
+	public abstract string Name { get; }
+
+	/// <summary>
 	/// The Application this GraphicsDevice belongs to
 	/// </summary>
 	public readonly App App;
@@ -81,6 +87,12 @@ public abstract class GraphicsDevice
 	/// Checks if a given Texture Format and Sample Count combination is supproted
 	/// </summary>
 	public abstract bool IsTextureMultiSampleSupported(TextureFormat format, SampleCount sampleCount);
+
+	/// <summary>
+	/// Inserts a Debug Label into the graphics device.<br/>
+	/// See SDL_InsertGPUDebugLabel for more information: https://wiki.libsdl.org/SDL3/SDL_InsertGPUDebugLabel#remarks
+	/// </summary>
+	public abstract void InsertDebugLabel(string text);
 
 	/// <summary>
 	/// Performs a draw command

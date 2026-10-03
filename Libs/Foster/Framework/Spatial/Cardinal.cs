@@ -27,6 +27,11 @@ public readonly struct Cardinal : IEquatable<Cardinal>
 	public static readonly Cardinal West  = new(LeftValue);
 	public static readonly Cardinal North = new(UpValue);
 
+	/// <summary>
+	/// All of the possible values of <see cref="Cardinal"/>s, starting with <see cref="Right"/> and proceeding clockwise
+	/// </summary>
+	public static readonly IReadOnlyList<Cardinal> All = [ Right, Down, Left, Up ];
+
 	public readonly int Value;
 
 	public Cardinal(int val)
@@ -71,7 +76,7 @@ public readonly struct Cardinal : IEquatable<Cardinal>
 	public Vector2 Normal => new(X, Y);
 
 	/// <summary>
-	/// Get the X-component of the <see cref="Cardinal"/> as a unit vector
+	/// Get the X-component of the <see cref="Cardinal"/> as an integer
 	/// </summary>
 	public int X => Value switch
 		{
@@ -81,7 +86,7 @@ public readonly struct Cardinal : IEquatable<Cardinal>
 		};
 
 	/// <summary>
-	/// Get the Y-component of the <see cref="Cardinal"/> as a unit vector
+	/// Get the Y-component of the <see cref="Cardinal"/> as an integer
 	/// </summary>
 	public int Y => Value switch
 		{
@@ -89,6 +94,15 @@ public readonly struct Cardinal : IEquatable<Cardinal>
 			DownValue => 1,
 			_ => 0
 		};
+
+	/// <summary>
+	/// Get the sign of the <see cref="Cardinal"/> along its axis. Right and Down have a sign of 1, while Left and Up have -1
+	/// </summary>
+	public int Sign => Value switch
+	{
+		RightValue or DownValue => 1,
+		_                       => -1,
+	};
 
 	/// <summary>
 	/// The <see cref="Cardinal"/>'s direction represented as radians
@@ -111,6 +125,13 @@ public readonly struct Cardinal : IEquatable<Cardinal>
 		UpValue or DownValue    => Down,
 		_                       => throw new Exception(InvalidStateMessage)
 	};
+
+	/// <summary>
+	/// Get whether the other <see cref="Cardinal"/> is perpendicular to this one.
+	/// Ie. if one is on the horizontal axis and the other is on the vertical
+	/// </summary>
+	public bool IsPerpendicular(Cardinal other)
+		=> (Horizontal && other.Vertical) || (Vertical && other.Horizontal);
 
 	public static implicit operator Cardinal(int val) => new(val);
 	public static implicit operator Point2(Cardinal c) => c.Point;
@@ -144,6 +165,16 @@ public readonly struct Cardinal : IEquatable<Cardinal>
 		Debug.Assert(v is >= 0 and < 4, InvalidStateMessage);
 		return new Cardinal(v);
 	}
+
+	/// <summary>
+	/// Returns a <see cref="Cardinal"/> from a <see cref="Signs"/>, interpreted as an x-axis sign
+	/// </summary>
+	public static Cardinal FromSignX(Signs x) => x == Signs.Positive ? Right : Left;
+
+	/// <summary>
+	/// Returns a <see cref="Cardinal"/> from a <see cref="Signs"/>, interpreted as a y-axis sign
+	/// </summary>
+	public static Cardinal FromSignY(Signs y) => y == Signs.Positive ? Down : Up;
 
 	/// <summary>
 	/// Returns a <see cref="Cardinal"/> from a unit <see cref="Vector2"/>
@@ -190,25 +221,10 @@ public readonly struct Cardinal : IEquatable<Cardinal>
 	/// </summary>
 	public static Cardinal FromString(string value)
 	{
-		if (value.Equals("Right", StringComparison.OrdinalIgnoreCase)) return Right;
 		if (value.Equals("Left", StringComparison.OrdinalIgnoreCase)) return Left;
 		if (value.Equals("Up", StringComparison.OrdinalIgnoreCase)) return Up;
 		if (value.Equals("Down", StringComparison.OrdinalIgnoreCase)) return Down;
-		return default;
-	}
-
-	/// <summary>
-	/// Enumerate the possible values of <see cref="Cardinal"/>s, starting with <see cref="Right"/> and proceeding clockwise
-	/// </summary>
-	public static IEnumerable<Cardinal> All
-	{
-		get
-		{
-			yield return Right;
-			yield return Down;
-			yield return Left;
-			yield return Up;
-		}
+		return Right;
 	}
 
 	public class JsonConverter : JsonConverter<Cardinal>

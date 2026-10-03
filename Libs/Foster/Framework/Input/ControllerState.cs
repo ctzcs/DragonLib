@@ -19,7 +19,7 @@ public sealed class ControllerState(int index)
 	internal static readonly ControllerState ClearedState = new(0);
 
 	/// <summary>
-	/// The current Controller Slot Index.
+	/// The current Controller Slot Index in <see cref="Input.Controllers"/>.
 	/// This does not change while the Controller is connected, even if there are
 	/// empty slots earlier in the list of Controllers.
 	/// </summary>
@@ -32,7 +32,7 @@ public sealed class ControllerState(int index)
 	public ControllerID ID { get; private set; }
 
 	/// <summary>
-	/// Name of the Controller if available
+	/// Name of the Controller, if available
 	/// </summary>
 	public string Name { get; private set; } = "Unknown";
 
@@ -42,7 +42,7 @@ public sealed class ControllerState(int index)
 	public bool Connected { get; private set; }
 
 	/// <summary>
-	/// If the Controller is considered a Gamepad (ex. an Xbox Controller).
+	/// If the Controller is considered a standard Gamepad with a d-pad, 4 face buttons, 2 joysticks, triggers and bumpers (ex. an Xbox Controller).
 	/// Otherwise Buttons &amp; Axis enums may not match up.
 	/// </summary>
 	public bool IsGamepad { get; private set; } = false;
@@ -137,7 +137,7 @@ public sealed class ControllerState(int index)
 	}
 
 	/// <summary>
-	/// Creates a Snapshot of this Controller State and returns it
+	/// Creates a copy of this Controller State and returns it
 	/// </summary>
 	public ControllerState Snapshot()
 	{
@@ -147,7 +147,7 @@ public sealed class ControllerState(int index)
 	}
 
 	/// <summary>
-	/// Copies a Snapshot of this Controller State into the provided value
+	/// Copies the state of this Controller into the provided value
 	/// </summary>
 	public void Snapshot(ControllerState into)
 	{

@@ -266,6 +266,16 @@ public static partial class Extensions
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
 		public bool IsSmallerThan(in Vector2 b)
 			=> vector.LengthSquared() < b.LengthSquared();
+
+		/// <summary>
+		/// Deconstruct to tuple
+		/// </summary>
+		public void Deconstruct(out float x, out float y)
+		{
+			x = vector.X;
+			y = vector.Y;
+
+		}
 	}
 
 	#endregion

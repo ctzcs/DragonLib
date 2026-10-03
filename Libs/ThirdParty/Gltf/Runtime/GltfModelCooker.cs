@@ -19,8 +19,8 @@ namespace DragonLib.Gltf;
 ///   有 JOINTS_0/WEIGHTS_0）：顶点保持 mesh bind 空间，JOINTS_0 下标按拓扑序重映射，
 ///   WEIGHTS_0 归一化；bind pose 下 palette ≈ 骨架挂点空间的恒等摆放。
 /// - 动画：只收关节 channel，支持 LINEAR/STEP/CUBICSPLINE；一条剪辑须同属一个骨架。
-/// - 绕序：正面从外侧看 CCW，SDL front_face=COUNTER_CLOCKWISE；glTF 绕序保留，
-///   仅负行列式的节点矩阵翻转补偿（见 WindingTests 与 Rendering3D.Smoke）。
+/// - 资产绕序：从外侧看 CCW；glTF 绕序保留，仅负行列式的节点矩阵翻转补偿。
+///   GPU 上传时由 Engine 的 MeshUpload3D 适配 Foster 默认正面（桌面 CW、Web CCW）。
 /// - 缺 NORMAL 时累积面法线补齐；缺 TANGENT 且有 UV 时按 UV 梯度计算（w = 手性符号）。
 /// - 贴图只收 PNG/JPG 原始字节（不解码，运行时 Foster Image 解码路径不变）；webp/dds/ktx2 跳过并警告。
 /// - AlphaMode/AlphaCutoff 从 glTF 材质读出写入 DassetMaterial；逐 primitive 与模型级 AABB 一并算出

@@ -63,5 +63,19 @@ public static partial class Extensions
 		/// </summary>
 		public float Cos(double rate = 1, double offset = 0)
 			=> MathF.Cos((float)(timespan * rate + TimeSpan.FromSeconds(offset)).Modulo(MathF.Tau).TotalSeconds);
+
+		/// <summary>
+		/// Returns true if <paramref name="now"/> has passed this timespan + <paramref name="offset"/>.<br/>
+		/// Equivalent to `now >= (timespan + TimeSpan.FromSeconds(offset))`
+		/// </summary>
+		public bool HasExpired(TimeSpan now, double offset = 0)
+			=> now >= (timespan + TimeSpan.FromSeconds(offset));
+
+		/// <summary>
+		/// Returns true if this timespan has passed <paramref name="timestamp"/> + <paramref name="offset"/>.<br/>
+		/// Equivalent to `timespan >= (timestamp + TimeSpan.FromSeconds(offset))`
+		/// </summary>
+		public bool HasPassed(TimeSpan timestamp, double offset = 0)
+			=> timespan >= (timestamp + TimeSpan.FromSeconds(offset));
 	}
 }

@@ -1,7 +1,7 @@
 namespace Foster.Framework;
 
 /// <summary>
-/// Index Buffer Formats used in <see cref="Mesh"/> index buffers
+/// Index Buffer Formats used in <see cref="IndexBuffer"/> 
 /// </summary>
 public enum IndexFormat
 {

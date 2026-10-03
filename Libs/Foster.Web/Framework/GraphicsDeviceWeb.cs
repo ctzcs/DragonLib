@@ -11,6 +11,9 @@ internal sealed class GraphicsDeviceWeb(App app) : GraphicsDevice(app)
     private bool disposed;
     private readonly ConcurrentQueue<int> destroying = new();
     public override GraphicsDriver Driver => GraphicsDriver.WebGL;
+    public override string Name => "Unknown";
+    // WebGL2 has no portable equivalent of the SDL GPU debug label API.
+    public override void InsertDebugLabel(string label) { }
     public override bool Disposed => disposed;
     public override bool VSync { get => true; set { if (!value) throw new PlatformNotSupportedException("Browser rendering is scheduled by requestAnimationFrame."); } }
     private static string Json<T>(T value, JsonTypeInfo<T> type) => JsonSerializer.Serialize(value, type);
@@ -69,6 +72,7 @@ internal sealed class GraphicsDeviceWeb(App app) : GraphicsDevice(app)
     }
     internal override void PerformDraw(DrawCommand command)
     {
+        if (command.FillMode != FillMode.Fill) throw Unsupported("wireframe drawing");
         if (command.VertexStorageBuffers.Count > 0 || command.FragmentStorageBuffers.Count > 0) throw Unsupported("shader storage buffers");
         // 不用 LINQ 处理结构体(见 Clear)。
         var vertices = new VertexBufferDesc[command.VertexBuffers.Count];

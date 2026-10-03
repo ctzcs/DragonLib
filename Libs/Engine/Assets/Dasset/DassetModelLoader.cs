@@ -64,14 +64,14 @@ public static class DassetModelLoader
             {
                 var skinnedMesh = new Mesh<PositionNormalUvSkinVertex, uint>(device, $"dasset:{assetName}");
                 skinnedMesh.SetVertices(skinVertices);
-                skinnedMesh.SetIndices(primitive.Indices);
+                MeshUpload3D.SetTriangleIndices(skinnedMesh, primitive.Indices);
                 asset.Add(new DassetMeshPrimitive { Mesh = skinnedMesh, Material = primitive.Material, Bounds = primitive.Bounds, SkinIndex = primitive.SkinIndex });
             }
             else
             {
                 var mesh = new Mesh<PositionNormalUvVertex, uint>(device, $"dasset:{assetName}");
                 mesh.SetVertices(primitive.Vertices);
-                mesh.SetIndices(primitive.Indices);
+                MeshUpload3D.SetTriangleIndices(mesh, primitive.Indices);
                 asset.Add(new DassetMeshPrimitive { Mesh = mesh, Material = primitive.Material, Bounds = primitive.Bounds });
             }
         }

@@ -61,8 +61,9 @@ public enum TextureFormat
 	/// </summary>
 	Color = R8G8B8A8,
 
-	// DragonLib 扩展：追加数值，保持 Web 侧既有格式编号稳定。
+	/// <summary>8-bit RGBA with hardware sRGB decoding.</summary>
 	R8G8B8A8Srgb = 8,
+	/// <summary>16-bit floating point RGBA, suitable for HDR color attachments.</summary>
 	R16G16B16A16Float = 9,
 }
 

@@ -111,6 +111,7 @@ public sealed class DebugDraw3D : IDisposable
         try
         {
             camera.ViewportSize = new(target.WidthInPixels, target.HeightInPixels);
+            _buffer.Clear();
             _buffer.Upload(CollectionsMarshal.AsSpan(_vertices));
             _shader.Material.Vertex.SetUniformBuffer(camera.ViewProjection);
             target.GraphicsDevice.Draw(new DrawCommand(target, _buffer, _shader.Material)

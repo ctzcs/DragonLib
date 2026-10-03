@@ -20,7 +20,7 @@ internal unsafe class GraphicsDeviceSDL(App app, GraphicsDriver preferred) : Gra
 		public int Width;
 		public int Height;
 		public SDL_GPUTextureFormat Format;
-		public uint MipLevels; // DragonLib 扩展
+		public uint MipLevels;
 		public SDL_GPUSampleCount SampleCount;
 
 		/// <summary>
@@ -138,6 +138,22 @@ internal unsafe class GraphicsDeviceSDL(App app, GraphicsDriver preferred) : Gra
 
 	public override GraphicsDriver Driver => driver;
 
+	public override string Name
+	{
+		get
+		{
+			if (device == nint.Zero)
+				throw deviceNotCreated;
+
+			uint props = SDL_GetGPUDeviceProperties(device);
+			if (props == 0)
+				return string.Empty;
+
+			string nameVal = SDL_GetStringProperty(props, SDL_PROP_GPU_DEVICE_NAME_STRING, "Unknown");
+			return nameVal;
+		}
+	}
+
 	public override bool VSync
 	{
 		get => vsyncEnabled;
@@ -153,6 +169,12 @@ internal unsafe class GraphicsDeviceSDL(App app, GraphicsDriver preferred) : Gra
 	}
 
 	public override bool Disposed => device == nint.Zero;
+
+	public override void InsertDebugLabel(string text)
+	{
+		if (cmdRender != nint.Zero)
+			SDL_InsertGPUDebugLabel(cmdRender, text);
+	}
 
 	internal override void CreateDevice(in AppFlags flags)
 	{
@@ -586,7 +608,7 @@ internal unsafe class GraphicsDeviceSDL(App app, GraphicsDriver preferred) : Gra
 		}
 
 		// compute flags
-		// DragonLib 扩展：SDL 的 mip 生成通过颜色 blit，需要 COLOR_TARGET 用途。
+		// SDL generates mipmaps through color blits, requiring color target usage.
 		if (flags.Has(TextureFlags.GenerateMipmaps))
 			info.usage |= SDL_GPUTextureUsageFlags.SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
 		if (flags.Has(TextureFlags.ComputeRead))
@@ -732,7 +754,7 @@ internal unsafe class GraphicsDeviceSDL(App app, GraphicsDriver preferred) : Gra
 		}
 
 		// transfer buffer management
-		// DragonLib 扩展：生成操作必须在 pass 外，且跟随上传命令缓冲保证顺序。
+		// Mipmap generation must run outside a pass, after uploads in the same command buffer.
 		if (res.MipLevels > 1)
 		{
 			EndCopyPass();
@@ -1756,14 +1778,19 @@ internal unsafe class GraphicsDeviceSDL(App app, GraphicsDriver preferred) : Gra
 			command.VertexShader!.Resource,
 			command.FragmentShader!.Resource,
 			command.CullMode,
+			command.FillMode,
 			command.DepthCompare,
 			command.DepthTestEnabled,
 			command.DepthWriteEnabled,
-			command.StencilTestEnabled,
-			command.BlendMode
+			command.StencilTestEnabled
 		);
 
-		hash = HashCode.Combine(hash, command.Topology); // DragonLib 扩展：线与三角形不能共享管线。
+		hash = HashCode.Combine(
+			hash,
+			command.BlendMode
+		);
+		hash = HashCode.Combine(hash, command.Topology);
+
 		if (command.StencilTestEnabled)
 			hash = HashCode.Combine(
 				hash,
@@ -1867,12 +1894,20 @@ internal unsafe class GraphicsDeviceSDL(App app, GraphicsDriver preferred) : Gra
 					vertex_attributes = vertexAttributes,
 					num_vertex_attributes = (uint)vertexAttributeCount
 				},
-				primitive_type = command.Topology == PrimitiveTopology.Lines
-                    ? SDL_GPUPrimitiveType.SDL_GPU_PRIMITIVETYPE_LINELIST
-                    : SDL_GPUPrimitiveType.SDL_GPU_PRIMITIVETYPE_TRIANGLELIST,
+				primitive_type = command.Topology switch
+				{
+					PrimitiveTopology.Triangles => SDL_GPUPrimitiveType.SDL_GPU_PRIMITIVETYPE_TRIANGLELIST,
+					PrimitiveTopology.Lines => SDL_GPUPrimitiveType.SDL_GPU_PRIMITIVETYPE_LINELIST,
+					_ => throw new NotSupportedException($"Unsupported primitive topology: {command.Topology}")
+				},
 				rasterizer_state = new()
 				{
-					fill_mode = SDL_GPUFillMode.SDL_GPU_FILLMODE_FILL,
+					fill_mode = command.FillMode switch
+					{
+						FillMode.Fill => SDL_GPUFillMode.SDL_GPU_FILLMODE_FILL,
+						FillMode.Line => SDL_GPUFillMode.SDL_GPU_FILLMODE_LINE,
+						_ => throw new NotImplementedException()
+					},
 					cull_mode = command.CullMode switch
 					{
 						CullMode.None => SDL_GPUCullMode.SDL_GPU_CULLMODE_NONE,
@@ -1880,9 +1915,7 @@ internal unsafe class GraphicsDeviceSDL(App app, GraphicsDriver preferred) : Gra
 						CullMode.Back => SDL_GPUCullMode.SDL_GPU_CULLMODE_BACK,
 						_ => throw new NotImplementedException()
 					},
-					// DragonLib 扩展：资产正面为 CCW。SDL 的 winding 枚举直接表达此约定，
-					// 不能把 NDC→framebuffer 的 y 翻转再手工补一次（GPU smoke 已锁定）。
-					front_face = SDL_GPUFrontFace.SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE,
+					front_face = SDL_GPUFrontFace.SDL_GPU_FRONTFACE_CLOCKWISE,
 					enable_depth_bias = false
 				},
 				multisample_state = new()
@@ -2049,7 +2082,6 @@ internal unsafe class GraphicsDeviceSDL(App app, GraphicsDriver preferred) : Gra
 			{
 				min_filter = GetFilter(sampler.Filter),
 				mag_filter = GetFilter(sampler.Filter),
-				// DragonLib 扩展：mip 层间线性插值；未开启时限制在第 0 层。
 				mipmap_mode = SDL_GPUSamplerMipmapMode.SDL_GPU_SAMPLERMIPMAPMODE_LINEAR,
 				max_lod = sampler.Mipmaps ? 1000f : 0f,
 				address_mode_u = GetWrapMode(sampler.WrapX),

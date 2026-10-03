@@ -50,6 +50,9 @@ public static class Calc
 	public const float UpLeft = TAU - PI * 0.75f;
 	public const float DownLeft = PI * 0.75f;
 
+	public const float Sqrt2    = 1.41421356237f;
+	public const float InvSqrt2 = 1 / Sqrt2;
+
 	#endregion
 
 	#region Binary  Operations
@@ -204,6 +207,18 @@ public static class Calc
 		=> Min(Min(Min(a, b), c), d);
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static T Min<T>(params ReadOnlySpan<T> span) where T : IComparable<T>
+	{
+		if (span.Length <= 0)
+			throw new Exception("Span cannot be empty");
+
+		var value = span[0];
+		for (int i = 1; i < span.Length; i ++)
+			value = Min(value, span[i]);
+		return value;
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static T Max<T>(T a, T b) where T : IComparable<T>
 		=> a.CompareTo(b) > 0 ? a : b;
 
@@ -215,12 +230,36 @@ public static class Calc
 	public static T Max<T>(T a, T b, T c, T d) where T : IComparable<T>
 		=> Max(Max(Max(a, b), c), d);
 
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static T Max<T>(params ReadOnlySpan<T> span) where T : IComparable<T>
+	{
+		if (span.Length <= 0)
+			throw new Exception("Span cannot be empty");
+
+		var value = span[0];
+		for (int i = 1; i < span.Length; i ++)
+			value = Max(value, span[i]);
+		return value;
+	}
+
 	/// <summary>
 	/// Returns a vector whose X and Y are the minimums of the three Xs and Ys of the given vectors
 	/// </summary>
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static Vector2 Min(Vector2 a, Vector2 b, Vector2 c)
 		=> Vector2.Min(Vector2.Min(a, b), c);
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static Vector2 Min(in ReadOnlySpan<Vector2> span)
+	{
+		if (span.Length <= 0)
+			throw new Exception("Span cannot be empty");
+
+		var value = span[0];
+		for (int i = 1; i < span.Length; i ++)
+			value = Vector2.Min(value, span[i]);
+		return value;
+	}
 
 	/// <summary>
 	/// Returns a vector whose X and Y are the maximums of the three Xs and Ys of the given vectors
@@ -229,10 +268,22 @@ public static class Calc
 	public static Vector2 Max(Vector2 a, Vector2 b, Vector2 c)
 		=> Vector2.Max(Vector2.Max(a, b), c);
 
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static Vector2 Max(in ReadOnlySpan<Vector2> span)
+	{
+		if (span.Length <= 0)
+			throw new Exception("Span cannot be empty");
+
+		var value = span[0];
+		for (int i = 1; i < span.Length; i ++)
+			value = Vector2.Max(value, span[i]);
+		return value;
+	}
+
 	/// <summary>
-	/// Get the index of the element in the list that is smallest. If multiple entries are equal, the one that appears first is chosen. Returns -1 if the list is empty.
+	/// Get the index of the element in <paramref name="list"/> that is smallest. If multiple entries are equal, the one that appears first is chosen. Returns -1 if <paramref name="list"/> is empty.
 	/// </summary>
-	public static int Smallest<T>(params ReadOnlySpan<T> list) where T : IComparable<T>
+	public static int IndexOfSmallest<T>(params ReadOnlySpan<T> list) where T : IComparable<T>
 	{
 		if (list.Length == 0)
 			return -1;
@@ -251,9 +302,9 @@ public static class Calc
 	}
 
 	/// <summary>
-	/// Get the index of the element in the list that is largest. If multiple entries are equal, the one that appears first is chosen. Returns -1 if the list is empty.
+	/// Get the index of the element in <paramref name="list"/> that is largest. If multiple entries are equal, the one that appears first is chosen. Returns -1 if <paramref name="list"/> is empty.
 	/// </summary>
-	public static int Largest<T>(params ReadOnlySpan<T> list) where T : IComparable<T>
+	public static int IndexOfLargest<T>(params ReadOnlySpan<T> list) where T : IComparable<T>
 	{
 		if (list.Length == 0)
 			return -1;
@@ -272,41 +323,25 @@ public static class Calc
 	}
 
 	/// <summary>
-	/// Move toward a target value without passing it
+	/// Move toward a <paramref name="target"/> value by no more than <paramref name="maxDelta"/>, without passing the <paramref name="target"/>
 	/// </summary>
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public static float Approach(float from, float target, float maxDelta)
-		=> from > target ? Math.Max(from - maxDelta, target) : Math.Min(from + maxDelta, target);
+	[MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
+	public static T Approach<T>(T from, T target, T maxDelta)
+		where T : IComparable<T>, IAdditionOperators<T, T, T>, ISubtractionOperators<T, T, T>
+		=> from.CompareTo(target) > 0 ? Max(from - maxDelta, target) : Min(from + maxDelta, target);
 
 	/// <summary>
-	/// Move toward a target value without passing it
+	/// Move toward a <paramref name="target"/> value by no more than <paramref name="maxDelta"/>, without passing the <paramref name="target"/>
 	/// </summary>
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public static float Approach(ref float from, float target, float maxDelta)
-		=> from > target ? from = Math.Max(from - maxDelta, target) : from = Math.Min(from + maxDelta, target);
+	/// <returns>True if we reached the <paramref name="target"/> value</returns>
+	[MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
+	public static bool Approach<T>(ref T from, T target, T maxDelta)
+		where T : IComparable<T>, IAdditionOperators<T, T, T>, ISubtractionOperators<T, T, T>, IComparisonOperators<T, T, bool>
+		=> (from > target ? from = Max(from - maxDelta, target) : from = Min(from + maxDelta, target)) == target;
 
 	/// <summary>
-	/// Move toward a target value without passing it, and only if we have the opposite sign or lower magnitude
+	/// Move a <see cref="Vector2"/> toward a <paramref name="target"/> position, moving no further than <paramref name="maxDelta"/>
 	/// </summary>
-	public static float ApproachIfLower(float from, float target, float maxDelta)
-	{
-		if (Math.Sign(from) != Math.Sign(target) || Math.Abs(from) < Math.Abs(target))
-			return Approach(from, target, maxDelta);
-		else
-			return from;
-	}
-
-	/// <summary>
-	/// Move toward a target value without passing it, and only if we have the opposite sign or lower magnitude
-	/// </summary>
-	public static float ApproachIfLower(ref float from, float target, float maxDelta)
-	{
-		if (Math.Sign(from) != Math.Sign(target) || Math.Abs(from) < Math.Abs(target))
-			return Approach(ref from, target, maxDelta);
-		else
-			return from;
-	}
-
 	public static Vector2 Approach(Vector2 from, Vector2 target, float maxDelta)
 	{
 		if (from == target)
@@ -322,6 +357,30 @@ public static class Calc
 	}
 
 	/// <summary>
+	/// Move a <see cref="Vector2"/> toward a <paramref name="target"/> position, moving no further than <paramref name="maxDelta"/>
+	/// </summary>
+	/// <returns>True if we reached the <paramref name="target"/> position</returns>
+	public static bool Approach(ref Vector2 from, Vector2 target, float maxDelta)
+	{
+		if (from == target)
+			return true;
+		else
+		{
+			var diff = target - from;
+			if (diff.LengthSquared() <= maxDelta * maxDelta)
+			{
+				from = target;
+				return true;
+			}
+			else
+			{
+				from += diff.Normalized() * maxDelta;
+				return false;
+			}
+		}
+	}
+
+	/// <summary>
 	/// Move toward a target position by a up to a maximum amount, but only allow movement along an arbitrary axis
 	/// </summary>
 	/// <param name="from">Starting point</param>
@@ -331,35 +390,6 @@ public static class Calc
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static Vector2 ApproachAlongAxis(Vector2 from, Vector2 target, Vector2 axisNormal, float maxDelta)
 		=> Approach(from, from + axisNormal * Vector2.Dot(target - from, axisNormal), maxDelta);
-
-	public static Vector3 Approach(Vector3 from, Vector3 target, float amount)
-	{
-		if (from == target)
-			return target;
-		else
-		{
-			var diff = target - from;
-			if (diff.LengthSquared() <= amount * amount)
-				return target;
-			else
-				return from + diff.Normalized() * amount;
-		}
-	}
-
-
-	public static Vector2 Approach(ref Vector2 from, Vector2 target, float amount)
-	{
-		if (from == target)
-			return target;
-		else
-		{
-			var diff = target - from;
-			if (diff.LengthSquared() <= amount * amount)
-				return from = target;
-			else
-				return from += diff.Normalized() * amount;
-		}
-	}
 
 	public static Vector2 RotateToward(Vector2 dir, Vector2 target, float maxAngleDelta, float maxMagnitudeDelta)
 	{
@@ -373,6 +403,47 @@ public static class Calc
 			len = Approach(len, target.Length(), maxMagnitudeDelta);
 
 		return AngleToVector(angle, len);
+	}
+
+	/// <summary>
+	/// Move a <see cref="Vector3"/> toward a <paramref name="target"/> position, moving no further than <paramref name="maxDelta"/>
+	/// </summary>
+	public static Vector3 Approach(Vector3 from, Vector3 target, float maxDelta)
+	{
+		if (from == target)
+			return target;
+		else
+		{
+			var diff = target - from;
+			if (diff.LengthSquared() <= maxDelta * maxDelta)
+				return target;
+			else
+				return from + diff.Normalized() * maxDelta;
+		}
+	}
+
+	/// <summary>
+	/// Move a <see cref="Vector3"/> toward a <paramref name="target"/> position, moving no further than <paramref name="maxDelta"/>
+	/// </summary>
+	/// <returns>True if we reached the <paramref name="target"/> position</returns>
+	public static bool Approach(ref Vector3 from, Vector3 target, float maxDelta)
+	{
+		if (from == target)
+			return true;
+		else
+		{
+			var diff = target - from;
+			if (diff.LengthSquared() <= maxDelta * maxDelta)
+			{
+				from = target;
+				return true;
+			}
+			else
+			{
+				from += diff.Normalized() * maxDelta;
+				return false;
+			}
+		}
 	}
 
 	/// <summary>
@@ -448,29 +519,41 @@ public static class Calc
 	public static int Ceil(double v) => (int)Math.Ceiling(v);
 
 	/// <summary>
-	/// Converts a value from 0 to 1, to 0 to 1 to 0
+	/// Remaps <paramref name="value"/> from 0 to 1, to: 0 to 1 to 0
 	/// </summary>
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static float YoYo(float value)
-	{
-		if (value <= .5f)
-			return value * 2;
-		else
-			return 1 - ((value - .5f) * 2);
-	}
+		=> value <= .5f
+			? value * 2
+			: 1 - (value - .5f) * 2;
 
 	/// <summary>
-	/// Remaps a value from min-max, to newMin-newMax
+	/// Remaps a value from <paramref name="min"/>-<paramref name="max"/>, to <paramref name="newMin"/>-<paramref name="newMax"/>
 	/// </summary>
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static float Map(float val, float min, float max, float newMin = 0, float newMax = 1)
 		=> ((val - min) / (max - min)) * (newMax - newMin) + newMin;
 
 	/// <summary>
-	/// Remaps a value from min-max, to newMin-newMax, but clamps the value within the given range
+	/// Remaps a value from <paramref name="min"/>-<paramref name="max"/>, to <paramref name="newMin"/>-<paramref name="newMax"/>
+	/// </summary>
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static float Map(float val, float min, float max, float newMin, float newMax, Ease.Easer easer)
+		=> easer((val - min) / (max - min)) * (newMax - newMin) + newMin;
+
+	/// <summary>
+	/// Remaps a value from <paramref name="min"/>-<paramref name="max"/>, to <paramref name="newMin"/>-<paramref name="newMax"/>, and clamps the value within the given range
 	/// </summary>
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static float ClampedMap(float val, float min, float max, float newMin = 0, float newMax = 1)
 		=> Clamp((val - min) / (max - min), 0, 1) * (newMax - newMin) + newMin;
+
+	/// <summary>
+	/// Remaps a value from <paramref name="min"/>-<paramref name="max"/>, to <paramref name="newMin"/>-<paramref name="newMax"/>, and clamps the value within the given range
+	/// </summary>
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static float ClampedMap(float val, float min, float max, float newMin, float newMax, Ease.Easer easer)
+		=> easer(Clamp((val - min) / (max - min), 0, 1)) * (newMax - newMin) + newMin;
 
 	/// <summary>
 	/// Remaps the given Sin(radians) value
@@ -500,8 +583,18 @@ public static class Calc
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public static float AngleApproach(ref float val, float target, float maxMove)
-		=> val = AngleApproach(val, target, maxMove);
+	public static bool AngleApproach(ref float val, float target, float maxMove)
+	{
+		var diff = AngleDiff(val, target);
+		if (Math.Abs(diff) < maxMove)
+		{
+			val = target;
+			return true;
+		}
+
+		val += Clamp(diff, -maxMove, maxMove);
+		return false;
+	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static float AngleLerp(float startAngle, float endAngle, float percent)
@@ -530,20 +623,30 @@ public static class Calc
 	/// <summary>
 	/// Returns true every time the elapsed <paramref name="time"/> passes a given <paramref name="interval"/>. Ex: with an <paramref name="interval"/> of 0.1, this will be true for one frame every 0.1 seconds
 	/// </summary>
-	/// <param name="time">Elapsed time</param>
-	/// <param name="delta">Time since last frame</param>
-	/// <param name="interval">Interval to check whether we've crossed</param>
-	/// <param name="offset">Offset to the interval (so we can, in effect, start partway through an interval)</param>
+	/// <param name="time">Current elapsed time in seconds</param>
+	/// <param name="delta">Time since last frame in seconds</param>
+	/// <param name="interval">Interval to check whether we've crossed, in seconds</param>
+	/// <param name="offset">Offset to the interval in seconds (so we can, in effect, start partway through an interval)</param>
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static bool OnInterval(double time, double delta, double interval, double offset = 0)
 		=> Math.Floor((time - offset - delta) / interval) < Math.Floor((time - offset) / interval);
 
 	/// <summary>
+	/// Returns how many times the interval has been passed over the last frame. Ex: with an interval of 0.01 and a steady delta time of 0.016, this will alternate returning 1 and 2 every frame
+	/// </summary>
+	/// <param name="time">Current elapsed time in seconds</param>
+	/// <param name="delta">Time since last frame in seconds</param>
+	/// <param name="interval">Interval to count the times we've crossed, in seconds</param>
+	/// <param name="offset">Offset to the interval in seconds (so we can, in effect, start partway through an interval)</param>
+	public static int IntervalCount(double time, double delta, double interval, double offset = 0)
+		=> Floor((time - offset) / interval) - Floor((time - offset - delta) / interval);
+
+	/// <summary>
 	/// Returns true when the elapsed <paramref name="time"/> is between the given <paramref name="interval"/>. Ex: with an <paramref name="interval"/> of 0.1, this will be false for 0.1 seconds, then true for 0.1 seconds, and then repeat.
 	/// </summary>
-	/// <param name="time">Elapsed time</param>
-	/// <param name="interval">Interval to check whether we're between</param>
-	/// <param name="offset">Offset to the interval (so we can, in effect, start partway through an interval)</param>
+	/// <param name="time">Current elapsed time in seconds</param>
+	/// <param name="interval">Interval to check whether we're between, in seconds</param>
+	/// <param name="offset">Offset to the interval in seconds (so we can, in effect, start partway through an interval)</param>
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static bool BetweenInterval(double time, double interval, double offset = 0)
 		=> (time - offset) % (interval * 2) >= interval;
@@ -551,13 +654,34 @@ public static class Calc
 	/// <summary>
 	/// Returns true when the elapsed <paramref name="time"/> is between the given <paramref name="falseInterval"/> and <paramref name="trueInterval"/>. Ex: with a <paramref name="falseInterval"/> of 0.1 and <paramref name="trueInterval"/> of 0.2, this will be false for 0.1 seconds, then true for 0.2 seconds, and then repeat.
 	/// </summary>
-	/// <param name="time">Elapsed time</param>
-	/// <param name="falseInterval">Time to be false for</param>
-	/// <param name="trueInterval">Time to be true for</param>
-	/// <param name="offset">Offset to the interval (so we can, in effect, start partway through an interval)</param>
+	/// <param name="time">Current elapsed time in seconds</param>
+	/// <param name="falseInterval">Time to be false for, in seconds</param>
+	/// <param name="trueInterval">Time to be true for, in seconds</param>
+	/// <param name="offset">Offset to the interval in seconds (so we can, in effect, start partway through an interval)</param>
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static bool BetweenInterval(double time, double falseInterval, double trueInterval, double offset)
 		=> (time - offset) % (falseInterval + trueInterval) >= falseInterval;
+
+	/// <summary>
+	/// Cycle through returning each element of <paramref name="options"/> based on elapsed <paramref name="time"/>, moving to the next value after every <paramref name="interval"/> seconds until we reach the end of <paramref name="options"/> and then looping back to the start.
+	/// </summary>
+	/// <param name="time">The current elapsed time in seconds</param>
+	/// <param name="interval">The interval time in seconds for each individual option to be chosen for</param>
+	/// <param name="offset">Offset to the interval in seconds (so we can, in effect, start partway through an interval)</param>
+	/// <param name="options">The return values to cycle through</param>
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static T CycleInterval<T>(double time, double interval, double offset, params ReadOnlySpan<T> options)
+		=> options[(int)((time - offset) / interval) % options.Length];
+
+	/// <summary>
+	/// Cycle through returning each element of <paramref name="options"/> based on elapsed <paramref name="time"/>, moving to the next value after every <paramref name="interval"/> seconds until we reach the end of <paramref name="options"/> and then looping back to the start.
+	/// </summary>
+	/// <param name="time">The current elapsed time in seconds</param>
+	/// <param name="interval">The interval time in seconds for each individual option to be chosen for</param>
+	/// <param name="options">The return values to cycle through</param>
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static T CycleInterval<T>(double time, double interval, params ReadOnlySpan<T> options)
+		=> options[(int)(time / interval) % options.Length];
 
 	public static int NextPowerOfTwo(int x)
 	{
@@ -1557,25 +1681,18 @@ public static class Calc
 		return i;
 	}
 
-	public static string NormalizePath(string a, string b)
-	{
-		return NormalizePath(Path.Join(a, b));
-	}
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static string NormalizePath(string a, string b) => NormalizePath(Path.Join(a, b));
 
-	public static string NormalizePath(string a, string b, string c)
-	{
-		return NormalizePath(Path.Join(a, b, c));
-	}
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static string NormalizePath(string a, string b, string c) => NormalizePath(Path.Join(a, b, c));
 
-	public static string NormalizePath(string path)
+	public static unsafe string NormalizePath(string path)
 	{
-		unsafe
-		{
-			Span<char> temp = stackalloc char[path.Length];
-			for (int i = 0; i < path.Length; i++)
-				temp[i] = path[i];
-			return NormalizePath(temp).ToString();
-		}
+		Span<char> temp = stackalloc char[path.Length];
+		for (int i = 0; i < path.Length; i++)
+			temp[i] = path[i];
+		return NormalizePath(temp).ToString();
 	}
 
 	public static Span<char> NormalizePath(Span<char> path)
@@ -1598,10 +1715,9 @@ public static class Calc
 		return path[..length];
 	}
 
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static ReadOnlySpan<byte> ToBytes<T>(Span<T> span) where T : struct
-	{
-		return MemoryMarshal.Cast<T, byte>(span);
-	}
+		=> MemoryMarshal.Cast<T, byte>(span);
 
 	public static bool TryFirst<T>(this List<T> list, Func<T, bool> predicate, [NotNullWhen(true)] out T? match) where T : class
 	{
@@ -1616,6 +1732,7 @@ public static class Calc
 		return false;
 	}
 
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void Swap<T>(ref T a, ref T b)
 		=> (b, a) = (a, b);
 
@@ -1923,4 +2040,18 @@ public static class Calc
 
 	#endregion
 
+	/// <summary>
+	/// Update a timer if it is above zero, and return whether it reached zero
+	/// </summary>
+	[MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
+	public static bool TimerTick(ref float timer, in Time time)
+	{
+		if (timer > 0)
+		{
+			timer -= time.Delta;
+			return timer <= 0;
+		}
+		else
+			return false;
+	}
 }

@@ -4,14 +4,14 @@ using System.Text.RegularExpressions;
 namespace Foster.Framework;
 
 /// <summary>Preloaded title assets and per-application localStorage user files.</summary>
-public sealed class Storage : StorageContainer
+public class Storage : StorageContainer
 {
     internal static readonly Dictionary<string, byte[]> Assets = new(StringComparer.Ordinal);
     private readonly string prefix;
     private bool disposed;
     public override bool Writable { get; }
     internal bool Ready => true;
-    private Storage(string prefix, bool writable) { this.prefix = prefix; Writable = writable; }
+    protected Storage(string prefix, bool writable) { this.prefix = prefix; Writable = writable; }
     internal static Storage OpenUserStorage(string name) => new($"foster:{Uri.EscapeDataString(name)}:", true);
     /// <summary>
     /// Web only: title assets are preloaded by main.js before Main runs, so they can be read before an App exists

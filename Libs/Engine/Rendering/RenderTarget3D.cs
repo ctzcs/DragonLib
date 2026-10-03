@@ -13,6 +13,7 @@ public sealed class RenderTarget3D : IDisposable
     private readonly TextureFormat _depthFormat;
     private Target? _target;
     private Subtexture _color;
+    /// <summary>HDR 请求。MyFoster 与 Web 按设备能力启用，不支持时回退到 LDR。</summary>
     public bool HdrEnabled { get; set; }
     public bool IsHdr => _target != null && ColorTexture.Format == TextureFormat.R16G16B16A16Float;
 

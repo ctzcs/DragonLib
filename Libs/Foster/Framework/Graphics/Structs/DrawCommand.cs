@@ -1,8 +1,5 @@
 namespace Foster.Framework;
 
-// DragonLib 扩展：调试线需要原生 line list；默认值保持现有三角形 draw。
-public enum PrimitiveTopology { Triangles, Lines }
-
 /// <summary>
 /// Stores information required to submit a draw command.
 /// Call <see cref="Submit"/> or <see cref="GraphicsDevice.Draw"/> to submit.
@@ -100,12 +97,18 @@ public struct DrawCommand
 	/// The Render State Culling Mode
 	/// </summary>
 	public CullMode CullMode = CullMode.None;
+	/// <summary>The primitive topology. Existing draws default to a triangle list.</summary>
 	public PrimitiveTopology Topology = PrimitiveTopology.Triangles;
 
 	/// <summary>
 	/// The Depth Comparison Function, only used if DepthTestEnabled is true
 	/// </summary>
 	public DepthCompare DepthCompare = DepthCompare.Less;
+
+	/// <summary>
+	/// The Fill Mode used when drawing
+	/// </summary>
+	public FillMode FillMode = FillMode.Fill;
 
 	/// <summary>
 	/// The Stencil Operations for back-facing triangles

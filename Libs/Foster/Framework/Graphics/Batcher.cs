@@ -4,10 +4,8 @@ using System.Numerics;
 namespace Foster.Framework;
 
 /// <summary>
-/// A 2D Sprite Batcher.<br/>
+/// A 2D Sprite Batcher, which builds vertex and index buffers internally in order to simplify 2D drawing.<br/>
 /// <br/>
-/// Constructs a <see cref="Mesh"/> which can be drawn by calling Render.<br/>
-/// <br />
 /// Note if you intend to re-use the Batcher over multiple frames, be sure to
 /// call <see cref="Clear"/> after you have rendered it so it's ready for the
 /// next frame.
@@ -309,6 +307,9 @@ public class Batcher : IDisposable
 
 	private void SetTexture(Texture? texture)
 	{
+		if (texture == null)
+			return;
+
 		if (currentBatch.Texture == null || currentBatch.Elements == 0)
 		{
 			currentBatch.Texture = texture;
@@ -363,7 +364,6 @@ public class Batcher : IDisposable
 
 		currentBatch.Layer = layer;
 		currentBatchInsert = insert;
-		TryToMergeBatch();
 	}
 
 	private void SetMaterial(Material? material)
@@ -450,11 +450,13 @@ public class Batcher : IDisposable
 			var prev = batches[index];
 			var curr = currentBatch;
 
-			if (prev.Texture == curr.Texture &&
+			if (prev.Layer == curr.Layer &&
+				prev.Texture == curr.Texture &&
 				prev.Blend == curr.Blend &&
 				prev.Scissor == curr.Scissor &&
 				prev.Sampler == curr.Sampler &&
 				prev.Stencil == curr.Stencil &&
+				(prev.Offset + prev.Elements == curr.Offset) &&
 				(prev.Material == curr.Material || (prev.Material != null && curr.Material != null && prev.Material.EqualTo(curr.Material))))
 			{
 				currentBatch = prev;
@@ -1080,6 +1082,14 @@ public class Batcher : IDisposable
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void RectLine(in Vector2 position, in Vector2 size, float lineWeight, Color color)
 		=> RectLine(new Rect(position, size), lineWeight, color);
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public void RectLine(in Vector2 position, float width, float height, float lineWeight, Color color)
+		=> RectLine(new Rect(position, width, height), lineWeight, color);
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public void RectLine(float x, float y, float width, float height, float lineWeight, Color color)
+		=> RectLine(new Rect(x, y, width, height), lineWeight, color);
 
 	public void RectDashed(Rect rect, float lineWeight, in Color color, float dashLength, float dashOffset)
 	{
@@ -1767,7 +1777,7 @@ public class Batcher : IDisposable
 		{
 			vertices.CopyTo(dstVertices);
 		}
-		
+
 		for (int i = 0; i < indices.Length; i ++)
 			dstIndices[i] = indices[i] + vertexOffset;
 	}
