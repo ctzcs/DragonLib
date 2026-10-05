@@ -1,0 +1,14 @@
+<Project>
+  <Import Project="../../../Directory.Build.props" />
+  <!-- One pinned Anthology source revision; no implicit NuGet publication. -->
+  <PropertyGroup>
+    <Version>3.6.7</Version>
+    <ProwlTargetFrameworks>net10.0</ProwlTargetFrameworks>
+    <ProwlTargetFrameworksCompat>net10.0</ProwlTargetFrameworksCompat>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+    <QuillSkipShaderGen>true</QuillSkipShaderGen>
+    <!-- Upstream public API documentation is incomplete; keep functional diagnostics. -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+</Project>

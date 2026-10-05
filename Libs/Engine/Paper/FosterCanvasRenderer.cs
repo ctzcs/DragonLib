@@ -107,7 +107,7 @@ public sealed class FosterCanvasRenderer : ICanvasRenderer
 
 	public void RenderCalls(Canvas canvas, IReadOnlyList<DrawCall> drawCalls)
 	{
-		if (drawCalls.Count == 0 || canvas.Vertices.Count == 0 || canvas.Indices.Count == 0)
+		if (drawCalls.Count == 0 || canvas.Vertices.IsEmpty || canvas.Indices.IsEmpty)
 			return;
 
 		UploadGeometry(canvas);
@@ -179,8 +179,8 @@ public sealed class FosterCanvasRenderer : ICanvasRenderer
 
 	private void UploadGeometry(Canvas canvas)
 	{
-		var vertexCount = canvas.Vertices.Count;
-		var indexCount = canvas.Indices.Count;
+		var vertexCount = canvas.VertexCount;
+		var indexCount = canvas.IndexCount;
 
 		if (vertexCount > _vertexScratch.Length)
 			_vertexScratch = new PosTexColVertex[vertexCount];
@@ -205,23 +205,25 @@ public sealed class FosterCanvasRenderer : ICanvasRenderer
 
 	private static RectInt? TryGetScissor(in DrawCall call, Point2 targetSize, float framebufferScale)
 	{
-		call.GetScissor(out var invMatrix, out var extent);
+		call.GetScissor(framebufferScale, out var transform, out var translation, out var extent);
 		if (extent.X < 0 || extent.Y < 0)
 			return null;
 
-		var toScreen = invMatrix.Invert();
-		// Quill stores extents in pixels but its scissor transform in logical units.
-		// Transform logical corners first, then convert the complete position to pixels.
-		extent /= framebufferScale;
+		// Quill 3.6 packs the pixel-to-local transform as (A,C,B,D), with DPI
+		// already folded in. Remove its shader-only half-pixel feather for a hardware scissor.
+		var pixelToLocal = new Matrix3x2(transform.X, transform.Z, transform.Y, transform.W,
+			translation.X, translation.Y);
+		if (!Matrix3x2.Invert(pixelToLocal, out var toScreen))
+			return new RectInt(0, 0, 0, 0);
+		var feather = 0.5f / framebufferScale;
+		extent = new Float2(MathF.Max(extent.X - feather, 0), MathF.Max(extent.Y - feather, 0));
 		Span<Vector2> corners =
 		[
-			TransformPoint(toScreen, -extent.X, -extent.Y),
-			TransformPoint(toScreen, extent.X, -extent.Y),
-			TransformPoint(toScreen, extent.X, extent.Y),
-			TransformPoint(toScreen, -extent.X, extent.Y),
+			Vector2.Transform(new Vector2(-extent.X, -extent.Y), toScreen),
+			Vector2.Transform(new Vector2(extent.X, -extent.Y), toScreen),
+			Vector2.Transform(new Vector2(extent.X, extent.Y), toScreen),
+			Vector2.Transform(new Vector2(-extent.X, extent.Y), toScreen),
 		];
-		for (var i = 0; i < corners.Length; i++)
-			corners[i] *= framebufferScale;
 
 		var minX = corners[0].X;
 		var minY = corners[0].Y;
@@ -253,13 +255,4 @@ public sealed class FosterCanvasRenderer : ICanvasRenderer
 		return new RectInt(left, top, w, h);
 	}
 
-	private static Vector2 TransformPoint(Float4x4 m, float x, float y)
-	{
-		var c0 = m.c0;
-		var c1 = m.c1;
-		var c3 = m.c3;
-		return new Vector2(
-			c0.X * x + c1.X * y + c3.X,
-			c0.Y * x + c1.Y * y + c3.Y);
-	}
 }

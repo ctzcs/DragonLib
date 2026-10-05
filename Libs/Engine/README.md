@@ -16,6 +16,11 @@ Dear ImGui(`Engine.DearImGui` 的 Renderer、PropertyDrawer，以及 `Engine.Ass
 
 ## 通用功能
 
+Paper UI 使用仓库内自行维护的源码：`Libs/ThirdParty/Prowl` 包含
+Paper、Origami、Quill 和 Scribe，Engine 通过项目引用构建。UI 核心和控件可直接修改，
+Foster 适配留在 `Engine/Paper`。详见 [维护说明](../ThirdParty/Prowl/README.md)
+和 [Paper 使用指南](Paper/README.md)。
+
 - `Engine.World.SceneRouter<TScreen>`：场景切换及过渡进度，由游戏调用 `Update(dt)`。
 - `Engine.Messaging.CommandQueue<TCommand>`：单消费者命令队列，由消费者调用 `Drain`。
 - `Engine.Messaging.BroadcastChannel<TMessage>`：下一帧可见的广播消息；普通游戏在每帧开始、生产者和消费者运行之前调用一次 `AdvanceFrame()`。
@@ -53,7 +58,7 @@ Web 入口项目(`Sdk="Microsoft.NET.Sdk.WebAssembly"`，`net10.0-browser`)引�
 2. 使用 `SceneRouter` 的文件改为导入 `Engine.World`。
 3. 使用 `CommandQueue` 或 `BroadcastChannel` 的文件导入 `Engine.Messaging`；调用 Pipeline 扩展时同时导入 `Engine.ECS`。
 4. 使用 Dear ImGui(`Engine.DearImGui`、`AssetRefDrawer`)的项目添加 `Engine.Editor.csproj` 引用(Engine.ECS 已引用)。
-5. `Box2DWorld` 的多线程构造函数改为接收 `IBox2DTaskScheduler`；用 Engine 的 `JobScheduler` 时包一层适配器(示例见 `Tests/Game0/Content/JobSchedulerBox2DTasks.cs`)。
+5. `Box2DWorld` 的多线程构造函数改为接收 `IBox2DTaskScheduler`；用 Engine 的 `JobScheduler` 时包一层适配器(示例见 `../DragonLib.Tests/Game0/Content/JobSchedulerBox2DTasks.cs`)。
 6. `DassetModelLoader.Load` 的存储参数从 `LocalStorage` 放宽为 `StorageContainer`，原调用不变。
 
 新增通用能力时，先让它能在 Engine 中独立调用，再在 Engine.ECS 中提供读取组件、注入依赖和驱动更新的接入代码。
@@ -61,9 +66,9 @@ Web 入口项目(`Sdk="Microsoft.NET.Sdk.WebAssembly"`，`net10.0-browser`)引�
 ## 验证
 
 ```powershell
-dotnet test Tests/Engine.Tests/Engine.Tests.csproj
-dotnet test Tests/Game0/Tests/Entities.Tests.csproj
-dotnet build Tests/Game0/Game0.sln
+dotnet test ../DragonLib.Tests/Engine.Tests/Engine.Tests.csproj
+dotnet test ../DragonLib.Tests/Game0/Tests/Entities.Tests.csproj
+dotnet build ../DragonLib.Tests/DragonLib.Tests.slnx
 ```
 
 `Engine.Tests` 只引用 Engine，验证通用消息行为，并检查应用的依赖清单中没有 Engine.ECS 或 DragonECS。Game0 测试覆盖 ECS 接入及现有游戏功能。

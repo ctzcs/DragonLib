@@ -8,4 +8,4 @@ The adapter does not hide unit scaling or flip the Y axis. DragonLib uses Y-down
 
 Projects that need physics should reference `DragonLib.Box2D` directly. The core `Engine` project intentionally does not reference Box2D, and `DragonLib.Box2D` does not reference Engine either, so it builds once for desktop and Web.
 
-For the multithreaded solver pass an `IBox2DTaskScheduler` to `new Box2DWorld(gravity, scheduler, workerCount)`. Wrapping Engine's `JobScheduler` takes three lines; see the interface's documentation or `Tests/Game0/Content/JobSchedulerBox2DTasks.cs`.
+For the multithreaded solver pass an `IBox2DTaskScheduler` to `new Box2DWorld(gravity, scheduler, workerCount)`. Wrapping Engine's `JobScheduler` takes three lines; see the interface's documentation or `../DragonLib.Tests/Game0/Content/JobSchedulerBox2DTasks.cs`.

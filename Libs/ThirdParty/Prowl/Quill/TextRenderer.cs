@@ -1,4 +1,4 @@
-﻿using Prowl.Scribe;
+using Prowl.Scribe;
 using Prowl.Vector;
 using System;
 
@@ -108,6 +108,7 @@ namespace Prowl.Quill
             // Bind the font atlas as dedicated canvas state (a separate sampler unit) rather than the
             // brush texture, so this text batches into the same draw call as surrounding shapes.
             _canvas.SetFontAtlas(texture);
+            _canvas._textDraws++;
 
             // UV offset of 2.0 signals text mode to shader (UV >= 2 means text)
             var uvOffset = new Float2(2.0f, 2.0f);
@@ -121,7 +122,7 @@ namespace Prowl.Quill
             // Scribe hands us an indexed mesh (4 unique vertices + 6 indices per glyph). Transform
             // each unique vertex once and reuse Scribe's indices offset by our base, rather than
             // de-indexing to 6 vertices per glyph.
-            uint baseIndex = (uint)_canvas.Vertices.Count;
+            uint baseIndex = (uint)_canvas.VertexCount;
 
             if (transform.IsIdentityOrTranslation)
             {

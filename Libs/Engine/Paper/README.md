@@ -4,12 +4,18 @@ DragonLib 里的 **Paper**（Prowl.PaperUI）是一套即时模式（immediate-m
 经 `FosterCanvasRenderer` 把绘制命令桥接到 Foster 的图形管线。本文说明如何在游戏里接入、
 每帧驱动，以及常用的布局 / 控件 API。
 
+Paper 和 Origami 的源码由 DragonLib 自行维护，分别位于
+`Libs/ThirdParty/Prowl/Paper` 和 `Libs/ThirdParty/Prowl/Origami`，Engine 通过
+`ProjectReference` 引用。布局、交互和控件行为直接在这两处修改；本目录负责 Foster
+渲染、输入和精灵适配。上游基线与维护约定见 [Prowl fork 说明](../../ThirdParty/Prowl/README.md)。
+
 配套文件：
 
 **字体默认使用 MSDF**：所有 Paper/Origami 控件共享 Quill → Scribe 的动态
 MSDF 字体图集，现有 `.Text(...)`、输入框和富文本 API 不需要修改。
 字体仍从 TTF 加载，中文按需生成，并复用同一套字形度量、换行和光标定位。
-本项目使用 `Libs/ThirdParty/Prowl` 中的 Scribe/Quill 2.7.0 扩展版。
+本项目使用 `Libs/ThirdParty/Prowl` 中的 Scribe/Quill 3.6.7 扩展版，
+Paper/Origami、Scaffold/Quire、Vector/Echo 均使用同一上游基线的本地源码。
 
 ```csharp
 var fontSettings = new FontAtlasSettings
@@ -31,9 +37,9 @@ Windows x64 原生生成库会自动复制到输出目录。其他平台需自�
 验证命令（在仓库根目录运行）：
 
 ```powershell
-dotnet test Tests/Paper.Msdf.Tests
-dotnet run --project Tests/Paper.Msdf.Smoke -- .codex-build/paper-msdf.png
-dotnet run --project Tests/Paper.Msdf.Smoke -- .codex-build/paper-msdf-2x.png 2
+dotnet test ../DragonLib.Tests/Paper.Msdf.Tests
+dotnet run --project ../DragonLib.Tests/Paper.Msdf.Smoke -- .codex-build/paper-msdf.png
+dotnet run --project ../DragonLib.Tests/Paper.Msdf.Smoke -- .codex-build/paper-msdf-2x.png 2
 ```
 
 GPU 示例会短暂创建窗口，绘制按钮、输入框、富文本、不同字号和换行文字，
@@ -374,7 +380,7 @@ Paper **自带动画系统**，不需要自己写计时器。核心是一组 `An
 | `AnimateVec2(target, speed, id)` | 二维向量渐变 | `speed` |
 | `AnimateAngle(targetDeg, speed, id)` | 角度（走最短弧） | `speed` |
 
-缓动函数在 `Prowl.PaperUI.Easing` 静态类里，签名都是 `float→float`：
+缓动函数在 `Prowl.Vector.Easing` 静态类里（3.6.7 从 Paper 命名空间迁出），签名都是 `float→float`：
 `Linear` / `EaseInOut` / `CubicInOut` / `QuartOut` / `SineInOut` / `ExpoOut` /
 `BackOut`（回弹）/ `ElasticOut` / `BounceOut` / `SmoothStep` 等。
 
@@ -429,7 +435,7 @@ private PaperColor C(byte r, byte g, byte b, byte a = 255) => new(r, g, b, (byte
 
 ### 完整示例：滑动 + 淡入淡出的页面过渡
 
-`Tests/Game0/ParperUITest.cs` 的 `GameMenuSystem` 用 `AnimateBool` 做了「主菜单 ↔ 设置」
+`../DragonLib.Tests/Game0/Program.cs` 的 `GameMenuSystem` 用 `AnimateBool` 做了「主菜单 ↔ 设置」
 的**横向滑动 + 淡入淡出**过渡。要点：
 
 - 顺序式过渡：切页时不立即换内容，先让旧页 `TranslateX` 滑走并淡出（进度 `0→1`），
@@ -493,7 +499,7 @@ public class MyUiSystem : IUpdateSystem
 }
 ```
 
-完整的综合示例见 `Tests/Game0/ParperUITest.cs` 里的 `GameMenuSystem`（游戏菜单：主菜单 /
+完整的综合示例见 `../DragonLib.Tests/Game0/Program.cs` 里的 `GameMenuSystem`（游戏菜单：主菜单 /
 设置页、分辨率切换、可拖拽音量滑块、全屏开关，以及页面间的滑动淡入淡出过渡）。
 
 ---

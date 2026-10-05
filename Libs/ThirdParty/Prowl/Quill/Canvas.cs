@@ -76,6 +76,12 @@ namespace Prowl.Quill
         internal int stateHash;
         internal object? fontAtlas;
 
+        // Inverses are what the shader actually wants, and they only change when the draw call is
+        // built, so they are computed once here rather than on every property read by the backend.
+        internal Transform2D scissorInverse;
+        internal Transform2D brushInverse;
+        internal Transform2D textureInverse;
+
         /// <summary>
         /// Gets the texture from the brush. Returns null if no texture is set.
         /// </summary>
@@ -98,21 +104,63 @@ namespace Prowl.Quill
         /// </summary>
         public ShaderUniforms? ShaderUniforms => Brush.Uniforms;
 
-        public void GetScissor(out Float4x4 matrix, out Float2 extent)
+        /// <summary>
+        /// Whether this draw call was built from the given state, so more geometry can be folded into
+        /// it. Ordered cheapest-discriminating-first so the common mismatch exits on the first test.
+        /// </summary>
+        internal bool MatchesState(in ProwlCanvasState state, object? currentFontAtlas)
+        {
+            return ReferenceEquals(fontAtlas, currentFontAtlas)
+                && scissorExtent.X == state.scissorExtent.X
+                && scissorExtent.Y == state.scissorExtent.Y
+                && Brush.Matches(in state.brush)
+                && SameTransform(in scissor, in state.scissor);
+        }
+
+        internal static bool SameTransform(in Transform2D a, in Transform2D b)
+            => a.A == b.A && a.B == b.B && a.C == b.C && a.D == b.D && a.E == b.E && a.F == b.F;
+
+        /// <summary>
+        /// The scissor transform as a 2D affine with the framebuffer scale folded in, plus the extent
+        /// the shader compares against. The extent already carries the half-pixel feather, so the
+        /// shader is a subtract and two clamps.
+        /// </summary>
+        /// <remarks>
+        /// A negative extent means no scissor, which the shader early-outs on.
+        /// </remarks>
+        public void GetScissor(float framebufferScale, out Float4 transform, out Float2 translation, out Float2 extent)
         {
             if (scissorExtent.X < -0.5f || scissorExtent.Y < -0.5f)
             {
-                // Invalid scissor - disable it
-                // Extent must be negative so the shader's early-out (scissorExt < 0) triggers
-                matrix = new Float4x4();
+                transform = default;
+                translation = default;
                 extent = new Float2(-1, -1);
+                return;
             }
-            else
-            {
-                // Set up scissor transform and dimensions
-                matrix = scissor.Inverse().ToMatrix();
-                extent = new Float2(scissorExtent.X, scissorExtent.Y);
-            }
+
+            ToAffine(in scissorInverse, framebufferScale, out transform, out translation);
+            float inv = 1f / framebufferScale;
+            extent = new Float2((scissorExtent.X + 0.5f) * inv, (scissorExtent.Y + 0.5f) * inv);
+        }
+
+        /// <summary>The brush gradient transform as a 2D affine with the framebuffer scale folded in.</summary>
+        public void GetBrushTransform(float framebufferScale, out Float4 transform, out Float2 translation)
+            => ToAffine(in brushInverse, framebufferScale, out transform, out translation);
+
+        /// <summary>The texture transform as a 2D affine with the framebuffer scale folded in.</summary>
+        public void GetTextureTransform(float framebufferScale, out Float4 transform, out Float2 translation)
+            => ToAffine(in textureInverse, framebufferScale, out transform, out translation);
+
+        /// <summary>
+        /// Packs a Transform2D as (A, C, B, D) plus (E, F), so the shader evaluates it as two dot
+        /// products and an add. Dividing the linear part by the framebuffer scale folds in the
+        /// pixel-to-logical conversion the shader used to do per fragment.
+        /// </summary>
+        private static void ToAffine(in Transform2D t, float framebufferScale, out Float4 transform, out Float2 translation)
+        {
+            float inv = 1f / framebufferScale;
+            transform = new Float4(t.A * inv, t.C * inv, t.B * inv, t.D * inv);
+            translation = new Float2(t.E, t.F);
         }
     }
 
@@ -177,13 +225,12 @@ namespace Prowl.Quill
 
             unchecked
             {
+                // Combined order-independently, so dictionary ordering cannot change the result and
+                // no sort (and no allocation) is needed.
                 int hash = 17;
-                // Sort keys for consistent hashing
-                foreach (var key in _uniforms.Keys.OrderBy(k => k))
-                {
-                    hash = hash * 31 + key.GetHashCode();
-                    hash = hash * 31 + (_uniforms[key]?.GetHashCode() ?? 0);
-                }
+                foreach (var kvp in _uniforms)
+                    hash ^= kvp.Key.GetHashCode() * 31 + (kvp.Value?.GetHashCode() ?? 0);
+
                 _cachedHash = hash;
             }
             _hashDirty = false;
@@ -327,22 +374,71 @@ namespace Prowl.Quill
         /// </summary>
         public ShaderUniforms? Uniforms;
 
+        /// <summary>
+        /// Exact comparison of everything the shader binds, used to confirm a batch merge rather than
+        /// trusting <see cref="ComputeHash"/> alone.
+        /// </summary>
+        /// <remarks>Fields the shader ignores for this brush type are skipped.</remarks>
+        internal bool Matches(in Brush other)
+        {
+            if (Type != other.Type
+                || !ReferenceEquals(Texture, other.Texture)
+                || !ReferenceEquals(Shader, other.Shader)
+                || BackdropBlur != other.BackdropBlur
+                || (Shader != null && !SameUniforms(Uniforms, other.Uniforms)))
+                return false;
+
+            if (Texture != null && !DrawCall.SameTransform(in TextureTransform, in other.TextureTransform))
+                return false;
+
+            if (Type == BrushType.None)
+                return true;
+
+            return Color1.Equals(other.Color1)
+                && Color2.Equals(other.Color2)
+                && Point1.X == other.Point1.X && Point1.Y == other.Point1.Y
+                && Point2.X == other.Point2.X && Point2.Y == other.Point2.Y
+                && (Type != BrushType.Box || (CornerRadii == other.CornerRadii && Feather == other.Feather))
+                && DrawCall.SameTransform(in Transform, in other.Transform);
+        }
+
+        // Compared value by value, since two different sets can share a hash and would then batch as one.
+        private static bool SameUniforms(ShaderUniforms? a, ShaderUniforms? b)
+        {
+            if (ReferenceEquals(a, b)) return true;
+            if (a == null || b == null) return false;
+            if (a.Values.Count != b.Values.Count) return false;
+            foreach (var kvp in a.Values)
+            {
+                if (!b.Values.TryGetValue(kvp.Key, out var other) || !Equals(kvp.Value, other))
+                    return false;
+            }
+            return true;
+        }
+
         internal int ComputeHash()
         {
             unchecked
             {
                 int hash = 17;
                 hash = hash * 31 + (int)Type;
-                hash = hash * 31 + Color1.GetHashCode();
-                hash = hash * 31 + Color2.GetHashCode();
-                hash = hash * 31 + Point1.GetHashCode();
-                hash = hash * 31 + Point2.GetHashCode();
-                hash = hash * 31 + CornerRadii.GetHashCode();
-                hash = hash * 31 + Feather.GetHashCode();
                 hash = hash * 31 + BackdropBlur.GetHashCode();
-                hash = hash * 31 + Transform.GetHashCode();
                 hash = hash * 31 + (Texture?.GetHashCode() ?? 0);
-                hash = hash * 31 + TextureTransform.GetHashCode();
+                if (Texture != null)
+                    hash = hash * 31 + TextureTransform.GetHashCode();
+                if (Type != BrushType.None)
+                {
+                    hash = hash * 31 + Color1.GetHashCode();
+                    hash = hash * 31 + Color2.GetHashCode();
+                    hash = hash * 31 + Point1.GetHashCode();
+                    hash = hash * 31 + Point2.GetHashCode();
+                    hash = hash * 31 + Transform.GetHashCode();
+                    if (Type == BrushType.Box)
+                    {
+                        hash = hash * 31 + CornerRadii.GetHashCode();
+                        hash = hash * 31 + Feather.GetHashCode();
+                    }
+                }
                 if (Shader != null)
                 {
                     hash = hash * 31 + Shader.GetHashCode();
@@ -431,17 +527,36 @@ namespace Prowl.Quill
         /// <summary>
         /// Gets the list of draw calls accumulated during rendering.
         /// </summary>
-        public IReadOnlyList<DrawCall> DrawCalls => _drawCalls.AsReadOnly();
+        public IReadOnlyList<DrawCall> DrawCalls => _drawCalls;
 
         /// <summary>
-        /// Gets the list of triangle indices for all accumulated geometry.
+        /// Gets the triangle indices for all accumulated geometry.
         /// </summary>
-        public IReadOnlyList<uint> Indices => _indices.AsReadOnly();
+        public ReadOnlySpan<uint> Indices => _indices.AsSpan();
 
         /// <summary>
-        /// Gets the list of vertices for all accumulated geometry.
+        /// Gets the vertices for all accumulated geometry.
         /// </summary>
-        public IReadOnlyList<Vertex> Vertices => _vertices.AsReadOnly();
+        public ReadOnlySpan<Vertex> Vertices => _vertices.AsSpan();
+
+        /// <summary>
+        /// The live vertex backing store. Only the first <see cref="VertexCount"/> entries are valid,
+        /// and the array is replaced when the canvas grows. Backends upload straight from this rather
+        /// than copying the geometry out every frame.
+        /// </summary>
+        public Vertex[] VertexBuffer => _vertices.Array;
+
+        /// <summary>The number of valid entries in <see cref="VertexBuffer"/>.</summary>
+        public int VertexCount => _vertices.Count;
+
+        /// <summary>
+        /// The live index backing store. Only the first <see cref="IndexCount"/> entries are valid,
+        /// and the array is replaced when the canvas grows.
+        /// </summary>
+        public uint[] IndexBuffer => _indices.Array;
+
+        /// <summary>The number of valid entries in <see cref="IndexBuffer"/>.</summary>
+        public int IndexCount => _indices.Count;
 
         /// <summary>
         /// Gets the current point of the active path, or Zero if no path is active.
@@ -452,21 +567,28 @@ namespace Prowl.Quill
         internal ICanvasRenderer _renderer;
 
         internal bool _isNewDrawCallRequested = false;
-        internal List<DrawCall> _drawCalls = new List<DrawCall>();
+        internal DrawCallBuffer _drawCalls = new DrawCallBuffer();
         internal Stack<object> _textureStack = new Stack<object>();
 
         private int _currentDrawStateHash;
         private bool _drawStateDirty = true;
+
+        // Index of the draw call last confirmed to carry the current state, or -1. Paired with
+        // _drawStateDirty this lets the common case merge without hashing or comparing anything.
+        private int _verifiedDrawCall = -1;
 
         // The font atlas texture bound to the dedicated font sampler unit. Persistent canvas state
         // (not per-save/restore) that only changes when the atlas is (re)allocated, so text batches
         // with shapes. Part of the draw-state hash so a change cleanly splits the batch.
         private object? _currentFontAtlas;
 
-        internal List<uint> _indices = new List<uint>();
-        internal List<Vertex> _vertices = new List<Vertex>();
+        internal GeometryBuffer<uint> _indices = new GeometryBuffer<uint>();
+        internal GeometryBuffer<Vertex> _vertices = new GeometryBuffer<Vertex>();
 
         private readonly List<SubPath> _subPaths = new List<SubPath>();
+
+        // Sub paths from finished paths, reused so building a path does not allocate.
+        private readonly Stack<SubPath> _freeSubPaths = new Stack<SubPath>();
         private SubPath? _currentSubPath = null;
         private bool _isPathReady = false;
 
@@ -484,8 +606,6 @@ namespace Prowl.Quill
         private float _framebufferScale = 1.0f;
         private float _width = 0.0f;
         private float _height = 0.0f;
-
-        private IMarkdownImageProvider? _markdownImageProvider = null;
 
         /// <summary>
         /// Gets the framebuffer scale (physical pixels per logical pixel). All coordinates passed
@@ -528,6 +648,9 @@ namespace Prowl.Quill
 
             _renderer = renderer;
             _scribeRenderer = new TextRenderer(this, fontAtlasSettings);
+
+            // Bound up front so shapes drawn before the first text already batch with it.
+            _currentFontAtlas = _scribeRenderer.FontEngine.Texture;
             UpdatePixelCalculations();
             Clear();
         }
@@ -610,7 +733,10 @@ namespace Prowl.Quill
         internal void Clear()
         {
             _drawCalls.Clear();
+            _verifiedDrawCall = -1;
             _textureStack.Clear();
+            _capture = null;
+            _captureStateDepth = -1;
 
             _indices.Clear();
             _vertices.Clear();
@@ -619,7 +745,7 @@ namespace Prowl.Quill
             _state = new ProwlCanvasState();
             _state.Reset();
 
-            _subPaths.Clear();
+            ReleaseSubPaths();
             _currentSubPath = null;
             _isPathReady = true;
 
@@ -637,17 +763,22 @@ namespace Prowl.Quill
             if (!_drawStateDirty)
                 return _currentDrawStateHash;
 
+            _currentDrawStateHash = ComputeStateHash(in _state.scissorExtent, in _state.scissor, in _state.brush, _currentFontAtlas);
+            _drawStateDirty = false;
+            return _currentDrawStateHash;
+        }
+
+        private static int ComputeStateHash(in Float2 scissorExtent, in Transform2D scissor, in Brush brush, object? fontAtlas)
+        {
             unchecked
             {
                 int hash = 17;
-                hash = hash * 31 + _state.scissorExtent.GetHashCode();
-                hash = hash * 31 + _state.scissor.GetHashCode();
-                hash = hash * 31 + _state.brush.ComputeHash();
-                hash = hash * 31 + (_currentFontAtlas?.GetHashCode() ?? 0);
-                _currentDrawStateHash = hash;
+                hash = hash * 31 + scissorExtent.GetHashCode();
+                hash = hash * 31 + scissor.GetHashCode();
+                hash = hash * 31 + brush.ComputeHash();
+                hash = hash * 31 + (fontAtlas?.GetHashCode() ?? 0);
+                return hash;
             }
-            _drawStateDirty = false;
-            return _currentDrawStateHash;
         }
 
         /// <summary>
@@ -663,6 +794,8 @@ namespace Prowl.Quill
         {
             if (_savedStates.Count == 0)
                 return;
+            if (_savedStates.Count <= _captureStateDepth)
+                _captureBroken = true;
             _state = _savedStates.Pop();
             InvalidateDrawState();
         }
@@ -670,7 +803,7 @@ namespace Prowl.Quill
         /// <summary>
         /// Resets the canvas state to default values without clearing the state stack.
         /// </summary>
-        public void ResetState() { _state.Reset(); InvalidateDrawState(); }
+        public void ResetState() { _state.Reset(); _anchorVersion++; InvalidateDrawState(); }
 
         /// <summary>
         /// Sets the color used for stroking paths.
@@ -744,12 +877,14 @@ namespace Prowl.Quill
         /// <param name="texture">The texture to apply, or null to clear the brush texture.</param>
         public void SetBrushTexture(object? texture)
         {
+            _state.brush.Type = BrushType.None;
             _state.brush.Texture = texture;
             // Default texture transform: 1 pixel = 1 texel, starting at origin
             if (texture != null && _state.brush.TextureTransform == Transform2D.Identity)
             {
                 var size = _renderer.GetTextureSize(texture);
                 _state.brush.TextureTransform = Transform2D.CreateScale(1.0f / size.X, 1.0f / size.Y);
+                _anchorVersion++;
             }
             InvalidateDrawState();
         }
@@ -770,6 +905,7 @@ namespace Prowl.Quill
         /// </summary>
         public void ClearBrushTexture()
         {
+            _state.brush.Type = BrushType.None;
             _state.brush.Texture = null;
             _state.brush.TextureTransform = Transform2D.Identity;
             InvalidateDrawState();
@@ -992,6 +1128,7 @@ namespace Prowl.Quill
             _state.scissor = _state.transform * Transform2D.CreateTranslation(x + w * 0.5f, y + h * 0.5f);
             _state.scissorExtent.X = (w * 0.5f) * _framebufferScale;
             _state.scissorExtent.Y = (h * 0.5f) * _framebufferScale;
+            _anchorVersion++;
             InvalidateDrawState();
         }
 
@@ -1089,6 +1226,7 @@ namespace Prowl.Quill
             _state.scissor = Transform2D.Identity;
             _state.scissorExtent.X = -1.0f;
             _state.scissorExtent.Y = -1.0f;
+            _anchorVersion++;
             InvalidateDrawState();
         }
         #endregion
@@ -1123,13 +1261,13 @@ namespace Prowl.Quill
         /// <summary>
         /// Resets the current transformation to the identity matrix.
         /// </summary>
-        public void ResetTransform() => _state.SetTransform(Transform2D.Identity);
+        public void ResetTransform() { _state.SetTransform(Transform2D.Identity); _anchorVersion++; }
 
         /// <summary>
         /// Sets the current transformation matrix directly.
         /// </summary>
         /// <param name="xform">The transformation matrix to set.</param>
-        public void CurrentTransform(Transform2D xform) => _state.SetTransform(xform);
+        public void CurrentTransform(Transform2D xform) { _state.SetTransform(xform); _anchorVersion++; }
 
         /// <summary>
         /// Transforms a point from logical units to pixel coordinates, applying the current transformation.
@@ -1165,6 +1303,7 @@ namespace Prowl.Quill
         public void RequestNewDrawCall()
         {
             _isNewDrawCallRequested = true;
+            _newDrawCallRequests++;
         }
 
         /// <summary>
@@ -1183,7 +1322,7 @@ namespace Prowl.Quill
         public void AddVertices(List<Vertex> verts)
         {
             float globalAlpha = _globalAlpha;
-            Reserve(_vertices, verts.Count);
+            _vertices.Reserve(verts.Count);
             for (int i = 0; i < verts.Count; i++)
                 _vertices.Add(Premultiply(verts[i], globalAlpha));
         }
@@ -1219,16 +1358,7 @@ namespace Prowl.Quill
         // per-vertex premultiply that AddVertices performs.
         private void AddVerticesRaw(List<Vertex> verts)
         {
-            Reserve(_vertices, verts.Count);
             _vertices.AddRange(verts);
-        }
-
-        // netstandard2.1 has no List.EnsureCapacity, so grow via the Capacity setter instead.
-        private static void Reserve<T>(List<T> list, int additional)
-        {
-            int needed = list.Count + additional;
-            if (list.Capacity < needed)
-                list.Capacity = needed;
         }
 
         /// <summary>
@@ -1271,7 +1401,7 @@ namespace Prowl.Quill
             if (indices.Count == 0)
                 return;
 
-            Reserve(_indices, indices.Count);
+            _indices.Reserve(indices.Count);
             for (int i = 0; i < indices.Count; i++)
                 _indices.Add(indices[i]);
 
@@ -1280,28 +1410,42 @@ namespace Prowl.Quill
 
         private void AddTriangleCount(int count)
         {
+            // Fast path: the state has not been touched since it was last verified against the draw
+            // call still on the end of the list, so nothing can have changed and no hash or field
+            // comparison is needed. This is what the overwhelming majority of shapes hit.
+            if (!_drawStateDirty && !_isNewDrawCallRequested && _verifiedDrawCall == _drawCalls.Count - 1)
+            {
+                _drawCalls[_verifiedDrawCall].ElementCount += count * 3;
+                return;
+            }
+
             int currentHash = ComputeDrawStateHash();
 
             if (_drawCalls.Count == 0)
-            {
-                _drawCalls.Add(new DrawCall());
-            }
+                _drawCalls.Add();
 
-            DrawCall lastDrawCall = _drawCalls[_drawCalls.Count - 1];
+            ref DrawCall lastDrawCall = ref _drawCalls.Last;
 
-            bool isDrawStateSame = lastDrawCall.stateHash == currentHash;
+            // The hash is the cheap rejection; the field comparison is what makes the merge correct.
+            // On a collision the old code would silently fold two different brushes into one batch.
+            bool isDrawStateSame = lastDrawCall.stateHash == currentHash
+                                && lastDrawCall.MatchesState(in _state, _currentFontAtlas);
 
             if (!isDrawStateSame || _isNewDrawCallRequested)
             {
                 // If draw state has changed and the last draw call has already been used, add a new draw call
                 if (lastDrawCall.ElementCount != 0)
-                    _drawCalls.Add(new DrawCall());
+                    lastDrawCall = ref _drawCalls.Add();
 
-                lastDrawCall = _drawCalls[_drawCalls.Count - 1];
                 lastDrawCall.scissor = _state.scissor;
                 lastDrawCall.scissorExtent = _state.scissorExtent;
                 lastDrawCall.Brush = _state.brush;
                 lastDrawCall.fontAtlas = _currentFontAtlas;
+
+                // Invert once here rather than on every backend property read.
+                lastDrawCall.scissorInverse = _state.scissor.Inverse();
+                lastDrawCall.brushInverse = _state.brush.Transform.Inverse();
+                lastDrawCall.textureInverse = _state.brush.TextureTransform.Inverse();
                 // Clone uniforms to avoid reference sharing between draw calls
                 if (lastDrawCall.Brush.Uniforms != null)
                     lastDrawCall.Brush.Uniforms = lastDrawCall.Brush.Uniforms.Clone();
@@ -1311,7 +1455,10 @@ namespace Prowl.Quill
             }
 
             lastDrawCall.ElementCount += count * 3;
-            _drawCalls[_drawCalls.Count - 1] = lastDrawCall;
+
+            // This draw call now provably carries the current state, so the fast path above can take
+            // over until something invalidates it.
+            _verifiedDrawCall = _drawCalls.Count - 1;
         }
 
         /// <summary>
@@ -1335,9 +1482,19 @@ namespace Prowl.Quill
         /// </remarks>
         public void BeginPath()
         {
-            _subPaths.Clear();
+            ReleaseSubPaths();
             _currentSubPath = null;
             _isPathReady = true;
+        }
+
+        private void ReleaseSubPaths()
+        {
+            for (int i = 0; i < _subPaths.Count; i++)
+            {
+                _subPaths[i].Points.Clear();
+                _freeSubPaths.Push(_subPaths[i]);
+            }
+            _subPaths.Clear();
         }
 
         /// <summary>
@@ -1355,7 +1512,7 @@ namespace Prowl.Quill
             if (!_isPathReady)
                 BeginPath();
 
-            _currentSubPath = new SubPath(new List<Float2>());
+            _currentSubPath = _freeSubPaths.Count > 0 ? _freeSubPaths.Pop() : new SubPath(new List<Float2>());
             _currentSubPath.Points.Add(new Float2(x, y));
             _subPaths.Add(_currentSubPath);
         }
@@ -1818,6 +1975,7 @@ namespace Prowl.Quill
             if (_subPaths.Count == 0)
                 return;
 
+            _tessellations++;
             var tess = new Tess();
             foreach (var path in _subPaths)
             {
@@ -1838,8 +1996,8 @@ namespace Prowl.Quill
 
             // Create vertices and triangles
             uint startVertexIndex = (uint)_vertices.Count;
-            Reserve(_vertices, vertices.Length);
-            Reserve(_indices, indices.Length);
+            _vertices.Reserve(vertices.Length);
+            _indices.Reserve(indices.Length);
             for (int i = 0; i < vertices.Length; i++)
             {
                 var vertex = vertices[i];
@@ -1966,16 +2124,16 @@ namespace Prowl.Quill
 
                 // Core fan triangle.
                 _indices.Add(baseIndex);
-                _indices.Add(inner0);
                 _indices.Add(inner1);
+                _indices.Add(inner0);
 
                 // Fringe ribbon quad (inner0 -> outer0 -> outer1 -> inner1).
                 _indices.Add(inner0);
+                _indices.Add(outer1);
                 _indices.Add(outer0);
-                _indices.Add(outer1);
                 _indices.Add(inner0);
-                _indices.Add(outer1);
                 _indices.Add(inner1);
+                _indices.Add(outer1);
             }
 
             AddTriangleCount(n * 3);
@@ -2026,7 +2184,7 @@ namespace Prowl.Quill
 
             uint startVertexIndex = (uint)_vertices.Count;
             AddVerticesRaw(verts);
-            Reserve(_indices, idxs.Count);
+            _indices.Reserve(idxs.Count);
             for (int i = 0; i < idxs.Count; i++)
                 _indices.Add(startVertexIndex + idxs[i]);
 
@@ -2286,15 +2444,15 @@ namespace Prowl.Quill
             AddVertex(new Vertex(o3, fringe, color));
 
             // Solid core (2 triangles).
-            _indices.Add(b); _indices.Add(b + 1); _indices.Add(b + 2);
-            _indices.Add(b); _indices.Add(b + 2); _indices.Add(b + 3);
+            _indices.Add(b); _indices.Add(b + 2); _indices.Add(b + 1);
+            _indices.Add(b); _indices.Add(b + 3); _indices.Add(b + 2);
             // Fringe frame (4 edges, 2 triangles each).
             for (uint e = 0; e < 4; e++)
             {
                 uint nx = (e + 1) & 3;
                 uint inE = b + e, inN = b + nx, outE = b + 4 + e, outN = b + 4 + nx;
-                _indices.Add(inE); _indices.Add(outE); _indices.Add(outN);
-                _indices.Add(inE); _indices.Add(outN); _indices.Add(inN);
+                _indices.Add(inE); _indices.Add(outN); _indices.Add(outE);
+                _indices.Add(inE); _indices.Add(inN); _indices.Add(outN);
             }
 
             AddTriangleCount(10);
@@ -2416,12 +2574,116 @@ namespace Prowl.Quill
                 uint inner1 = b + 1 + (uint)(next * 2);
                 uint outer1 = b + 2 + (uint)(next * 2);
 
-                _indices.Add(b); _indices.Add(inner0); _indices.Add(inner1);          // core fan
-                _indices.Add(inner0); _indices.Add(outer0); _indices.Add(outer1);     // fringe
-                _indices.Add(inner0); _indices.Add(outer1); _indices.Add(inner1);
+                _indices.Add(b); _indices.Add(inner1); _indices.Add(inner0);          // core fan
+                _indices.Add(inner0); _indices.Add(outer1); _indices.Add(outer0);     // fringe
+                _indices.Add(inner0); _indices.Add(inner1); _indices.Add(outer1);
             }
 
             AddTriangleCount(ringCount * 3);
+        }
+
+        /// <summary>
+        /// Fills the band between two rounded rectangles sharing the same corner radii, straight from
+        /// vertices instead of tessellating a path. Meant for shadows and outlines, where the inner
+        /// rectangle is punched out of the outer one. The edges are not anti-aliased, matching
+        /// <see cref="FillComplex"/>.
+        /// This does not modify or use the current path.
+        /// </summary>
+        /// <returns>
+        /// False, drawing nothing, when the inner rectangle is not fully inside the outer one, since
+        /// the band is then not a ring. Callers fall back to an even-odd path fill for that case.
+        /// </returns>
+        public bool RoundedRectRingFilled(float outerX, float outerY, float outerWidth, float outerHeight,
+                                          float innerX, float innerY, float innerWidth, float innerHeight,
+                                          float tlRadii, float trRadii, float brRadii, float blRadii,
+                                          Color32 color)
+        {
+            if (outerWidth <= 0 || outerHeight <= 0 || innerWidth <= 0 || innerHeight <= 0)
+                return false;
+
+            float outerMax = Maths.Min(outerWidth, outerHeight) / 2;
+            float innerMax = Maths.Min(innerWidth, innerHeight) / 2;
+
+            // Both outlines take the same number of points per corner so they pair up into quads.
+            int Segments(float r) => r > 0 ? Maths.Max(1, (int)Maths.Ceiling(Maths.PI * r / 2 / _state.roundingMinDistance)) : 0;
+            float tlO = Maths.Min(tlRadii, outerMax), tlI = Maths.Min(tlRadii, innerMax);
+            float trO = Maths.Min(trRadii, outerMax), trI = Maths.Min(trRadii, innerMax);
+            float brO = Maths.Min(brRadii, outerMax), brI = Maths.Min(brRadii, innerMax);
+            float blO = Maths.Min(blRadii, outerMax), blI = Maths.Min(blRadii, innerMax);
+            int tlS = Segments(tlO), trS = Segments(trO), brS = Segments(brO), blS = Segments(blO);
+
+            int count = (tlS + 1) + (trS + 1) + (brS + 1) + (blS + 1);
+            Span<Float2> outer = count <= 256 ? stackalloc Float2[count] : new Float2[count];
+            Span<Float2> inner = count <= 256 ? stackalloc Float2[count] : new Float2[count];
+
+            int n = 0;
+            void Corner(Span<Float2> points, float cx, float cy, float r, float startAngle, int segs)
+            {
+                if (segs == 0)
+                {
+                    points[n] = new Float2(cx, cy);
+                    return;
+                }
+
+                float step = Maths.PI / 2 / segs;
+                for (int j = 0; j <= segs; j++)
+                {
+                    float angle = startAngle + j * step;
+                    points[n + j] = new Float2(cx + r * MathF.Cos(angle), cy + r * MathF.Sin(angle));
+                }
+            }
+
+            // Ring order TL, TR, BR, BL, each arc sweeping +90 degrees. A square corner is one point.
+            void Outline(Span<Float2> points, float x, float y, float w, float h, float tl, float tr, float br, float bl)
+            {
+                n = 0;
+                Corner(points, x + tl, y + tl, tl, Maths.PI, tlS); n += tlS + 1;
+                Corner(points, x + w - tr, y + tr, tr, Maths.PI * 1.5f, trS); n += trS + 1;
+                Corner(points, x + w - br, y + h - br, br, 0f, brS); n += brS + 1;
+                Corner(points, x + bl, y + h - bl, bl, Maths.PI * 0.5f, blS); n += blS + 1;
+            }
+
+            Outline(outer, outerX, outerY, outerWidth, outerHeight, tlO, trO, brO, blO);
+            Outline(inner, innerX, innerY, innerWidth, innerHeight, tlI, trI, brI, blI);
+
+            // With every triangle wound the same way the strip covers exactly the outer shape minus the
+            // inner one. An inner rectangle reaching outside the outer one always flips at least one.
+            float ox = outerX + outerWidth / 2, oy = outerY + outerHeight / 2;
+            for (int k = 0; k < count; k++)
+            {
+                int next = (k + 1) % count;
+                if (Cross(inner[k], outer[next], outer[k]) > 1e-4 || Cross(inner[k], inner[next], outer[next]) > 1e-4)
+                    return false;
+            }
+
+            // Measured about the outer centre so large canvas coordinates do not swamp the sign.
+            double Cross(Float2 a, Float2 b, Float2 c)
+            {
+                double ax = a.X - ox, ay = a.Y - oy;
+                return ((double)b.X - ox - ax) * ((double)c.Y - oy - ay) - ((double)b.Y - oy - ay) * ((double)c.X - ox - ax);
+            }
+
+            uint b = (uint)_vertices.Count;
+            Float2 uv = new Float2(1f, 1f);
+            _vertices.Reserve(count * 2);
+            for (int k = 0; k < count; k++)
+            {
+                AddVertex(new Vertex(TransformPoint(inner[k]), uv, color));
+                AddVertex(new Vertex(TransformPoint(outer[k]), uv, color));
+            }
+
+            _indices.Reserve(count * 6);
+            for (int k = 0; k < count; k++)
+            {
+                int next = (k + 1) % count;
+                uint inner0 = b + (uint)(k * 2), outer0 = inner0 + 1;
+                uint inner1 = b + (uint)(next * 2), outer1 = inner1 + 1;
+                _indices.Add(inner0); _indices.Add(outer1); _indices.Add(outer0);
+                _indices.Add(inner0); _indices.Add(inner1); _indices.Add(outer1);
+            }
+
+            AddTriangleCount(count * 2);
+            return true;
         }
 
         /// <summary>
@@ -2486,9 +2748,9 @@ namespace Prowl.Quill
                 uint inner1 = b + 1 + (uint)(next * 2);
                 uint outer1 = b + 2 + (uint)(next * 2);
 
-                _indices.Add(b); _indices.Add(inner0); _indices.Add(inner1);          // core fan
-                _indices.Add(inner0); _indices.Add(outer0); _indices.Add(outer1);     // fringe
-                _indices.Add(inner0); _indices.Add(outer1); _indices.Add(inner1);
+                _indices.Add(b); _indices.Add(inner1); _indices.Add(inner0);          // core fan
+                _indices.Add(inner0); _indices.Add(outer1); _indices.Add(outer0);     // fringe
+                _indices.Add(inner0); _indices.Add(inner1); _indices.Add(outer1);
             }
 
             AddTriangleCount(segments * 3);
@@ -2732,240 +2994,6 @@ namespace Prowl.Quill
             Float2 pixelPosition = position * _framebufferScale;
             _scribeRenderer.FontEngine.DrawLayout(layout, pixelPosition, new FontColor(color.R, color.G, color.B, color.A));
         }
-
-        #region Markdown
-
-        /// <summary>
-        /// Represents a parsed and laid out markdown document ready for rendering.
-        /// </summary>
-        public struct QuillMarkdown
-        {
-            internal MarkdownLayoutSettings Settings;
-            internal MarkdownDisplayList List;
-
-            /// <summary>
-            /// Gets the size of the laid out markdown content.
-            /// </summary>
-            public readonly Float2 Size => (Float2)List.Size;
-
-            internal QuillMarkdown(MarkdownLayoutSettings settings, MarkdownDisplayList list)
-            {
-                Settings = settings;
-                List = list;
-            }
-        }
-
-        /// <summary>
-        /// Sets the image provider for loading images referenced in markdown content.
-        /// </summary>
-        /// <param name="provider">The image provider to use.</param>
-        public void SetMarkdownImageProvider(IMarkdownImageProvider provider)
-        {
-            _markdownImageProvider = provider;
-        }
-
-        /// <summary>
-        /// Parses and lays out markdown text for rendering.
-        /// </summary>
-        /// <param name="markdown">The markdown text to parse.</param>
-        /// <param name="settings">The layout settings for rendering.</param>
-        /// <returns>A QuillMarkdown object ready for drawing.</returns>
-        public QuillMarkdown CreateMarkdown(string markdown, MarkdownLayoutSettings settings)
-        {
-            var doc = Markdown.Parse(markdown);
-
-            QuillMarkdown md = new QuillMarkdown() {
-                Settings = settings,
-                List = MarkdownLayoutEngine.Layout(doc, _scribeRenderer.FontEngine, settings, _markdownImageProvider)
-            };
-
-            return md;
-        }
-
-        /// <summary>
-        /// Draws a parsed markdown document at the specified logical-space position.
-        /// </summary>
-        public void DrawMarkdown(QuillMarkdown markdown, Float2 position)
-        {
-            Float2 pixelPosition = position * _framebufferScale;
-            MarkdownLayoutEngine.Render(markdown.List, _scribeRenderer.FontEngine, _scribeRenderer, (Float2)pixelPosition, markdown.Settings);
-        }
-
-        /// <summary>
-        /// Checks if a point is over a link in the markdown content and returns the link URL.
-        /// </summary>
-        /// <param name="markdown">The markdown document to check.</param>
-        /// <param name="renderOffset">The offset where the markdown was rendered.</param>
-        /// <param name="point">The point to check in logical units.</param>
-        /// <param name="useScissor">Whether to respect the current scissor region.</param>
-        /// <param name="href">When returning true, contains the URL of the link at the point.</param>
-        /// <returns>True if a link was found at the point, false otherwise.</returns>
-        public bool GetMarkdownLinkAt(QuillMarkdown markdown, Float2 renderOffset, Float2 point, bool useScissor, out string href)
-        {
-            if (useScissor && _state.scissorExtent.X > 0)
-            {
-                var transformedPoint = _state.scissor.Inverse().TransformPoint(point);
-
-                var distanceFromEdges = new Float2(
-                    Maths.Abs(transformedPoint.X) - _state.scissorExtent.X,
-                    Maths.Abs(transformedPoint.Y) - _state.scissorExtent.Y
-                );
-
-                if (distanceFromEdges.X > 0.5 || distanceFromEdges.Y > 0.5)
-                {
-                    href = null;
-                    return false;
-                }
-            }
-
-            Float2 pixelPoint = point * _framebufferScale;
-            Float2 pixelRenderOffset = renderOffset * _framebufferScale;
-            return MarkdownLayoutEngine.TryGetLinkAt(markdown.List, (Float2)pixelPoint, (Float2)pixelRenderOffset, out href);
-        }
-
-        #endregion
-
-        #region Rich Text
-
-        /// <summary>
-        /// A parsed and laid-out rich-text block ready for animated rendering.
-        /// Wraps a Scribe <see cref="RichTextLayout"/> with the framebuffer scale captured at
-        /// creation, so <see cref="Size"/> and hit testing report values in logical units.
-        /// </summary>
-        public struct QuillRichText
-        {
-            internal RichTextLayout Layout;
-            internal float CreationScale;
-
-            /// <summary>Layout size in logical units.</summary>
-            public readonly Float2 Size => CreationScale > 0f ? Layout.Size / CreationScale : Layout.Size;
-
-            /// <summary>Visible text with all tags stripped (useful for accessibility / clipboard).</summary>
-            public readonly string VisibleText => Layout?.VisibleText ?? string.Empty;
-
-            /// <summary>Re-anchors animation start time on the next draw - replays typewriter etc.</summary>
-            public readonly void Reset() => Layout?.Reset();
-        }
-
-        /// <summary>
-        /// Clones a <see cref="RichTextLayoutSettings"/> and scales its dimensional fields from
-        /// logical units to physical pixels. Tag values like <c>&lt;size=24&gt;</c> are scaled via
-        /// <see cref="RichTextLayoutSettings.AbsoluteSizeScale"/> so source text stays in logical
-        /// units. Frequencies / speeds / phases are unitless and pass through unchanged.
-        /// </summary>
-        private RichTextLayoutSettings ScaleRichSettings(RichTextLayoutSettings src)
-        {
-            return new RichTextLayoutSettings {
-                RegularFont = src.RegularFont,
-                BoldFont = src.BoldFont,
-                ItalicFont = src.ItalicFont,
-                BoldItalicFont = src.BoldItalicFont,
-                MonoFont = src.MonoFont,
-
-                PixelSize = src.PixelSize * _framebufferScale,
-                LineHeight = src.LineHeight,
-                LetterSpacing = src.LetterSpacing * _framebufferScale,
-                WordSpacing = src.WordSpacing * _framebufferScale,
-                TabSize = src.TabSize,
-                DefaultColor = src.DefaultColor,
-                Quality = src.Quality,
-
-                MaxWidth = src.MaxWidth > 0 ? src.MaxWidth * _framebufferScale : 0f,
-                WrapMode = src.WrapMode,
-                Alignment = src.Alignment,
-                AbsoluteSizeScale = _framebufferScale,
-
-                // Pixel-valued effect amplitudes scale; time/relative ones don't.
-                DefaultShakeAmp = src.DefaultShakeAmp * _framebufferScale,
-                DefaultShakeFreq = src.DefaultShakeFreq,
-                DefaultWaveAmp = src.DefaultWaveAmp * _framebufferScale,
-                DefaultWaveFreq = src.DefaultWaveFreq,
-                DefaultWavePhase = src.DefaultWavePhase,
-                DefaultRainbowSpeed = src.DefaultRainbowSpeed,
-                DefaultRainbowSpread = src.DefaultRainbowSpread,
-                DefaultRainbowSat = src.DefaultRainbowSat,
-                DefaultRainbowValue = src.DefaultRainbowValue,
-                DefaultPulseSpeed = src.DefaultPulseSpeed,
-                DefaultPulseAmp = src.DefaultPulseAmp, // relative scale, not pixels
-                DefaultFadeSpeed = src.DefaultFadeSpeed,
-                DefaultJitterAmp = src.DefaultJitterAmp * _framebufferScale,
-                DefaultJitterFreq = src.DefaultJitterFreq,
-                DefaultTypewriterSpeed = src.DefaultTypewriterSpeed,
-                DefaultTypewriterFadeIn = src.DefaultTypewriterFadeIn,
-            };
-        }
-
-        /// <summary>
-        /// Parses a Unity-style rich-text source and lays it out for animated rendering. All
-        /// dimensional fields in <paramref name="settings"/> are in logical units and are
-        /// scaled internally for HiDPI. The returned object is reusable across frames.
-        /// </summary>
-        public QuillRichText CreateRichText(string source, RichTextLayoutSettings settings)
-        {
-            var scaled = ScaleRichSettings(settings);
-            var rt = new RichTextLayout(source, scaled);
-            rt.Update(_scribeRenderer.FontEngine);
-            return new QuillRichText { Layout = rt, CreationScale = _framebufferScale };
-        }
-
-        /// <summary>
-        /// Measures a rich-text source. Returns size in logical units. Convenience for laying out
-        /// once just to get the size; if you'll also draw, prefer
-        /// <see cref="CreateRichText"/> + <see cref="QuillRichText.Size"/>.
-        /// </summary>
-        public Float2 MeasureRichText(string source, RichTextLayoutSettings settings)
-            => CreateRichText(source, settings).Size;
-
-        /// <summary>
-        /// Draws a rich-text block at the given logical-space position.
-        /// <paramref name="currentTime"/> is in seconds; the first draw after creation or
-        /// <see cref="QuillRichText.Reset"/> anchors animation start to that value.
-        /// </summary>
-        public void DrawRichText(QuillRichText text, Float2 position, double currentTime, Float2? origin = null)
-        {
-            if (text.Layout == null) return;
-
-            Float2 pos = position;
-            if (origin.HasValue)
-            {
-                var sz = text.Size;
-                pos.X -= sz.X * origin.Value.X;
-                pos.Y -= sz.Y * origin.Value.Y;
-            }
-            Float2 pixelPos = pos * _framebufferScale;
-            text.Layout.Draw(_scribeRenderer.FontEngine, _scribeRenderer, pixelPos, currentTime);
-        }
-
-        /// <summary>
-        /// Hit-tests a logical-space point against link spans in the rich text.
-        /// </summary>
-        /// <param name="text">The rich text block to query.</param>
-        /// <param name="renderOffset">The logical position passed to the matching <c>DrawRichText</c> call.</param>
-        /// <param name="point">The query point in logical units.</param>
-        /// <param name="useScissor">If true, return false when the point is outside the active scissor.</param>
-        /// <param name="href">When the method returns true, contains the href of the link.</param>
-        public bool GetRichTextLinkAt(QuillRichText text, Float2 renderOffset, Float2 point, bool useScissor, out string href)
-        {
-            href = null;
-            if (text.Layout == null) return false;
-
-            if (useScissor && _state.scissorExtent.X > 0)
-            {
-                var transformedPoint = _state.scissor.Inverse().TransformPoint(point);
-                var distanceFromEdges = new Float2(
-                    Maths.Abs(transformedPoint.X) - _state.scissorExtent.X,
-                    Maths.Abs(transformedPoint.Y) - _state.scissorExtent.Y
-                );
-                if (distanceFromEdges.X > 0.5 || distanceFromEdges.Y > 0.5) return false;
-            }
-
-            // Layout coordinates are in physical pixels; convert the logical query point.
-            Float2 local = (point - renderOffset) * _framebufferScale;
-            href = text.Layout.HitLink(local);
-            return href != null;
-        }
-
-        #endregion
 
         #endregion
 

@@ -12,6 +12,8 @@
     </PropertyGroup>
 
     <ItemGroup>
+      <ProjectReference Include="..\ThirdParty\Prowl\Paper\Paper.csproj" />
+      <ProjectReference Include="..\ThirdParty\Prowl\Origami\Origami.csproj" />
       <ProjectReference Include="..\ThirdParty\Prowl\Quill\Quill.csproj" />
     </ItemGroup>
 
@@ -23,11 +25,6 @@
     <ItemGroup Condition="'$(IsBrowser)' == 'true'">
       <ProjectReference Include="..\Foster.Web\Framework\Foster.Framework.Web.csproj" />
       <ProjectReference Include="..\Foster.Web\Audio\Foster.Audio.Web.csproj" />
-    </ItemGroup>
-
-    <ItemGroup>
-      <PackageReference Include="Prowl.Origami" Version="2.7.0" />
-      <PackageReference Include="Prowl.Paper" Version="2.7.0" />
     </ItemGroup>
 
     <ItemGroup>

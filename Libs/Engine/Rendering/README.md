@@ -38,7 +38,7 @@ glTF、`.dasset` 和 CPU 几何仍采用从外侧看 CCW 的索引，法线朝�
 - 镜像矩阵（负行列式）会反转绕序，cook 时**仅此时**翻一次补偿
   （`GltfModelCooker` 的 `flipWinding = determinant < 0`）。
 - GPU CW 索引的叉积与朝外法线反向是绕序转换的结果；不能用它重算法线或切线。
-  资产层的几何真值仍由 `Tests/Game0/Tests/WindingTests.cs` 锁定。
+  资产层的几何真值仍由 `../DragonLib.Tests/Game0/Tests/WindingTests.cs` 锁定。
 
 ## 矩阵约定
 
