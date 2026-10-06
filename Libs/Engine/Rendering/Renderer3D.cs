@@ -146,6 +146,8 @@ public sealed class Renderer3D : IDisposable
 
     /// <summary>上一帧 End() 中被视锥剔除跳过的 draw 数（诊断/UI 用）。</summary>
     public int LastFrameCulledCount { get; private set; }
+    public int LastFrameOccludedCount { get; private set; }
+    public IOcclusionCuller3D? OcclusionCuller { get; set; }
 
     public Renderer3D(GraphicsDevice graphicsDevice)
     {
@@ -471,6 +473,8 @@ public sealed class Renderer3D : IDisposable
 
             var frustum = camera.GetFrustum();
             LastFrameCulledCount = 0;
+            LastFrameOccludedCount = 0;
+            OcclusionCuller?.BeginFrame(camera);
 
             if (_shadowTarget != null && _shadowMaterial != null)
             {
@@ -496,6 +500,11 @@ public sealed class Renderer3D : IDisposable
                     if (!frustum.IntersectsAabb(worldBounds.Min, worldBounds.Max))
                     {
                         LastFrameCulledCount++;
+                        continue;
+                    }
+                    if (OcclusionCuller?.IsOccluded(worldBounds) == true)
+                    {
+                        LastFrameOccludedCount++;
                         continue;
                     }
                 }

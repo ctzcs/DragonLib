@@ -38,6 +38,11 @@ struct type_Standard3DPointLightBlock
     float4 PointLightMeta;
     float4 PointLightPositionRange[16];
     float4 PointLightColorIntensity[16];
+    float4 SpotLightMeta;
+    float4 SpotLightPositionRange[16];
+    float4 SpotLightColorIntensity[16];
+    float4 SpotLightDirectionOuter[16];
+    float4 SpotLightInner[16];
 };
 
 struct fragment_main_out
@@ -57,766 +62,794 @@ struct fragment_main_in
 fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], constant type_Standard3DLightBlock& Standard3DLightBlock [[buffer(0)]], constant type_Standard3DMaterialBlock& Standard3DMaterialBlock [[buffer(1)]], constant type_Standard3DShadowBlock& Standard3DShadowBlock [[buffer(2)]], constant type_Standard3DPointLightBlock& Standard3DPointLightBlock [[buffer(3)]], texture2d<float> AlbedoTexture [[texture(0)]], texture2d<float> NormalTexture [[texture(1)]], texture2d<float> ShadowMapTexture [[texture(2)]], texture2d<float> MetallicRoughnessTexture [[texture(3)]], texture2d<float> OcclusionTexture [[texture(4)]], texture2d<float> EmissiveTexture [[texture(5)]], texture2d<float> EnvironmentDiffuse [[texture(6)]], texture2d<float> EnvironmentSpecular [[texture(7)]], texture2d<float> EnvironmentBrdf [[texture(8)]], sampler AlbedoSampler [[sampler(0)]], sampler NormalSampler [[sampler(1)]], sampler ShadowSampler [[sampler(2)]], sampler MetallicRoughnessSampler [[sampler(3)]], sampler OcclusionSampler [[sampler(4)]], sampler EmissiveSampler [[sampler(5)]], sampler EnvironmentDiffuseSampler [[sampler(6)]], sampler EnvironmentSpecularSampler [[sampler(7)]], sampler EnvironmentBrdfSampler [[sampler(8)]])
 {
     fragment_main_out out = {};
-    float4 _224;
+    float4 _227;
     if (Standard3DMaterialBlock.MaterialFlags.x > 0.5)
     {
-        float4 _136 = AlbedoTexture.sample(AlbedoSampler, in.in_var_TEXCOORD2);
-        bool _145;
+        float4 _139 = AlbedoTexture.sample(AlbedoSampler, in.in_var_TEXCOORD2);
+        bool _148;
         if (Standard3DLightBlock.ColorPipeline.x > 0.5)
         {
-            _145 = Standard3DMaterialBlock.PbrParams.z < 0.5;
+            _148 = Standard3DMaterialBlock.PbrParams.z < 0.5;
         }
         else
         {
-            _145 = false;
+            _148 = false;
         }
-        float4 _180;
-        if (_145)
+        float4 _183;
+        if (_148)
         {
-            float _148 = _136.x;
-            float _157;
-            if (_148 <= 0.040449999272823333740234375)
+            float _151 = _139.x;
+            float _160;
+            if (_151 <= 0.040449999272823333740234375)
             {
-                _157 = _148 * 0.077399380505084991455078125;
+                _160 = _151 * 0.077399380505084991455078125;
             }
             else
             {
-                _157 = powr((_148 + 0.054999999701976776123046875) * 0.947867333889007568359375, 2.400000095367431640625);
+                _160 = powr((_151 + 0.054999999701976776123046875) * 0.947867333889007568359375, 2.400000095367431640625);
             }
-            float _158 = _136.y;
-            float _167;
-            if (_158 <= 0.040449999272823333740234375)
+            float _161 = _139.y;
+            float _170;
+            if (_161 <= 0.040449999272823333740234375)
             {
-                _167 = _158 * 0.077399380505084991455078125;
+                _170 = _161 * 0.077399380505084991455078125;
             }
             else
             {
-                _167 = powr((_158 + 0.054999999701976776123046875) * 0.947867333889007568359375, 2.400000095367431640625);
+                _170 = powr((_161 + 0.054999999701976776123046875) * 0.947867333889007568359375, 2.400000095367431640625);
             }
-            float _168 = _136.z;
-            float _177;
-            if (_168 <= 0.040449999272823333740234375)
+            float _171 = _139.z;
+            float _180;
+            if (_171 <= 0.040449999272823333740234375)
             {
-                _177 = _168 * 0.077399380505084991455078125;
+                _180 = _171 * 0.077399380505084991455078125;
             }
             else
             {
-                _177 = powr((_168 + 0.054999999701976776123046875) * 0.947867333889007568359375, 2.400000095367431640625);
+                _180 = powr((_171 + 0.054999999701976776123046875) * 0.947867333889007568359375, 2.400000095367431640625);
             }
-            float3 _178 = float3(_157, _167, _177);
-            _180 = float4(_178.x, _178.y, _178.z, _136.w);
+            float3 _181 = float3(_160, _170, _180);
+            _183 = float4(_181.x, _181.y, _181.z, _139.w);
         }
         else
         {
-            _180 = _136;
+            _183 = _139;
         }
-        bool _187;
+        bool _190;
         if (Standard3DLightBlock.ColorPipeline.x < 0.5)
         {
-            _187 = Standard3DMaterialBlock.PbrParams.z > 0.5;
+            _190 = Standard3DMaterialBlock.PbrParams.z > 0.5;
         }
         else
         {
-            _187 = false;
+            _190 = false;
         }
-        float4 _222;
-        if (_187)
+        float4 _225;
+        if (_190)
         {
-            float _199;
-            if (_180.x <= 0.003130800090730190277099609375)
+            float _202;
+            if (_183.x <= 0.003130800090730190277099609375)
             {
-                _199 = _180.x * 12.9200000762939453125;
+                _202 = _183.x * 12.9200000762939453125;
             }
             else
             {
-                _199 = (1.05499994754791259765625 * powr(_180.x, 0.4166666567325592041015625)) - 0.054999999701976776123046875;
+                _202 = (1.05499994754791259765625 * powr(_183.x, 0.4166666567325592041015625)) - 0.054999999701976776123046875;
             }
-            float _209;
-            if (_180.y <= 0.003130800090730190277099609375)
+            float _212;
+            if (_183.y <= 0.003130800090730190277099609375)
             {
-                _209 = _180.y * 12.9200000762939453125;
+                _212 = _183.y * 12.9200000762939453125;
             }
             else
             {
-                _209 = (1.05499994754791259765625 * powr(_180.y, 0.4166666567325592041015625)) - 0.054999999701976776123046875;
+                _212 = (1.05499994754791259765625 * powr(_183.y, 0.4166666567325592041015625)) - 0.054999999701976776123046875;
             }
-            float _219;
-            if (_180.z <= 0.003130800090730190277099609375)
+            float _222;
+            if (_183.z <= 0.003130800090730190277099609375)
             {
-                _219 = _180.z * 12.9200000762939453125;
+                _222 = _183.z * 12.9200000762939453125;
             }
             else
             {
-                _219 = (1.05499994754791259765625 * powr(_180.z, 0.4166666567325592041015625)) - 0.054999999701976776123046875;
+                _222 = (1.05499994754791259765625 * powr(_183.z, 0.4166666567325592041015625)) - 0.054999999701976776123046875;
             }
-            float3 _220 = float3(_199, _209, _219);
-            _222 = float4(_220.x, _220.y, _220.z, _180.w);
+            float3 _223 = float3(_202, _212, _222);
+            _225 = float4(_223.x, _223.y, _223.z, _183.w);
         }
         else
         {
-            _222 = _180;
+            _225 = _183;
         }
-        _224 = Standard3DMaterialBlock.BaseColorFactor * _222;
+        _227 = Standard3DMaterialBlock.BaseColorFactor * _225;
     }
     else
     {
-        _224 = Standard3DMaterialBlock.BaseColorFactor;
+        _227 = Standard3DMaterialBlock.BaseColorFactor;
     }
-    bool _231;
+    bool _234;
     if (Standard3DMaterialBlock.MaterialFlags.w > 0.5)
     {
-        _231 = Standard3DMaterialBlock.MaterialFlags.w < 1.5;
+        _234 = Standard3DMaterialBlock.MaterialFlags.w < 1.5;
     }
     else
     {
-        _231 = false;
+        _234 = false;
     }
-    if (_231)
+    if (_234)
     {
-        if ((_224.w - Standard3DMaterialBlock.AlphaParams.x) < 0.0)
+        if ((_227.w - Standard3DMaterialBlock.AlphaParams.x) < 0.0)
         {
             discard_fragment();
         }
     }
-    float3 _241 = fast::normalize(in.in_var_TEXCOORD0);
-    float3 _268;
+    float3 _244 = fast::normalize(in.in_var_TEXCOORD0);
+    float3 _271;
     if (Standard3DMaterialBlock.MaterialFlags.y > 0.5)
     {
-        float3 _248 = fast::normalize(in.in_var_TEXCOORD1.xyz);
-        float3 _260 = (NormalTexture.sample(NormalSampler, in.in_var_TEXCOORD2).xyz * 2.0) - float3(1.0);
-        float2 _264 = _260.xy * Standard3DMaterialBlock.MaterialFlags.z;
-        _268 = fast::normalize(float3x3(_248, cross(_241, _248) * in.in_var_TEXCOORD1.w, _241) * float3(_264.x, _264.y, _260.z));
+        float3 _251 = fast::normalize(in.in_var_TEXCOORD1.xyz);
+        float3 _263 = (NormalTexture.sample(NormalSampler, in.in_var_TEXCOORD2).xyz * 2.0) - float3(1.0);
+        float2 _267 = _263.xy * Standard3DMaterialBlock.MaterialFlags.z;
+        _271 = fast::normalize(float3x3(_251, cross(_244, _251) * in.in_var_TEXCOORD1.w, _244) * float3(_267.x, _267.y, _263.z));
     }
     else
     {
-        _268 = _241;
+        _271 = _244;
     }
-    float2 _284;
+    float2 _287;
     if (Standard3DMaterialBlock.TextureFlags.x > 0.5)
     {
-        _284 = Standard3DMaterialBlock.PbrParams.xy * MetallicRoughnessTexture.sample(MetallicRoughnessSampler, in.in_var_TEXCOORD2).zy;
+        _287 = Standard3DMaterialBlock.PbrParams.xy * MetallicRoughnessTexture.sample(MetallicRoughnessSampler, in.in_var_TEXCOORD2).zy;
     }
     else
     {
-        _284 = Standard3DMaterialBlock.PbrParams.xy;
+        _287 = Standard3DMaterialBlock.PbrParams.xy;
     }
-    float _286 = fast::clamp(_284.x, 0.0, 1.0);
-    float _288 = fast::clamp(_284.y, 0.0500000007450580596923828125, 1.0);
-    float3 _293 = fast::normalize(Standard3DLightBlock.CameraPosition.xyz - in.in_var_TEXCOORD4);
-    float _642;
+    float _289 = fast::clamp(_287.x, 0.0, 1.0);
+    float _291 = fast::clamp(_287.y, 0.0500000007450580596923828125, 1.0);
+    float3 _296 = fast::normalize(Standard3DLightBlock.CameraPosition.xyz - in.in_var_TEXCOORD4);
+    float _645;
     do
     {
         if (Standard3DShadowBlock.ShadowSettings.x < 0.5)
         {
-            _642 = 1.0;
+            _645 = 1.0;
             break;
         }
         if (Standard3DShadowBlock.CascadeSettings.x < 0.5)
         {
-            float _385;
+            float _388;
             do
             {
-                float3 _312 = in.in_var_TEXCOORD3.xyz / float3(in.in_var_TEXCOORD3.w);
-                float2 _318 = (float2(_312.x, -_312.y) * 0.5) + float2(0.5);
-                bool _326;
-                if (!any(_318 < float2(0.0)))
+                float3 _315 = in.in_var_TEXCOORD3.xyz / float3(in.in_var_TEXCOORD3.w);
+                float2 _321 = (float2(_315.x, -_315.y) * 0.5) + float2(0.5);
+                bool _329;
+                if (!any(_321 < float2(0.0)))
                 {
-                    _326 = any(_318 > float2(1.0));
+                    _329 = any(_321 > float2(1.0));
                 }
                 else
                 {
-                    _326 = true;
+                    _329 = true;
                 }
-                bool _332;
-                if (!_326)
+                bool _335;
+                if (!_329)
                 {
-                    _332 = _312.z < 0.0;
-                }
-                else
-                {
-                    _332 = true;
-                }
-                bool _338;
-                if (!_332)
-                {
-                    _338 = _312.z > 1.0;
+                    _335 = _315.z < 0.0;
                 }
                 else
                 {
-                    _338 = true;
+                    _335 = true;
                 }
-                if (_338)
+                bool _341;
+                if (!_335)
                 {
-                    _385 = 1.0;
+                    _341 = _315.z > 1.0;
+                }
+                else
+                {
+                    _341 = true;
+                }
+                if (_341)
+                {
+                    _388 = 1.0;
                     break;
                 }
-                float _342;
-                int _345;
-                _342 = 0.0;
-                _345 = -1;
-                float _343;
-                for (; _345 <= 1; _342 = _343, _345++)
+                float _345;
+                int _348;
+                _345 = 0.0;
+                _348 = -1;
+                float _346;
+                for (; _348 <= 1; _345 = _346, _348++)
                 {
-                    _343 = _342;
-                    for (int _353 = -1; _353 <= 1; )
+                    _346 = _345;
+                    for (int _356 = -1; _356 <= 1; )
                     {
-                        float2 _365 = float2(Standard3DShadowBlock.ShadowSettings.y * 0.5);
-                        _343 += float((_312.z - Standard3DShadowBlock.ShadowSettings.z) <= ShadowMapTexture.sample(ShadowSampler, fast::clamp(_318 + (float2(float(_353), float(_345)) * Standard3DShadowBlock.ShadowSettings.y), _365, float2(1.0) - _365)).x);
-                        _353++;
+                        float2 _368 = float2(Standard3DShadowBlock.ShadowSettings.y * 0.5);
+                        _346 += float((_315.z - Standard3DShadowBlock.ShadowSettings.z) <= ShadowMapTexture.sample(ShadowSampler, fast::clamp(_321 + (float2(float(_356), float(_348)) * Standard3DShadowBlock.ShadowSettings.y), _368, float2(1.0) - _368)).x);
+                        _356++;
                         continue;
                     }
                 }
-                _385 = 1.0 - (Standard3DShadowBlock.ShadowSettings.w * (1.0 - (_342 * 0.111111111938953399658203125)));
+                _388 = 1.0 - (Standard3DShadowBlock.ShadowSettings.w * (1.0 - (_345 * 0.111111111938953399658203125)));
                 break;
             } while(false);
-            _642 = _385;
+            _645 = _388;
             break;
         }
-        float _390 = dot(in.in_var_TEXCOORD4 - Standard3DLightBlock.CameraPosition.xyz, Standard3DShadowBlock.ShadowCameraForward.xyz);
-        if (_390 > Standard3DShadowBlock.CascadeSplits.w)
+        float _393 = dot(in.in_var_TEXCOORD4 - Standard3DLightBlock.CameraPosition.xyz, Standard3DShadowBlock.ShadowCameraForward.xyz);
+        if (_393 > Standard3DShadowBlock.CascadeSplits.w)
         {
-            _642 = 1.0;
+            _645 = 1.0;
             break;
         }
-        int _413;
-        if (_390 <= Standard3DShadowBlock.CascadeSplits.x)
+        int _416;
+        if (_393 <= Standard3DShadowBlock.CascadeSplits.x)
         {
-            _413 = 0;
+            _416 = 0;
         }
         else
         {
-            int _412;
-            if (_390 <= Standard3DShadowBlock.CascadeSplits.y)
+            int _415;
+            if (_393 <= Standard3DShadowBlock.CascadeSplits.y)
             {
-                _412 = 1;
+                _415 = 1;
             }
             else
             {
-                _412 = (_390 <= Standard3DShadowBlock.CascadeSplits.z) ? 2 : 3;
+                _415 = (_393 <= Standard3DShadowBlock.CascadeSplits.z) ? 2 : 3;
             }
-            _413 = _412;
+            _416 = _415;
         }
-        int _414 = (_413);
-        float4 _420 = float4(in.in_var_TEXCOORD4, 1.0);
-        float4 _421 = Standard3DShadowBlock.CascadeMatrices[_414] * _420;
-        float _510;
+        int _417 = (_416);
+        float4 _423 = float4(in.in_var_TEXCOORD4, 1.0);
+        float4 _424 = Standard3DShadowBlock.CascadeMatrices[_417] * _423;
+        float _513;
         do
         {
-            float3 _427 = _421.xyz / float3(_421.w);
-            float2 _433 = (float2(_427.x, -_427.y) * 0.5) + float2(0.5);
-            bool _441;
-            if (!any(_433 < float2(0.0)))
+            float3 _430 = _424.xyz / float3(_424.w);
+            float2 _436 = (float2(_430.x, -_430.y) * 0.5) + float2(0.5);
+            bool _444;
+            if (!any(_436 < float2(0.0)))
             {
-                _441 = any(_433 > float2(1.0));
+                _444 = any(_436 > float2(1.0));
             }
             else
             {
-                _441 = true;
+                _444 = true;
             }
-            bool _447;
-            if (!_441)
+            bool _450;
+            if (!_444)
             {
-                _447 = _427.z < 0.0;
-            }
-            else
-            {
-                _447 = true;
-            }
-            bool _453;
-            if (!_447)
-            {
-                _453 = _427.z > 1.0;
+                _450 = _430.z < 0.0;
             }
             else
             {
-                _453 = true;
+                _450 = true;
             }
-            if (_453)
+            bool _456;
+            if (!_450)
             {
-                _510 = 1.0;
+                _456 = _430.z > 1.0;
+            }
+            else
+            {
+                _456 = true;
+            }
+            if (_456)
+            {
+                _513 = 1.0;
                 break;
             }
-            float2 _461 = float2(float(_414 - 2 * (_414 / 2)), float(_414 / 2)) * 0.5;
-            float2 _462 = _461 + float2(0.5);
-            float2 _464 = _461 + (_433 * 0.5);
-            float _466;
-            int _469;
-            _466 = 0.0;
-            _469 = -1;
-            float _467;
-            for (; _469 <= 1; _466 = _467, _469++)
+            float2 _464 = float2(float(_417 - 2 * (_417 / 2)), float(_417 / 2)) * 0.5;
+            float2 _465 = _464 + float2(0.5);
+            float2 _467 = _464 + (_436 * 0.5);
+            float _469;
+            int _472;
+            _469 = 0.0;
+            _472 = -1;
+            float _470;
+            for (; _472 <= 1; _469 = _470, _472++)
             {
-                _467 = _466;
-                for (int _477 = -1; _477 <= 1; )
+                _470 = _469;
+                for (int _480 = -1; _480 <= 1; )
                 {
-                    float2 _489 = float2(Standard3DShadowBlock.ShadowSettings.y * 0.5);
-                    _467 += float((_427.z - Standard3DShadowBlock.ShadowSettings.z) <= ShadowMapTexture.sample(ShadowSampler, fast::clamp(_464 + (float2(float(_477), float(_469)) * Standard3DShadowBlock.ShadowSettings.y), _461 + _489, _462 - _489)).x);
-                    _477++;
+                    float2 _492 = float2(Standard3DShadowBlock.ShadowSettings.y * 0.5);
+                    _470 += float((_430.z - Standard3DShadowBlock.ShadowSettings.z) <= ShadowMapTexture.sample(ShadowSampler, fast::clamp(_467 + (float2(float(_480), float(_472)) * Standard3DShadowBlock.ShadowSettings.y), _464 + _492, _465 - _492)).x);
+                    _480++;
                     continue;
                 }
             }
-            _510 = 1.0 - (Standard3DShadowBlock.ShadowSettings.w * (1.0 - (_466 * 0.111111111938953399658203125)));
+            _513 = 1.0 - (Standard3DShadowBlock.ShadowSettings.w * (1.0 - (_469 * 0.111111111938953399658203125)));
             break;
         } while(false);
-        bool _517;
-        if (_414 < 3)
+        bool _520;
+        if (_417 < 3)
         {
-            _517 = Standard3DShadowBlock.CascadeSettings.y > 0.0;
+            _520 = Standard3DShadowBlock.CascadeSettings.y > 0.0;
         }
         else
         {
-            _517 = false;
+            _520 = false;
         }
-        float _641;
-        if (_517)
+        float _644;
+        if (_520)
         {
-            float _530;
-            if (_414 == 0)
+            float _533;
+            if (_417 == 0)
             {
-                _530 = Standard3DShadowBlock.ShadowCameraForward.w;
+                _533 = Standard3DShadowBlock.ShadowCameraForward.w;
             }
             else
             {
-                _530 = Standard3DShadowBlock.CascadeSplits[uint(_414 - 1)];
+                _533 = Standard3DShadowBlock.CascadeSplits[uint(_417 - 1)];
             }
-            uint _531 = uint(_414);
-            float _538 = precise::max((Standard3DShadowBlock.CascadeSplits[_531] - _530) * Standard3DShadowBlock.CascadeSettings.y, 9.9999997473787516355514526367188e-05);
-            float _542 = fast::clamp(((_390 - Standard3DShadowBlock.CascadeSplits[_531]) + _538) / _538, 0.0, 1.0);
-            float _640;
-            if (_542 > 0.0)
+            uint _534 = uint(_417);
+            float _541 = precise::max((Standard3DShadowBlock.CascadeSplits[_534] - _533) * Standard3DShadowBlock.CascadeSettings.y, 9.9999997473787516355514526367188e-05);
+            float _545 = fast::clamp(((_393 - Standard3DShadowBlock.CascadeSplits[_534]) + _541) / _541, 0.0, 1.0);
+            float _643;
+            if (_545 > 0.0)
             {
-                int _546 = _414 + 1;
-                float4 _549 = Standard3DShadowBlock.CascadeMatrices[_546] * _420;
-                float _638;
+                int _549 = _417 + 1;
+                float4 _552 = Standard3DShadowBlock.CascadeMatrices[_549] * _423;
+                float _641;
                 do
                 {
-                    float3 _555 = _549.xyz / float3(_549.w);
-                    float2 _561 = (float2(_555.x, -_555.y) * 0.5) + float2(0.5);
-                    bool _569;
-                    if (!any(_561 < float2(0.0)))
+                    float3 _558 = _552.xyz / float3(_552.w);
+                    float2 _564 = (float2(_558.x, -_558.y) * 0.5) + float2(0.5);
+                    bool _572;
+                    if (!any(_564 < float2(0.0)))
                     {
-                        _569 = any(_561 > float2(1.0));
+                        _572 = any(_564 > float2(1.0));
                     }
                     else
                     {
-                        _569 = true;
+                        _572 = true;
                     }
-                    bool _575;
-                    if (!_569)
+                    bool _578;
+                    if (!_572)
                     {
-                        _575 = _555.z < 0.0;
-                    }
-                    else
-                    {
-                        _575 = true;
-                    }
-                    bool _581;
-                    if (!_575)
-                    {
-                        _581 = _555.z > 1.0;
+                        _578 = _558.z < 0.0;
                     }
                     else
                     {
-                        _581 = true;
+                        _578 = true;
                     }
-                    if (_581)
+                    bool _584;
+                    if (!_578)
                     {
-                        _638 = 1.0;
+                        _584 = _558.z > 1.0;
+                    }
+                    else
+                    {
+                        _584 = true;
+                    }
+                    if (_584)
+                    {
+                        _641 = 1.0;
                         break;
                     }
-                    float2 _589 = float2(float(_546 - 2 * (_546 / 2)), float(_546 / 2)) * 0.5;
-                    float2 _590 = _589 + float2(0.5);
-                    float2 _592 = _589 + (_561 * 0.5);
-                    float _594;
-                    int _597;
-                    _594 = 0.0;
-                    _597 = -1;
-                    float _595;
-                    for (; _597 <= 1; _594 = _595, _597++)
+                    float2 _592 = float2(float(_549 - 2 * (_549 / 2)), float(_549 / 2)) * 0.5;
+                    float2 _593 = _592 + float2(0.5);
+                    float2 _595 = _592 + (_564 * 0.5);
+                    float _597;
+                    int _600;
+                    _597 = 0.0;
+                    _600 = -1;
+                    float _598;
+                    for (; _600 <= 1; _597 = _598, _600++)
                     {
-                        _595 = _594;
-                        for (int _605 = -1; _605 <= 1; )
+                        _598 = _597;
+                        for (int _608 = -1; _608 <= 1; )
                         {
-                            float2 _617 = float2(Standard3DShadowBlock.ShadowSettings.y * 0.5);
-                            _595 += float((_555.z - Standard3DShadowBlock.ShadowSettings.z) <= ShadowMapTexture.sample(ShadowSampler, fast::clamp(_592 + (float2(float(_605), float(_597)) * Standard3DShadowBlock.ShadowSettings.y), _589 + _617, _590 - _617)).x);
-                            _605++;
+                            float2 _620 = float2(Standard3DShadowBlock.ShadowSettings.y * 0.5);
+                            _598 += float((_558.z - Standard3DShadowBlock.ShadowSettings.z) <= ShadowMapTexture.sample(ShadowSampler, fast::clamp(_595 + (float2(float(_608), float(_600)) * Standard3DShadowBlock.ShadowSettings.y), _592 + _620, _593 - _620)).x);
+                            _608++;
                             continue;
                         }
                     }
-                    _638 = 1.0 - (Standard3DShadowBlock.ShadowSettings.w * (1.0 - (_594 * 0.111111111938953399658203125)));
+                    _641 = 1.0 - (Standard3DShadowBlock.ShadowSettings.w * (1.0 - (_597 * 0.111111111938953399658203125)));
                     break;
                 } while(false);
-                _640 = mix(_510, _638, _542);
+                _643 = mix(_513, _641, _545);
             }
             else
             {
-                _640 = _510;
+                _643 = _513;
             }
-            _641 = _640;
+            _644 = _643;
         }
         else
         {
-            _641 = _510;
+            _644 = _513;
         }
-        _642 = _641;
+        _645 = _644;
         break;
     } while(false);
-    float3 _647 = fast::normalize(-Standard3DLightBlock.LightDirection.xyz);
-    float3 _653 = fast::normalize(_293 + _647);
-    float _655 = fast::clamp(dot(_268, _647), 0.0, 1.0);
-    float _657 = fast::clamp(dot(_268, _293), 0.0, 1.0);
-    float3 _658 = float3(_286);
-    float3 _659 = mix(float3(0.039999999105930328369140625), _224.xyz, _658);
-    float3 _662 = float3(1.0) - _659;
-    float3 _666 = _659 + (_662 * powr(1.0 - fast::clamp(dot(_653, _293), 0.0, 1.0), 5.0));
-    float _667 = _288 * _288;
-    float _668 = _667 * _667;
-    float _670 = fast::clamp(dot(_268, _653), 0.0, 1.0);
-    float _672 = _668 - 1.0;
-    float _674 = ((_670 * _670) * _672) + 1.0;
-    float _678 = _288 + 1.0;
-    float _680 = (_678 * _678) * 0.125;
-    float _681 = 1.0 - _680;
-    float _684 = _657 / ((_657 * _681) + _680);
-    float _691 = 4.0 * _657;
-    float _697 = 1.0 - _286;
-    int _706 = min(int(Standard3DPointLightBlock.PointLightMeta.x), 16);
-    float3 _708;
-    _708 = (((((float3(1.0) - _666) * _697) * _224.xyz) + ((_666 * ((_668 / ((3.1415927410125732421875 * _674) * _674)) * (_684 * (_655 / ((_655 * _681) + _680))))) / float3(precise::max(_691 * _655, 9.9999997473787516355514526367188e-05)))) * (Standard3DLightBlock.Diffuse.xyz * _642)) * _655;
-    for (int _711 = 0; _711 < _706; )
+    float3 _650 = fast::normalize(-Standard3DLightBlock.LightDirection.xyz);
+    float3 _656 = fast::normalize(_296 + _650);
+    float _658 = fast::clamp(dot(_271, _650), 0.0, 1.0);
+    float _660 = fast::clamp(dot(_271, _296), 0.0, 1.0);
+    float3 _661 = float3(_289);
+    float3 _662 = mix(float3(0.039999999105930328369140625), _227.xyz, _661);
+    float3 _665 = float3(1.0) - _662;
+    float3 _669 = _662 + (_665 * powr(1.0 - fast::clamp(dot(_656, _296), 0.0, 1.0), 5.0));
+    float _670 = _291 * _291;
+    float _671 = _670 * _670;
+    float _673 = fast::clamp(dot(_271, _656), 0.0, 1.0);
+    float _675 = _671 - 1.0;
+    float _677 = ((_673 * _673) * _675) + 1.0;
+    float _681 = _291 + 1.0;
+    float _683 = (_681 * _681) * 0.125;
+    float _684 = 1.0 - _683;
+    float _687 = _660 / ((_660 * _684) + _683);
+    float _694 = 4.0 * _660;
+    float _700 = 1.0 - _289;
+    int _709 = min(int(Standard3DPointLightBlock.PointLightMeta.x), 16);
+    float3 _711;
+    _711 = (((((float3(1.0) - _669) * _700) * _227.xyz) + ((_669 * ((_671 / ((3.1415927410125732421875 * _677) * _677)) * (_687 * (_658 / ((_658 * _684) + _683))))) / float3(precise::max(_694 * _658, 9.9999997473787516355514526367188e-05)))) * (Standard3DLightBlock.Diffuse.xyz * _645)) * _658;
+    for (int _714 = 0; _714 < _709; )
     {
-        float3 _718 = Standard3DPointLightBlock.PointLightPositionRange[_711].xyz - in.in_var_TEXCOORD4;
-        float _719 = length(_718);
-        float _725 = fast::clamp(1.0 - (_719 / precise::max(Standard3DPointLightBlock.PointLightPositionRange[_711].w, 0.001000000047497451305389404296875)), 0.0, 1.0);
-        float3 _736 = _718 / float3(precise::max(_719, 9.9999997473787516355514526367188e-05));
-        float3 _738 = fast::normalize(_293 + _736);
-        float _740 = fast::clamp(dot(_268, _736), 0.0, 1.0);
-        float3 _746 = _659 + (_662 * powr(1.0 - fast::clamp(dot(_738, _293), 0.0, 1.0), 5.0));
-        float _748 = fast::clamp(dot(_268, _738), 0.0, 1.0);
-        float _751 = ((_748 * _748) * _672) + 1.0;
-        _708 += ((((((float3(1.0) - _746) * _697) * _224.xyz) + ((_746 * ((_668 / ((3.1415927410125732421875 * _751) * _751)) * (_684 * (_740 / ((_740 * _681) + _680))))) / float3(precise::max(_691 * _740, 9.9999997473787516355514526367188e-05)))) * ((Standard3DPointLightBlock.PointLightColorIntensity[_711].xyz * Standard3DPointLightBlock.PointLightColorIntensity[_711].w) * (_725 * _725))) * _740);
-        _711++;
+        float3 _721 = Standard3DPointLightBlock.PointLightPositionRange[_714].xyz - in.in_var_TEXCOORD4;
+        float _722 = length(_721);
+        float _728 = fast::clamp(1.0 - (_722 / precise::max(Standard3DPointLightBlock.PointLightPositionRange[_714].w, 0.001000000047497451305389404296875)), 0.0, 1.0);
+        float3 _739 = _721 / float3(precise::max(_722, 9.9999997473787516355514526367188e-05));
+        float3 _741 = fast::normalize(_296 + _739);
+        float _743 = fast::clamp(dot(_271, _739), 0.0, 1.0);
+        float3 _749 = _662 + (_665 * powr(1.0 - fast::clamp(dot(_741, _296), 0.0, 1.0), 5.0));
+        float _751 = fast::clamp(dot(_271, _741), 0.0, 1.0);
+        float _754 = ((_751 * _751) * _675) + 1.0;
+        _711 += ((((((float3(1.0) - _749) * _700) * _227.xyz) + ((_749 * ((_671 / ((3.1415927410125732421875 * _754) * _754)) * (_687 * (_743 / ((_743 * _684) + _683))))) / float3(precise::max(_694 * _743, 9.9999997473787516355514526367188e-05)))) * ((Standard3DPointLightBlock.PointLightColorIntensity[_714].xyz * Standard3DPointLightBlock.PointLightColorIntensity[_714].w) * (_728 * _728))) * _743);
+        _714++;
         continue;
     }
-    float _785;
+    int _777 = min(int(Standard3DPointLightBlock.SpotLightMeta.x), 16);
+    float3 _779;
+    _779 = _711;
+    float3 _780;
+    for (int _782 = 0; _782 < _777; _779 = _780, _782++)
+    {
+        float3 _790 = Standard3DPointLightBlock.SpotLightPositionRange[_782].xyz - in.in_var_TEXCOORD4;
+        float _791 = length(_790);
+        float3 _794 = _790 / float3(precise::max(_791, 9.9999997473787516355514526367188e-05));
+        float _799 = dot(-_794, Standard3DPointLightBlock.SpotLightDirectionOuter[_782].xyz);
+        float _804 = Standard3DPointLightBlock.SpotLightInner[_782].x - Standard3DPointLightBlock.SpotLightDirectionOuter[_782].w;
+        float _813;
+        if (_804 > 9.9999997473787516355514526367188e-06)
+        {
+            _813 = fast::clamp((_799 - Standard3DPointLightBlock.SpotLightDirectionOuter[_782].w) / _804, 0.0, 1.0);
+        }
+        else
+        {
+            _813 = step(Standard3DPointLightBlock.SpotLightDirectionOuter[_782].w, _799);
+        }
+        float _823 = fast::clamp(1.0 - (_791 / precise::max(Standard3DPointLightBlock.SpotLightPositionRange[_782].w, 0.001000000047497451305389404296875)), 0.0, 1.0);
+        float3 _834 = fast::normalize(_296 + _794);
+        float _836 = fast::clamp(dot(_271, _794), 0.0, 1.0);
+        float3 _842 = _662 + (_665 * powr(1.0 - fast::clamp(dot(_834, _296), 0.0, 1.0), 5.0));
+        float _844 = fast::clamp(dot(_271, _834), 0.0, 1.0);
+        float _847 = ((_844 * _844) * _675) + 1.0;
+        _780 = _779 + ((((((float3(1.0) - _842) * _700) * _227.xyz) + ((_842 * ((_671 / ((3.1415927410125732421875 * _847) * _847)) * (_687 * (_836 / ((_836 * _684) + _683))))) / float3(precise::max(_694 * _836, 9.9999997473787516355514526367188e-05)))) * ((((Standard3DPointLightBlock.SpotLightColorIntensity[_782].xyz * Standard3DPointLightBlock.SpotLightColorIntensity[_782].w) * _823) * _823) * ((_813 * _813) * (3.0 - (2.0 * _813))))) * _836);
+    }
+    float _881;
     if (Standard3DMaterialBlock.TextureFlags.y > 0.5)
     {
-        _785 = mix(1.0, OcclusionTexture.sample(OcclusionSampler, in.in_var_TEXCOORD2).x, Standard3DMaterialBlock.Emissive.w);
+        _881 = mix(1.0, OcclusionTexture.sample(OcclusionSampler, in.in_var_TEXCOORD2).x, Standard3DMaterialBlock.Emissive.w);
     }
     else
     {
-        _785 = 1.0;
+        _881 = 1.0;
     }
-    float3 _791 = _708 + ((Standard3DLightBlock.Ambient.xyz * _224.xyz) * _785);
-    float3 _1022;
+    float3 _887 = _779 + ((Standard3DLightBlock.Ambient.xyz * _227.xyz) * _881);
+    float3 _1118;
     if (Standard3DLightBlock.Environment.x > 0.5)
     {
-        bool _799 = Standard3DLightBlock.ColorPipeline.x > 0.5;
-        float3 _834;
-        if (_799)
+        bool _895 = Standard3DLightBlock.ColorPipeline.x > 0.5;
+        float3 _930;
+        if (_895)
         {
-            _834 = _224.xyz;
+            _930 = _227.xyz;
         }
         else
         {
-            float _812;
-            if (_224.x <= 0.040449999272823333740234375)
+            float _908;
+            if (_227.x <= 0.040449999272823333740234375)
             {
-                _812 = _224.x * 0.077399380505084991455078125;
+                _908 = _227.x * 0.077399380505084991455078125;
             }
             else
             {
-                _812 = powr((_224.x + 0.054999999701976776123046875) * 0.947867333889007568359375, 2.400000095367431640625);
+                _908 = powr((_227.x + 0.054999999701976776123046875) * 0.947867333889007568359375, 2.400000095367431640625);
             }
-            float _822;
-            if (_224.y <= 0.040449999272823333740234375)
+            float _918;
+            if (_227.y <= 0.040449999272823333740234375)
             {
-                _822 = _224.y * 0.077399380505084991455078125;
+                _918 = _227.y * 0.077399380505084991455078125;
             }
             else
             {
-                _822 = powr((_224.y + 0.054999999701976776123046875) * 0.947867333889007568359375, 2.400000095367431640625);
+                _918 = powr((_227.y + 0.054999999701976776123046875) * 0.947867333889007568359375, 2.400000095367431640625);
             }
-            float _832;
-            if (_224.z <= 0.040449999272823333740234375)
+            float _928;
+            if (_227.z <= 0.040449999272823333740234375)
             {
-                _832 = _224.z * 0.077399380505084991455078125;
+                _928 = _227.z * 0.077399380505084991455078125;
             }
             else
             {
-                _832 = powr((_224.z + 0.054999999701976776123046875) * 0.947867333889007568359375, 2.400000095367431640625);
+                _928 = powr((_227.z + 0.054999999701976776123046875) * 0.947867333889007568359375, 2.400000095367431640625);
             }
-            _834 = float3(_812, _822, _832);
+            _930 = float3(_908, _918, _928);
         }
-        float3 _835 = mix(float3(0.039999999105930328369140625), _834, _658);
-        float3 _845 = reflect(-_293, _268);
-        float _848 = sin(Standard3DLightBlock.Environment.z);
-        float _849 = cos(Standard3DLightBlock.Environment.z);
-        float _850 = _845.x;
-        float _852 = _845.z;
-        float3 _860 = fast::normalize(float3((_849 * _850) - (_848 * _852), _845.y, (_848 * _850) + (_849 * _852)));
-        float _865 = (precise::atan2(_860.z, _860.x) * 0.15915493667125701904296875) + 0.5;
-        float _872 = Standard3DLightBlock.Environment.w - 1.0;
-        float _873 = _288 * _872;
-        float _874 = floor(_873);
-        float _879 = Standard3DLightBlock.EnvironmentSize.y + 2.0;
-        float _883 = (acos(fast::clamp(_860.y, -1.0, 1.0)) * 0.3183098733425140380859375) * (Standard3DLightBlock.EnvironmentSize.y - 1.0);
-        float4 _897 = EnvironmentSpecular.sample(EnvironmentSpecularSampler, float2(_865, (((_874 * _879) + 1.5) + _883) / Standard3DLightBlock.EnvironmentSize.z));
-        float4 _900 = EnvironmentSpecular.sample(EnvironmentSpecularSampler, float2(_865, (((precise::min(_874 + 1.0, _872) * _879) + 1.5) + _883) / Standard3DLightBlock.EnvironmentSize.z));
-        float4 _909 = EnvironmentBrdf.sample(EnvironmentBrdfSampler, float2(_657, _288));
-        float3 _922 = fast::normalize(float3((_849 * _268.x) - (_848 * _268.z), _268.y, (_848 * _268.x) + (_849 * _268.z)));
-        float4 _934 = EnvironmentDiffuse.sample(EnvironmentDiffuseSampler, float2((precise::atan2(_922.z, _922.x) * 0.15915493667125701904296875) + 0.5, acos(fast::clamp(_922.y, -1.0, 1.0)) * 0.3183098733425140380859375));
-        float3 _972;
-        if (_799)
+        float3 _931 = mix(float3(0.039999999105930328369140625), _930, _661);
+        float3 _941 = reflect(-_296, _271);
+        float _944 = sin(Standard3DLightBlock.Environment.z);
+        float _945 = cos(Standard3DLightBlock.Environment.z);
+        float _946 = _941.x;
+        float _948 = _941.z;
+        float3 _956 = fast::normalize(float3((_945 * _946) - (_944 * _948), _941.y, (_944 * _946) + (_945 * _948)));
+        float _961 = (precise::atan2(_956.z, _956.x) * 0.15915493667125701904296875) + 0.5;
+        float _968 = Standard3DLightBlock.Environment.w - 1.0;
+        float _969 = _291 * _968;
+        float _970 = floor(_969);
+        float _975 = Standard3DLightBlock.EnvironmentSize.y + 2.0;
+        float _979 = (acos(fast::clamp(_956.y, -1.0, 1.0)) * 0.3183098733425140380859375) * (Standard3DLightBlock.EnvironmentSize.y - 1.0);
+        float4 _993 = EnvironmentSpecular.sample(EnvironmentSpecularSampler, float2(_961, (((_970 * _975) + 1.5) + _979) / Standard3DLightBlock.EnvironmentSize.z));
+        float4 _996 = EnvironmentSpecular.sample(EnvironmentSpecularSampler, float2(_961, (((precise::min(_970 + 1.0, _968) * _975) + 1.5) + _979) / Standard3DLightBlock.EnvironmentSize.z));
+        float4 _1005 = EnvironmentBrdf.sample(EnvironmentBrdfSampler, float2(_660, _291));
+        float3 _1018 = fast::normalize(float3((_945 * _271.x) - (_944 * _271.z), _271.y, (_944 * _271.x) + (_945 * _271.z)));
+        float4 _1030 = EnvironmentDiffuse.sample(EnvironmentDiffuseSampler, float2((precise::atan2(_1018.z, _1018.x) * 0.15915493667125701904296875) + 0.5, acos(fast::clamp(_1018.y, -1.0, 1.0)) * 0.3183098733425140380859375));
+        float3 _1068;
+        if (_895)
         {
-            _972 = _224.xyz;
+            _1068 = _227.xyz;
         }
         else
         {
-            float _950;
-            if (_224.x <= 0.040449999272823333740234375)
+            float _1046;
+            if (_227.x <= 0.040449999272823333740234375)
             {
-                _950 = _224.x * 0.077399380505084991455078125;
+                _1046 = _227.x * 0.077399380505084991455078125;
             }
             else
             {
-                _950 = powr((_224.x + 0.054999999701976776123046875) * 0.947867333889007568359375, 2.400000095367431640625);
+                _1046 = powr((_227.x + 0.054999999701976776123046875) * 0.947867333889007568359375, 2.400000095367431640625);
             }
-            float _960;
-            if (_224.y <= 0.040449999272823333740234375)
+            float _1056;
+            if (_227.y <= 0.040449999272823333740234375)
             {
-                _960 = _224.y * 0.077399380505084991455078125;
+                _1056 = _227.y * 0.077399380505084991455078125;
             }
             else
             {
-                _960 = powr((_224.y + 0.054999999701976776123046875) * 0.947867333889007568359375, 2.400000095367431640625);
+                _1056 = powr((_227.y + 0.054999999701976776123046875) * 0.947867333889007568359375, 2.400000095367431640625);
             }
-            float _970;
-            if (_224.z <= 0.040449999272823333740234375)
+            float _1066;
+            if (_227.z <= 0.040449999272823333740234375)
             {
-                _970 = _224.z * 0.077399380505084991455078125;
+                _1066 = _227.z * 0.077399380505084991455078125;
             }
             else
             {
-                _970 = powr((_224.z + 0.054999999701976776123046875) * 0.947867333889007568359375, 2.400000095367431640625);
+                _1066 = powr((_227.z + 0.054999999701976776123046875) * 0.947867333889007568359375, 2.400000095367431640625);
             }
-            _972 = float3(_950, _960, _970);
+            _1068 = float3(_1046, _1056, _1066);
         }
-        float3 _985 = ((((((float3(1.0) - (_835 + ((precise::max(float3(1.0 - _288), _835) - _835) * powr(1.0 - _657, 5.0)))) * _697) * _972) * _934.xyz) + (mix(_897.xyz, _900.xyz, float3(_873 - _874)) * ((_835 * _909.x) + float3(_909.y)))) * Standard3DLightBlock.Environment.y) * _785;
-        float3 _1020;
-        if (_799)
+        float3 _1081 = ((((((float3(1.0) - (_931 + ((precise::max(float3(1.0 - _291), _931) - _931) * powr(1.0 - _660, 5.0)))) * _700) * _1068) * _1030.xyz) + (mix(_993.xyz, _996.xyz, float3(_969 - _970)) * ((_931 * _1005.x) + float3(_1005.y)))) * Standard3DLightBlock.Environment.y) * _881;
+        float3 _1116;
+        if (_895)
         {
-            _1020 = _985;
+            _1116 = _1081;
         }
         else
         {
-            float _989 = _985.x;
-            float _998;
-            if (_989 <= 0.003130800090730190277099609375)
+            float _1085 = _1081.x;
+            float _1094;
+            if (_1085 <= 0.003130800090730190277099609375)
             {
-                _998 = _989 * 12.9200000762939453125;
+                _1094 = _1085 * 12.9200000762939453125;
             }
             else
             {
-                _998 = (1.05499994754791259765625 * powr(_989, 0.4166666567325592041015625)) - 0.054999999701976776123046875;
+                _1094 = (1.05499994754791259765625 * powr(_1085, 0.4166666567325592041015625)) - 0.054999999701976776123046875;
             }
-            float _999 = _985.y;
-            float _1008;
-            if (_999 <= 0.003130800090730190277099609375)
+            float _1095 = _1081.y;
+            float _1104;
+            if (_1095 <= 0.003130800090730190277099609375)
             {
-                _1008 = _999 * 12.9200000762939453125;
+                _1104 = _1095 * 12.9200000762939453125;
             }
             else
             {
-                _1008 = (1.05499994754791259765625 * powr(_999, 0.4166666567325592041015625)) - 0.054999999701976776123046875;
+                _1104 = (1.05499994754791259765625 * powr(_1095, 0.4166666567325592041015625)) - 0.054999999701976776123046875;
             }
-            float _1009 = _985.z;
-            float _1018;
-            if (_1009 <= 0.003130800090730190277099609375)
+            float _1105 = _1081.z;
+            float _1114;
+            if (_1105 <= 0.003130800090730190277099609375)
             {
-                _1018 = _1009 * 12.9200000762939453125;
+                _1114 = _1105 * 12.9200000762939453125;
             }
             else
             {
-                _1018 = (1.05499994754791259765625 * powr(_1009, 0.4166666567325592041015625)) - 0.054999999701976776123046875;
+                _1114 = (1.05499994754791259765625 * powr(_1105, 0.4166666567325592041015625)) - 0.054999999701976776123046875;
             }
-            _1020 = float3(_998, _1008, _1018);
+            _1116 = float3(_1094, _1104, _1114);
         }
-        _1022 = _791 + _1020;
+        _1118 = _887 + _1116;
     }
     else
     {
-        _1022 = _791;
+        _1118 = _887;
     }
-    float3 _1121;
+    float3 _1217;
     if (Standard3DMaterialBlock.TextureFlags.z > 0.5)
     {
-        float4 _1034 = EmissiveTexture.sample(EmissiveSampler, in.in_var_TEXCOORD2);
-        bool _1044;
+        float4 _1130 = EmissiveTexture.sample(EmissiveSampler, in.in_var_TEXCOORD2);
+        bool _1140;
         if (Standard3DLightBlock.ColorPipeline.x > 0.5)
         {
-            _1044 = Standard3DMaterialBlock.TextureFlags.w < 0.5;
+            _1140 = Standard3DMaterialBlock.TextureFlags.w < 0.5;
         }
         else
         {
-            _1044 = false;
+            _1140 = false;
         }
-        float3 _1078;
-        if (_1044)
+        float3 _1174;
+        if (_1140)
         {
-            float _1047 = _1034.x;
-            float _1056;
-            if (_1047 <= 0.040449999272823333740234375)
+            float _1143 = _1130.x;
+            float _1152;
+            if (_1143 <= 0.040449999272823333740234375)
             {
-                _1056 = _1047 * 0.077399380505084991455078125;
+                _1152 = _1143 * 0.077399380505084991455078125;
             }
             else
             {
-                _1056 = powr((_1047 + 0.054999999701976776123046875) * 0.947867333889007568359375, 2.400000095367431640625);
+                _1152 = powr((_1143 + 0.054999999701976776123046875) * 0.947867333889007568359375, 2.400000095367431640625);
             }
-            float _1057 = _1034.y;
-            float _1066;
-            if (_1057 <= 0.040449999272823333740234375)
+            float _1153 = _1130.y;
+            float _1162;
+            if (_1153 <= 0.040449999272823333740234375)
             {
-                _1066 = _1057 * 0.077399380505084991455078125;
+                _1162 = _1153 * 0.077399380505084991455078125;
             }
             else
             {
-                _1066 = powr((_1057 + 0.054999999701976776123046875) * 0.947867333889007568359375, 2.400000095367431640625);
+                _1162 = powr((_1153 + 0.054999999701976776123046875) * 0.947867333889007568359375, 2.400000095367431640625);
             }
-            float _1067 = _1034.z;
-            float _1076;
-            if (_1067 <= 0.040449999272823333740234375)
+            float _1163 = _1130.z;
+            float _1172;
+            if (_1163 <= 0.040449999272823333740234375)
             {
-                _1076 = _1067 * 0.077399380505084991455078125;
+                _1172 = _1163 * 0.077399380505084991455078125;
             }
             else
             {
-                _1076 = powr((_1067 + 0.054999999701976776123046875) * 0.947867333889007568359375, 2.400000095367431640625);
+                _1172 = powr((_1163 + 0.054999999701976776123046875) * 0.947867333889007568359375, 2.400000095367431640625);
             }
-            _1078 = float3(_1056, _1066, _1076);
+            _1174 = float3(_1152, _1162, _1172);
         }
         else
         {
-            _1078 = _1034.xyz;
+            _1174 = _1130.xyz;
         }
-        bool _1085;
+        bool _1181;
         if (Standard3DLightBlock.ColorPipeline.x < 0.5)
         {
-            _1085 = Standard3DMaterialBlock.TextureFlags.w > 0.5;
+            _1181 = Standard3DMaterialBlock.TextureFlags.w > 0.5;
         }
         else
         {
-            _1085 = false;
+            _1181 = false;
         }
-        float3 _1119;
-        if (_1085)
+        float3 _1215;
+        if (_1181)
         {
-            float _1097;
-            if (_1078.x <= 0.003130800090730190277099609375)
+            float _1193;
+            if (_1174.x <= 0.003130800090730190277099609375)
             {
-                _1097 = _1078.x * 12.9200000762939453125;
+                _1193 = _1174.x * 12.9200000762939453125;
             }
             else
             {
-                _1097 = (1.05499994754791259765625 * powr(_1078.x, 0.4166666567325592041015625)) - 0.054999999701976776123046875;
+                _1193 = (1.05499994754791259765625 * powr(_1174.x, 0.4166666567325592041015625)) - 0.054999999701976776123046875;
             }
-            float _1107;
-            if (_1078.y <= 0.003130800090730190277099609375)
+            float _1203;
+            if (_1174.y <= 0.003130800090730190277099609375)
             {
-                _1107 = _1078.y * 12.9200000762939453125;
+                _1203 = _1174.y * 12.9200000762939453125;
             }
             else
             {
-                _1107 = (1.05499994754791259765625 * powr(_1078.y, 0.4166666567325592041015625)) - 0.054999999701976776123046875;
+                _1203 = (1.05499994754791259765625 * powr(_1174.y, 0.4166666567325592041015625)) - 0.054999999701976776123046875;
             }
-            float _1117;
-            if (_1078.z <= 0.003130800090730190277099609375)
+            float _1213;
+            if (_1174.z <= 0.003130800090730190277099609375)
             {
-                _1117 = _1078.z * 12.9200000762939453125;
+                _1213 = _1174.z * 12.9200000762939453125;
             }
             else
             {
-                _1117 = (1.05499994754791259765625 * powr(_1078.z, 0.4166666567325592041015625)) - 0.054999999701976776123046875;
+                _1213 = (1.05499994754791259765625 * powr(_1174.z, 0.4166666567325592041015625)) - 0.054999999701976776123046875;
             }
-            _1119 = float3(_1097, _1107, _1117);
+            _1215 = float3(_1193, _1203, _1213);
         }
         else
         {
-            _1119 = _1078;
+            _1215 = _1174;
         }
-        _1121 = Standard3DMaterialBlock.Emissive.xyz * _1119;
+        _1217 = Standard3DMaterialBlock.Emissive.xyz * _1215;
     }
     else
     {
-        _1121 = Standard3DMaterialBlock.Emissive.xyz;
+        _1217 = Standard3DMaterialBlock.Emissive.xyz;
     }
-    float3 _1122 = _1022 + _1121;
-    bool _1131;
+    float3 _1218 = _1118 + _1217;
+    bool _1227;
     if (Standard3DShadowBlock.CascadeSettings.z > 0.5)
     {
-        _1131 = Standard3DShadowBlock.CascadeSettings.x > 0.5;
+        _1227 = Standard3DShadowBlock.CascadeSettings.x > 0.5;
     }
     else
     {
-        _1131 = false;
+        _1227 = false;
     }
-    float3 _1172;
-    if (_1131)
+    float3 _1268;
+    if (_1227)
     {
-        float _1138 = dot(in.in_var_TEXCOORD4 - Standard3DLightBlock.CameraPosition.xyz, Standard3DShadowBlock.ShadowCameraForward.xyz);
-        int _1156;
-        if (_1138 <= Standard3DShadowBlock.CascadeSplits.x)
+        float _1234 = dot(in.in_var_TEXCOORD4 - Standard3DLightBlock.CameraPosition.xyz, Standard3DShadowBlock.ShadowCameraForward.xyz);
+        int _1252;
+        if (_1234 <= Standard3DShadowBlock.CascadeSplits.x)
         {
-            _1156 = 0;
+            _1252 = 0;
         }
         else
         {
-            int _1155;
-            if (_1138 <= Standard3DShadowBlock.CascadeSplits.y)
+            int _1251;
+            if (_1234 <= Standard3DShadowBlock.CascadeSplits.y)
             {
-                _1155 = 1;
+                _1251 = 1;
             }
             else
             {
-                _1155 = (_1138 <= Standard3DShadowBlock.CascadeSplits.z) ? 2 : 3;
+                _1251 = (_1234 <= Standard3DShadowBlock.CascadeSplits.z) ? 2 : 3;
             }
-            _1156 = _1155;
+            _1252 = _1251;
         }
-        int _1157 = (_1156);
-        float3 _1170;
-        if (_1157 == 0)
+        int _1253 = (_1252);
+        float3 _1266;
+        if (_1253 == 0)
         {
-            _1170 = float3(1.0, 0.20000000298023223876953125, 0.20000000298023223876953125);
+            _1266 = float3(1.0, 0.20000000298023223876953125, 0.20000000298023223876953125);
         }
         else
         {
-            float3 _1169;
-            if (_1157 == 1)
+            float3 _1265;
+            if (_1253 == 1)
             {
-                _1169 = float3(0.20000000298023223876953125, 1.0, 0.20000000298023223876953125);
+                _1265 = float3(0.20000000298023223876953125, 1.0, 0.20000000298023223876953125);
             }
             else
             {
-                _1169 = select(float3(1.0, 1.0, 0.20000000298023223876953125), float3(0.20000000298023223876953125, 0.20000000298023223876953125, 1.0), bool3(_1157 == 2));
+                _1265 = select(float3(1.0, 1.0, 0.20000000298023223876953125), float3(0.20000000298023223876953125, 0.20000000298023223876953125, 1.0), bool3(_1253 == 2));
             }
-            _1170 = _1169;
+            _1266 = _1265;
         }
-        _1172 = mix(_1122, _1170, float3(0.4000000059604644775390625));
+        _1268 = mix(_1218, _1266, float3(0.4000000059604644775390625));
     }
     else
     {
-        _1172 = _1122;
+        _1268 = _1218;
     }
-    float3 _1180;
+    float3 _1276;
     if (Standard3DLightBlock.ColorPipeline.x > 0.5)
     {
-        _1180 = _1172;
+        _1276 = _1268;
     }
     else
     {
-        _1180 = fast::clamp(_1172, float3(0.0), float3(1.0));
+        _1276 = fast::clamp(_1268, float3(0.0), float3(1.0));
     }
-    out.out_var_SV_Target0 = float4(_1180, _224.w);
+    out.out_var_SV_Target0 = float4(_1276, _227.w);
     return out;
 }

@@ -12,6 +12,7 @@ public sealed class SceneLighting3D
     public Vector3 DirectionalColor = Vector3.One;
     public Vector3 AmbientColor = new(0.35f);
     public List<PointLight3D> PointLights { get; } = [];
+    public List<SpotLight3D> SpotLights { get; } = [];
     public bool ShadowsEnabled;
     public float ShadowBias = 0.0015f;
     public float ShadowDarkness = 0.65f;
@@ -21,7 +22,7 @@ public sealed class SceneLighting3D
     public EnvironmentMap3D? EnvironmentMap;
     public float EnvironmentIntensity = 1;
     public float EnvironmentRotation;
-    private readonly float[] _packedLights = new float[PointLight3D.PackedFloatCount];
+    private readonly float[] _packedLights = new float[PointLight3D.PackedFloatCount + SpotLight3D.PackedFloatCount];
 
     public LightUniforms GetLightUniforms(Vector3 cameraPosition) => new()
     {
@@ -69,7 +70,8 @@ public sealed class SceneLighting3D
             shadow.CameraForward = new Vector4(camera.Forward, camera.NearClip);
         }
         material.Fragment.SetUniformBuffer(shadow, 2);
-        PointLight3D.Pack(CollectionsMarshal.AsSpan(PointLights), _packedLights);
+        PointLight3D.Pack(CollectionsMarshal.AsSpan(PointLights), _packedLights.AsSpan(0, PointLight3D.PackedFloatCount));
+        SpotLight3D.Pack(CollectionsMarshal.AsSpan(SpotLights), _packedLights.AsSpan(PointLight3D.PackedFloatCount));
         material.Fragment.SetUniformBuffer(_packedLights.AsSpan(), 3);
         material.Vertex.SetUniformBuffer(new ShadowMatrixUniforms
         {

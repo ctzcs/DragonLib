@@ -42,6 +42,7 @@ cbuffer Standard3DShadowBlock : register(b2, space3)
 };
 
 #define MAX_POINT_LIGHTS 16
+#define MAX_SPOT_LIGHTS 16
 
 // 与 C# 侧 PointLight3D.Pack 的布局一致。
 cbuffer Standard3DPointLightBlock : register(b3, space3)
@@ -49,6 +50,11 @@ cbuffer Standard3DPointLightBlock : register(b3, space3)
     float4 PointLightMeta; // x: count
     float4 PointLightPositionRange[MAX_POINT_LIGHTS];  // xyz: position, w: range
     float4 PointLightColorIntensity[MAX_POINT_LIGHTS]; // xyz: color, w: intensity
+    float4 SpotLightMeta;
+    float4 SpotLightPositionRange[MAX_SPOT_LIGHTS];
+    float4 SpotLightColorIntensity[MAX_SPOT_LIGHTS];
+    float4 SpotLightDirectionOuter[MAX_SPOT_LIGHTS]; // xyz: outgoing direction, w: cos outer half-angle
+    float4 SpotLightInner[MAX_SPOT_LIGHTS]; // x: cos inner half-angle
 };
 
 Texture2D AlbedoTexture : register(t0, space2);
@@ -236,6 +242,22 @@ float4 fragment_main(VsOutput input) : SV_Target0
         attenuation *= attenuation;
         float3 pointRadiance = PointLightColorIntensity[i].rgb * PointLightColorIntensity[i].a * attenuation;
         color += ShadeCookTorrance(normal, viewDir, toLight / max(distance, 0.0001), pointRadiance, albedo, metallic, roughness);
+    }
+
+    int spotLightCount = min((int)SpotLightMeta.x, MAX_SPOT_LIGHTS);
+    for (int j = 0; j < spotLightCount; j++)
+    {
+        float3 toLight = SpotLightPositionRange[j].xyz - input.WorldPosition;
+        float distance = length(toLight);
+        float3 direction = toLight / max(distance, .0001);
+        float cosine = dot(-direction, SpotLightDirectionOuter[j].xyz);
+        float outer = SpotLightDirectionOuter[j].w;
+        float inner = SpotLightInner[j].x;
+        float cone = inner - outer > .00001 ? saturate((cosine - outer) / (inner - outer)) : step(outer, cosine);
+        cone = cone * cone * (3 - 2 * cone);
+        float attenuation = saturate(1 - distance / max(SpotLightPositionRange[j].w, .001));
+        float3 radiance = SpotLightColorIntensity[j].rgb * SpotLightColorIntensity[j].w * attenuation * attenuation * cone;
+        color += ShadeCookTorrance(normal, viewDir, direction, radiance, albedo, metallic, roughness);
     }
 
     // 环境贴图为线性数据；GGX roughness 层单独加 padding，不能跨层过滤。
