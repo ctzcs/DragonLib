@@ -18,12 +18,25 @@ public struct JointPose
 /// palette[i] = InverseBindMatrix[i] * global[i]。实体世界矩阵提供骨架挂点以上的变换，
 /// bind pose 下渲染结果与 glTF 场景摆放一致。
 ///
-/// 多剪辑状态机、morph target 和根运动由游戏层另行实现。
+/// 独立状态机、事件、根运动和 IK 见 AnimationStateMachine3D / RootMotion3D / CcdIk3D。
 /// </summary>
 public static class SkeletonAnimator
 {
     /// <summary>shader 侧 joint palette cbuffer 的容量上限（Standard3DSkinned 的 MAX_JOINTS）。</summary>
     public const int MaxJoints = 128;
+
+    public static void ComputeGlobals(DassetSkeleton skeleton, ReadOnlySpan<JointPose> pose, Span<Matrix4x4> globals)
+    {
+        if (pose.Length < skeleton.Joints.Count || globals.Length < skeleton.Joints.Count)
+            throw new ArgumentException("Pose/global buffers must cover every joint.");
+        for (var i = 0; i < skeleton.Joints.Count; i++)
+        {
+            var parent = skeleton.Joints[i].ParentIndex;
+            if (parent < -1 || parent >= i) throw new ArgumentException("Skeleton must be in parent-first order.", nameof(skeleton));
+            var local = Matrix4x4.CreateScale(pose[i].Scale) * Matrix4x4.CreateFromQuaternion(pose[i].Rotation) * Matrix4x4.CreateTranslation(pose[i].Translation);
+            globals[i] = parent < 0 ? local : local * globals[parent];
+        }
+    }
 
     /// <summary>
     /// 采样剪辑得到逐关节本地姿态：先填 bind pose，再按 channel 覆盖（越界 clamp 到端点）。

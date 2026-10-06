@@ -15,7 +15,9 @@ public sealed class ModelLod3D
     public ModelLod3D(params (DassetModelAsset Model, float MinimumScreenHeight)[] levels)
     {
         ArgumentNullException.ThrowIfNull(levels);
-        Selector = new LodSelector3D(levels.Select(level => level.MinimumScreenHeight).ToArray());
+        var thresholds = new float[levels.Length];
+        for (var i = 0; i < levels.Length; i++) thresholds[i] = levels[i].MinimumScreenHeight;
+        Selector = new LodSelector3D(thresholds);
         _models = new DassetModelAsset[levels.Length];
         var bounds = DassetBounds.Empty;
         for (var i = 0; i < levels.Length; i++)
