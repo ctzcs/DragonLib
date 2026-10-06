@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Box3D.NET" Version="[0.5.1]" />
+    <PackageReference Include="Box3D.NET.Native" Version="[0.5.1]" />
+  </ItemGroup>
+</Project>
