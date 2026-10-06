@@ -5,7 +5,7 @@ namespace Engine.Rendering;
 /// <summary>标准 3D 管线的 shader 与默认贴图所有者；材质 clone 的生命周期不得超过本对象。</summary>
 public sealed class Standard3DShaders : IDisposable
 {
-    public static readonly ShaderStageSpec FragmentSpec = new(6, 4, "fragment_main");
+    public static readonly ShaderStageSpec FragmentSpec = new(9, 4, "fragment_main");
     public static readonly ShaderStageSpec VertexSpec = new(0, 2, "vertex_main");
     public static readonly ShaderStageSpec SkinnedVertexSpec = new(0, 4, "vertex_main");
     public static readonly ShaderStageSpec DepthFragmentSpec = new(0, 0, "fragment_main");

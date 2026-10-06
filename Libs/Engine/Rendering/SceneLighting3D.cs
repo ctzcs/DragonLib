@@ -18,6 +18,9 @@ public sealed class SceneLighting3D
     public ShadowMap? ShadowMap;
     public CascadedShadowMap? Cascades;
     public bool HdrEnabled;
+    public EnvironmentMap3D? EnvironmentMap;
+    public float EnvironmentIntensity = 1;
+    public float EnvironmentRotation;
     private readonly float[] _packedLights = new float[PointLight3D.PackedFloatCount];
 
     public LightUniforms GetLightUniforms(Vector3 cameraPosition) => new()
@@ -27,6 +30,10 @@ public sealed class SceneLighting3D
         Diffuse = new Vector4(DirectionalColor, 1f),
         CameraPosition = new Vector4(cameraPosition, 1f),
         ColorPipeline = new Vector4(HdrEnabled ? 1f : 0f, 0f, 0f, 0f),
+        Environment = new Vector4(EnvironmentMap is { IsDisposed: false } ? 1 : 0,
+            MathF.Max(0, EnvironmentIntensity), EnvironmentRotation, EnvironmentMap?.Levels ?? 0),
+        EnvironmentSize = EnvironmentMap == null ? Vector4.Zero : new Vector4(EnvironmentMap.Width, EnvironmentMap.Height,
+            (EnvironmentMap.Height + 2) * EnvironmentMap.Levels, 0),
     };
 
     public ShadowSettingsUniforms GetShadowUniforms() => new()
@@ -37,6 +44,18 @@ public sealed class SceneLighting3D
 
     public void Apply(Material material, Camera3D camera)
     {
+        if (EnvironmentMap is { IsDisposed: false } environment)
+        {
+            var sampler = new TextureSampler(TextureFilter.Linear, TextureWrap.Repeat, TextureWrap.Clamp);
+            material.Fragment.Samplers[6] = new BoundSampler(environment.Diffuse, sampler);
+            material.Fragment.Samplers[7] = new BoundSampler(environment.Specular, sampler);
+            material.Fragment.Samplers[8] = new BoundSampler(environment.Brdf, new TextureSampler(TextureFilter.Linear, TextureWrap.Clamp));
+        }
+        else
+        {
+            // 关闭或释放环境后，不能留下已销毁的原生纹理绑定；未采样的槽复用有效的 albedo 默认纹理。
+            for (var i = 6; i < 9; i++) material.Fragment.Samplers[i] = material.Fragment.Samplers[0];
+        }
         material.Fragment.SetUniformBuffer(GetLightUniforms(camera.Position));
         var shadow = GetShadowUniforms();
         if (Cascades != null)

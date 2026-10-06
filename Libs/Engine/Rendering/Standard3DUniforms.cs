@@ -12,6 +12,8 @@ public struct LightUniforms
     public Vector4 Diffuse;
     public Vector4 CameraPosition;
     public Vector4 ColorPipeline; // x: HDR 线性光照；0 保留 LDR gamma 光照观感。
+    public Vector4 Environment; // enabled、intensity、rotation、roughness levels
+    public Vector4 EnvironmentSize; // width、单层 height、atlas height、unused
 }
 
 /// <summary>Standard3D fragment b1, space3。</summary>

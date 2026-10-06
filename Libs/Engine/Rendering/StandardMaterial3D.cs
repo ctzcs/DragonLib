@@ -40,6 +40,7 @@ public static class StandardMaterial3D
         material.Fragment.Samplers[3] = new BoundSampler(mr ?? shaders.WhiteTexture, sampler);
         material.Fragment.Samplers[4] = new BoundSampler(ao ?? shaders.WhiteTexture, sampler);
         material.Fragment.Samplers[5] = new BoundSampler(emissive ?? shaders.WhiteTexture, sampler);
+        for (var i = 6; i < 9; i++) material.Fragment.Samplers[i] = new BoundSampler(shaders.WhiteTexture, sampler);
         var uniforms = Pack(data, albedo != null, normal != null, mr != null, ao != null, emissive != null);
         uniforms.TextureFlags.W = emissive?.Format == TextureFormat.R8G8B8A8Srgb ? 1f : 0f;
         uniforms.PbrParams.Z = albedo?.Format == TextureFormat.R8G8B8A8Srgb ? 1f : 0f;

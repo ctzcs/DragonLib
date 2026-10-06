@@ -1,4 +1,5 @@
 // 静态与蒙皮共用片元管线；每张贴图必须独占 sampler，避免 shadercross 错判 storage texture。
+#include "EnvironmentUv.hlsli"
 cbuffer VertexMatrixBlock : register(b0, space1)
 {
     float4x4 WorldViewProjection;
@@ -17,6 +18,8 @@ cbuffer Standard3DLightBlock : register(b0, space3)
     float4 Diffuse;
     float4 CameraPosition; // xyz: 相机世界位置（镜面项要 view 方向）
     float4 ColorPipeline; // x: HDR 开关，LDR 保留原有 gamma 光照。
+    float4 Environment; // enabled, intensity, rotation, level count
+    float4 EnvironmentSize; // width, height per roughness level, atlas height
 };
 
 cbuffer Standard3DMaterialBlock : register(b1, space3)
@@ -63,6 +66,12 @@ Texture2D OcclusionTexture : register(t4, space2);
 SamplerState OcclusionSampler : register(s4, space2);
 Texture2D EmissiveTexture : register(t5, space2);
 SamplerState EmissiveSampler : register(s5, space2);
+Texture2D EnvironmentDiffuse : register(t6, space2);
+SamplerState EnvironmentDiffuseSampler : register(s6, space2);
+Texture2D EnvironmentSpecular : register(t7, space2);
+SamplerState EnvironmentSpecularSampler : register(s7, space2);
+Texture2D EnvironmentBrdf : register(t8, space2);
+SamplerState EnvironmentBrdfSampler : register(s8, space2);
 
 struct VsOutput
 {
@@ -229,10 +238,29 @@ float4 fragment_main(VsOutput input) : SV_Target0
         color += ShadeCookTorrance(normal, viewDir, toLight / max(distance, 0.0001), pointRadiance, albedo, metallic, roughness);
     }
 
-    // 环境光：无 IBL，平面环境项。
+    // 环境贴图为线性数据；GGX roughness 层单独加 padding，不能跨层过滤。
     // AO 只衰减间接光，不应遮挡直接光或自发光。
     float ao = TextureFlags.y > 0.5 ? lerp(1.0, OcclusionTexture.Sample(OcclusionSampler, input.Uv).r, Emissive.w) : 1.0;
     color += Ambient.rgb * albedo * ao;
+    if (Environment.x > .5)
+    {
+        float nv = saturate(dot(normal, viewDir));
+        float3 f0 = lerp(float3(.04, .04, .04), ColorPipeline.x > .5 ? albedo : SrgbToLinear(albedo), metallic);
+        float3 fresnel = f0 + (max(float3(1 - roughness, 1 - roughness, 1 - roughness), f0) - f0) * pow(1 - nv, 5);
+        float3 reflected = RotateEnvironment(reflect(-viewDir, normal), Environment.z);
+        float2 uv = EnvironmentUv(reflected);
+        float level = roughness * (Environment.w - 1);
+        float lo = floor(level), hi = min(lo + 1, Environment.w - 1);
+        float2 atlasLo = float2(uv.x, (lo * (EnvironmentSize.y + 2) + 1.5 + uv.y * (EnvironmentSize.y - 1)) / EnvironmentSize.z);
+        float2 atlasHi = float2(uv.x, (hi * (EnvironmentSize.y + 2) + 1.5 + uv.y * (EnvironmentSize.y - 1)) / EnvironmentSize.z);
+        float3 prefiltered = lerp(EnvironmentSpecular.Sample(EnvironmentSpecularSampler, atlasLo).rgb,
+            EnvironmentSpecular.Sample(EnvironmentSpecularSampler, atlasHi).rgb, level - lo);
+        float2 brdf = EnvironmentBrdf.Sample(EnvironmentBrdfSampler, float2(nv, roughness)).rg;
+        float3 irradiance = EnvironmentDiffuse.Sample(EnvironmentDiffuseSampler, EnvironmentUv(RotateEnvironment(normal, Environment.z))).rgb;
+        float3 indirect = ((1 - fresnel) * (1 - metallic) * (ColorPipeline.x > .5 ? albedo : SrgbToLinear(albedo)) * irradiance +
+            prefiltered * (f0 * brdf.x + brdf.y)) * Environment.y * ao;
+        color += ColorPipeline.x > .5 ? indirect : LinearToSrgb(indirect);
+    }
     float3 emission = Emissive.xyz;
     if (TextureFlags.z > 0.5)
     {
