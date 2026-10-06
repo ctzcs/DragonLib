@@ -1,0 +1,72 @@
+#include <metal_stdlib>
+#include <simd/simd.h>
+
+using namespace metal;
+
+struct type_FxaaSettings
+{
+    float4 Texel;
+};
+
+struct fragment_main_out
+{
+    float4 out_var_SV_Target0 [[color(0)]];
+};
+
+struct fragment_main_in
+{
+    float2 in_var_TEXCOORD0 [[user(locn0)]];
+};
+
+fragment fragment_main_out fragment_main(fragment_main_in in [[stage_in]], constant type_FxaaSettings& FxaaSettings [[buffer(0)]], texture2d<float> SourceTexture [[texture(0)]], sampler SourceSampler [[sampler(0)]])
+{
+    fragment_main_out out = {};
+    float4 _160;
+    do
+    {
+        float4 _59 = SourceTexture.sample(SourceSampler, in.in_var_TEXCOORD0);
+        float4 _66 = SourceTexture.sample(SourceSampler, (in.in_var_TEXCOORD0 + (FxaaSettings.Texel.xy * float2(-1.0))));
+        float _68 = dot(_66.xyz, float3(0.2989999949932098388671875, 0.58700001239776611328125, 0.114000000059604644775390625));
+        float4 _72 = SourceTexture.sample(SourceSampler, (in.in_var_TEXCOORD0 + (FxaaSettings.Texel.xy * float2(1.0, -1.0))));
+        float _74 = dot(_72.xyz, float3(0.2989999949932098388671875, 0.58700001239776611328125, 0.114000000059604644775390625));
+        float4 _78 = SourceTexture.sample(SourceSampler, (in.in_var_TEXCOORD0 + (FxaaSettings.Texel.xy * float2(-1.0, 1.0))));
+        float _80 = dot(_78.xyz, float3(0.2989999949932098388671875, 0.58700001239776611328125, 0.114000000059604644775390625));
+        float4 _83 = SourceTexture.sample(SourceSampler, (in.in_var_TEXCOORD0 + FxaaSettings.Texel.xy));
+        float _85 = dot(_83.xyz, float3(0.2989999949932098388671875, 0.58700001239776611328125, 0.114000000059604644775390625));
+        float _87 = dot(_59.xyz, float3(0.2989999949932098388671875, 0.58700001239776611328125, 0.114000000059604644775390625));
+        float _91 = precise::min(_87, precise::min(precise::min(_68, _74), precise::min(_80, _85)));
+        float _95 = precise::max(_87, precise::max(precise::max(_68, _74), precise::max(_80, _85)));
+        if ((_95 - _91) < precise::max(0.031199999153614044189453125, _95 * 0.125))
+        {
+            _160 = _59;
+            break;
+        }
+        float _102 = _68 + _74;
+        float _105 = -((_102 - _80) - _85);
+        float _108 = ((_68 + _80) - _74) - _85;
+        float2 _121 = fast::clamp(float2(_105, _108) / float2(precise::min(abs(_105), abs(_108)) + precise::max(((_102 + _80) + _85) * 0.03125, 0.0078125)), float2(-8.0), float2(8.0)) * FxaaSettings.Texel.xy;
+        float2 _122 = _121 * float2(0.16666667163372039794921875);
+        float4 _125 = SourceTexture.sample(SourceSampler, (in.in_var_TEXCOORD0 - _122));
+        float4 _129 = SourceTexture.sample(SourceSampler, (in.in_var_TEXCOORD0 + _122));
+        float3 _132 = (_125.xyz + _129.xyz) * 0.5;
+        float2 _134 = _121 * 0.5;
+        float4 _137 = SourceTexture.sample(SourceSampler, (in.in_var_TEXCOORD0 - _134));
+        float4 _141 = SourceTexture.sample(SourceSampler, (in.in_var_TEXCOORD0 + _134));
+        float3 _145 = (_132 * 0.5) + ((_137.xyz + _141.xyz) * 0.25);
+        float _146 = dot(_145, float3(0.2989999949932098388671875, 0.58700001239776611328125, 0.114000000059604644775390625));
+        bool _152;
+        if (!(_146 < _91))
+        {
+            _152 = _146 > _95;
+        }
+        else
+        {
+            _152 = true;
+        }
+        float3 _154 = select(_145, _132, bool3(_152));
+        _160 = float4(_154, _59.w);
+        break;
+    } while(false);
+    out.out_var_SV_Target0 = _160;
+    return out;
+}

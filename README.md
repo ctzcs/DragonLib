@@ -6,6 +6,8 @@
 
 原 `Tests` 目录已拆到独立的 **DragonLib.Tests** 仓库，包含 Game0 Demo、编辑器、单元测试、字体渲染验证和性能基准。默认将该仓库与 DragonLib 放在同一父目录；它通过项目引用使用本仓库的库源码。
 
+**开发目录约定**：DragonLib 只维护库与工具；所有 Game0 示例、资源、测试及验证程序都写到相邻的 `../DragonLib.Tests` 仓库。不要在本仓库重新创建 `Game0`、`Tests/Game0` 或复制同名示例工程。
+
 ```powershell
 dotnet build ../DragonLib.Tests/DragonLib.Tests.slnx
 dotnet test ../DragonLib.Tests/DragonLib.Tests.slnx

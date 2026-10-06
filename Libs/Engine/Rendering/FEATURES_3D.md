@@ -1,5 +1,7 @@
 # 3D 扩展使用
 
+后续按独立阶段推进，见 [ROADMAP_3D.md](ROADMAP_3D.md)。后处理 API 使用与验证见 [POST_PROCESSING_3D.md](POST_PROCESSING_3D.md)；不依赖 ECS，示例仅写在相邻 DragonLib.Tests 仓库。
+
 标准管线由 `Standard3DShaders` 拥有 shader 和默认白贴图，`MaterialCache` 由模型装配材质。每帧 `Renderer3D.Begin` 后设置 `SceneLighting3D`，再排队 draw。共享材质在每次提交前更新光照；模型卸载时清空缓存。
 
 `CascadedShadowMap` 使用四级 2×2 深度 atlas。先设置相机 viewport，再 `Update(camera, direction)` 和 `Clear()`；把同一对象放入 `SceneLighting3D.Cascades`，并调用 `Renderer3D.SetShadowPass(cascades, shaders.Depth, shaders.SkinnedDepth)`。`MaxDistance` 限制覆盖距离，`Lambda` 混合线性/对数分段，`BlendFraction` 控制重叠，`DebugColors` 显示级联。简单 `ShadowMap` 路径仍可单独使用。两者采样都把 NDC 向上 y 转为纹理向下 y；PCF 被限制在当前 tile 内。
