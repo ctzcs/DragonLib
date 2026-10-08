@@ -2,9 +2,9 @@
 
 本文件是 DragonLib 的新游戏项目创建指南。它约定使用 DragonLib 时的工程目录、Paper UI 与 Origami 控件、数据与逻辑分层、C# 风格和中文注释方式，不依赖其他游戏仓库。这里的游戏目录是推荐模板，DragonLib 本身并不强制应用采用这些目录名。
 
-本文件放在 DragonLib 根目录。可以直接让 AI 阅读本文件并附上项目需求，也可以填写下方模板后复制“提示词开始”到“提示词结束”之间的内容。复制到其他位置时，应明确提供 DragonLib 的实际路径；文末链接均相对 DragonLib 根目录。
+本文件放在 DragonLib 的 `Prompts/` 目录。可以直接让 AI 阅读本文件并附上项目需求，也可以填写下方模板后复制“提示词开始”到“提示词结束”之间的内容。复制到其他位置时，应明确提供 DragonLib 的实际路径；文末链接均相对本文件。
 
-例如：“阅读 DragonLib 根目录的 New-project-prompt.md，按其中约定在同级目录创建 MyGame。玩法是……，第一版需要……。”
+例如：“阅读 DragonLib 的 Prompts/New-project.md，按其中约定在同级目录创建 MyGame。玩法是……，第一版需要……。”
 
 ## 提示词开始
 
@@ -15,7 +15,7 @@
 ```text
 项目名称：<填写英文工程名>
 创建位置：<填写新项目的绝对路径>
-DragonLib 位置：<本文件所在的 DragonLib 根目录；复制提示词时填写实际路径>
+DragonLib 位置：<本文件上一级的 DragonLib 根目录；复制提示词时填写实际路径>
 游戏类型与视角：<例如俯视角经营、动作、解谜>
 核心玩法：<玩家做什么，如何获得反馈，如何完成一局>
 第一版必须完成：<列出 3～5 个可以实际操作和验证的功能>
@@ -47,7 +47,7 @@ DragonLib 位置：<本文件所在的 DragonLib 根目录；复制提示词时�
 ```text
 <Workspace>/
 ├─ DragonLib/                    引擎库，不放新游戏业务代码
-│  ├─ New-project-prompt.md       本文件
+│  ├─ Prompts/                   AI 提示词文档（本文件所在目录）
 │  ├─ Libs/
 │  └─ Tools/
 └─ <ProjectName>/                新建的独立游戏项目
@@ -117,10 +117,12 @@ DragonLib 位置：<本文件所在的 DragonLib 根目录；复制提示词时�
 │  └─ README.md                   每项检查的用途和运行方式
 ├─ tools/                         构建、资源处理和开发工具
 ├─ Doc/
-│  ├─ README.md                   文档索引
-│  ├─ Gameplay/                  当前玩法说明
-│  ├─ Design/                    内容设计、调参和扩展指南
-│  ├─ Tech/                      当前技术实现与约束
+│  ├─ README.md                   文档索引（分类见 Doc-guidelines.md）
+│  ├─ Design/                    游戏是什么：故事、美术、玩法设计
+│  ├─ Plans/                     路线图与进行中的计划
+│  ├─ Systems/                   当前规则与数据格式
+│  ├─ Guides/                    编辑器和工具的使用流程
+│  ├─ Tech/                      代码架构与扩展方式
 │  ├─ Records/                   带日期的测试或决策记录
 │  └─ Archive/                   已被替代的历史方案
 └─ artifacts/                     构建、截图、日志等可再生成产物
@@ -195,6 +197,8 @@ dotnet publish Scripts/Game/Game.csproj -c Release -r win-x64 --self-contained t
 Integration 和 Presentation 同属客户端层，宿主可以提供它们所需的设备和视窗。优先显式传入依赖；没有实际复用需求时，不为每个类增加接口、服务容器或独立程序集。Core 内的分层先通过目录和检查约束。
 
 ### 状态和规则如何写
+
+以下为要点；内容目录与能力字段、唯一全局状态与派生缓存、变化事件、按配置计算期望值等完整约定见 DragonLib 的 `Prompts/DOD-guidelines.md`，开始写玩法前一并阅读。
 
 - `Runtime` 保存真正的对局进度，例如生命、资源、冷却、任务和已探索区域。允许维护存储一致性，不负责决定攻击目标、收入或放置是否合法。
 - `Logic` 接收状态、操作参数和明确的 `dt`，能够在没有窗口时运行。不要在里面读取全局键盘、帧时钟或游戏宿主。
@@ -346,7 +350,7 @@ public static class IncomeLogic
 5. 按目标平台增加 `Game.Web` 和 Core 的浏览器目标，依据本地 DragonLib 的平台配置与 Web targets 接入，复用核心玩法。核对资源预加载、用户存储、音频解锁及静态服务启动方式，不直接复制桌面文件系统假设。
 6. 实现根目录的 `publish.cmd` 和 `publish_web.bat`，按前述发布约定验证所选平台的实际产物；不能以开发模式能启动代替发布包可运行。
 7. 编写与当前功能相关的检查。默认使用可通过 `dotnet run --project` 执行的检查项目，失败时返回非零退出码；没有需要时不引入额外测试框架。
-8. 完成 README、Content 分层说明和简短 AGENTS.md。README 写明启动和发布脚本用法、输出目录及依赖；新文档加入 `Doc/README.md`，说明真实实现与尚未实现的内容。
+8. 完成 README、Content 分层说明和简短 AGENTS.md。README 写明启动和发布脚本用法、输出目录及依赖；新文档按 [项目文档约定](Doc-guidelines.md) 分类并加入 `Doc/README.md`，说明真实实现与尚未实现的内容。
 
 至少验证以下内容：
 
@@ -385,16 +389,18 @@ dotnet run --project tests/<Feature>Smoke
 
 | 主题 | 库内入口 |
 | --- | --- |
-| Engine 能力与可选 ECS、编辑器依赖 | [Engine 文档](Libs/Engine/README.md)、[Engine.csproj](Libs/Engine/Engine.csproj) |
-| 平台判断与 Web 接入 | [平台属性](Libs/DragonLib.Platform.props)、[Web targets](Libs/DragonLib.Web.targets)、[Foster.Web](Libs/Foster.Web/README.md) |
-| Web 发布后的本地预览 | [静态预览服务](Libs/Foster.Web/serve.py) |
-| 游戏宿主 | [GameApp.cs](Libs/Engine/GameApp.cs) |
-| Paper UI 接入 | [Paper 使用指南](Libs/Engine/Paper/README.md)、[输入适配](Libs/Engine/Paper/PaperInput.cs)、[画布渲染器](Libs/Engine/Paper/FosterCanvasRenderer.cs) |
-| Origami 现成控件与主题 | [控件 API 入口](Libs/ThirdParty/Prowl/Origami/Origami.cs)、[控件实现](Libs/ThirdParty/Prowl/Origami/Widgets/)、[主题配置](Libs/ThirdParty/Prowl/Origami/OrigamiTheme.cs) |
-| Paper 与字体相关依赖的维护 | [Prowl 维护说明](Libs/ThirdParty/Prowl/README.md) |
-| 资源与用户存储 | [GameStorage.cs](Libs/Engine/Core/Storage/GameStorage.cs) |
-| 实体基础存储与句柄 | [SlotMap.cs](Libs/Engine/Core/Structure/SlotMap.cs)、[SlotHandle.cs](Libs/Engine/Core/Structure/SlotHandle.cs) |
-| 渲染与 Shader 工具 | [渲染文档](Libs/Engine/Rendering/README.md)、[编译脚本](Tools/ShaderCompiler/Build-Shaders.ps1)、[校验脚本](Tools/ShaderCompiler/Verify-Shaders.ps1) |
-| 可选 ECS 与桌面编辑器库 | [Engine.ECS.csproj](Libs/Engine.ECS/Engine.ECS.csproj)、[Engine.Editor.csproj](Libs/Engine.Editor/Engine.Editor.csproj) |
+| Engine 能力与可选 ECS、编辑器依赖 | [Engine 文档](../Libs/Engine/README.md)、[Engine.csproj](../Libs/Engine/Engine.csproj) |
+| 平台判断与 Web 接入 | [平台属性](../Libs/DragonLib.Platform.props)、[Web targets](../Libs/DragonLib.Web.targets)、[Foster.Web](../Libs/Foster.Web/README.md) |
+| Web 发布后的本地预览 | [静态预览服务](../Libs/Foster.Web/serve.py) |
+| 游戏宿主 | [GameApp.cs](../Libs/Engine/GameApp.cs) |
+| Paper UI 接入 | [Paper 使用指南](../Libs/Engine/Paper/README.md)、[输入适配](../Libs/Engine/Paper/PaperInput.cs)、[画布渲染器](../Libs/Engine/Paper/FosterCanvasRenderer.cs) |
+| Origami 现成控件与主题 | [控件 API 入口](../Libs/ThirdParty/Prowl/Origami/Origami.cs)、[控件实现](../Libs/ThirdParty/Prowl/Origami/Widgets/)、[主题配置](../Libs/ThirdParty/Prowl/Origami/OrigamiTheme.cs) |
+| Paper 与字体相关依赖的维护 | [Prowl 维护说明](../Libs/ThirdParty/Prowl/README.md) |
+| 资源与用户存储 | [GameStorage.cs](../Libs/Engine/Core/Storage/GameStorage.cs) |
+| 实体基础存储与句柄 | [SlotMap.cs](../Libs/Engine/Core/Structure/SlotMap.cs)、[SlotHandle.cs](../Libs/Engine/Core/Structure/SlotHandle.cs) |
+| 面向数据的开发约定 | [DOD-guidelines.md](DOD-guidelines.md) |
+| 项目文档分类与维护 | [Doc-guidelines.md](Doc-guidelines.md) |
+| 渲染与 Shader 工具 | [渲染文档](../Libs/Engine/Rendering/README.md)、[编译脚本](../Tools/ShaderCompiler/Build-Shaders.ps1)、[校验脚本](../Tools/ShaderCompiler/Verify-Shaders.ps1) |
+| 可选 ECS 与桌面编辑器库 | [Engine.ECS.csproj](../Libs/Engine.ECS/Engine.ECS.csproj)、[Engine.Editor.csproj](../Libs/Engine.Editor/Engine.Editor.csproj) |
 
-库的综合示例与测试位于独立的 DragonLib.Tests 仓库，默认与 DragonLib 同级，详见 [仓库说明](README.md)。它们用于参考库 API；新项目的业务、资源和验证应保存在新游戏自己的仓库中。
+库的综合示例与测试位于独立的 DragonLib.Tests 仓库，默认与 DragonLib 同级，详见 [仓库说明](../README.md)。它们用于参考库 API；新项目的业务、资源和验证应保存在新游戏自己的仓库中。
