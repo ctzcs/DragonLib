@@ -59,11 +59,16 @@ public sealed class RenderTarget3D : IDisposable
         Target.Clear(color, 1f, 0, ClearMask.Color | ClearMask.Depth);
     }
 
-    public void Composite(Batcher batcher, int width, int height, Tonemapper3D? tonemapper = null, bool outputSrgb = true)
+    /// <summary>
+    /// 把颜色附件画到 batcher 的当前目标。<paramref name="material"/> 非空时用它处理颜色（如 tonemap），
+    /// 其 uniform 由调用方提前写好。HDR 颜色不能直接显示，必须提供材质；
+    /// 标准画风的 Tonemapper3D.Composite 封装了这一步。
+    /// </summary>
+    public void Composite(Batcher batcher, int width, int height, Material? material = null)
     {
-        if (IsHdr && tonemapper == null)
-            throw new InvalidOperationException("HDR targets require Tonemapper3D when compositing.");
-        if (IsHdr) tonemapper!.Push(batcher, outputSrgb);
+        if (IsHdr && material == null)
+            throw new InvalidOperationException("HDR targets require a tonemapping material when compositing.");
+        if (material != null) batcher.PushMaterial(material);
         batcher.PushMatrix(Matrix3x2.Identity, relative: false);
         try
         {
@@ -72,7 +77,7 @@ public sealed class RenderTarget3D : IDisposable
         finally
         {
             batcher.PopMatrix();
-            if (IsHdr) batcher.PopMaterial();
+            if (material != null) batcher.PopMaterial();
         }
     }
 

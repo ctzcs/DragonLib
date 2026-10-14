@@ -8,16 +8,18 @@ namespace Engine.ECS;
 
 public readonly record struct MeshRenderRequest(AssetId Model, int MeshIndex, Matrix4x4 World, Matrix4x4[]? Palette);
 
-/// <summary>只排队 draw；游戏负责 Begin/End、相机、渲染目标和光照。</summary>
+/// <summary>
+/// 只排队 draw；游戏负责 Begin/End、相机、渲染目标和光照。材质由注入的 <see cref="IModelMaterials3D"/> 提供，
+/// 用标准画风时注入 MaterialCache。
+/// </summary>
 public sealed class MeshRenderSystem : IRenderSystem
 {
     [DI] private EcsDefaultWorld _world = null!;
     [DI] private AssetDatabase _assets = null!;
     [DI] private Renderer3D _renderer = null!;
-    [DI] private Standard3DShaders _shaders = null!;
-    [DI] private MaterialCache _cache = null!;
+    [DI] private IModelMaterials3D _materials = null!;
 
-    public void Render() => Submit(_world, _assets, _renderer, _shaders, _cache);
+    public void Render() => Submit(_world, _assets, _renderer, _materials);
 
     /// <summary>筛选与排队入口独立于 GPU，供关卡和单元测试检查提交数据。</summary>
     public static void Collect(EcsWorld world, Action<MeshRenderRequest> enqueue)
@@ -35,8 +37,7 @@ public sealed class MeshRenderSystem : IRenderSystem
         }
     }
 
-    public static void Submit(EcsWorld world, AssetDatabase assets, Renderer3D renderer,
-        Standard3DShaders shaders, MaterialCache cache)
+    public static void Submit(EcsWorld world, AssetDatabase assets, Renderer3D renderer, IModelMaterials3D materials)
     {
         if (!renderer.IsActive)
             throw new InvalidOperationException("MeshRenderSystem requires an active Renderer3D pass.");
@@ -44,7 +45,7 @@ public sealed class MeshRenderSystem : IRenderSystem
         {
             var model = assets.Get<DassetModelAsset>(request.Model);
             if (model != null)
-                renderer.DrawModel(model, cache.Get(model, shaders), request.World, request.Palette, request.MeshIndex);
+                renderer.DrawModel(model, materials.Get(model), request.World, request.Palette, request.MeshIndex);
         });
     }
 }

@@ -137,10 +137,10 @@ public sealed class Renderer3D : IDisposable
     private IDrawableTarget? _shadowTarget;
     private Material? _shadowMaterial;
     private Material? _skinnedShadowMaterial;
-    private SceneLighting3D? _lighting;
-    private CascadedShadowMap? _cascades;
-    private RectInt? _shadowViewport;
-    private Matrix4x4 _shadowLightViewProjection;
+    private IMaterialBinder3D? _binder;
+
+    /// <summary>本帧阴影 pass 要画的光源视图：单张 shadow map 一个，级联 atlas 每级一个（各带 viewport）。</summary>
+    private readonly List<(Matrix4x4 LightViewProjection, RectInt? Viewport)> _shadowViews = [];
 
     public bool IsActive => _target != null;
 
@@ -158,7 +158,7 @@ public sealed class Renderer3D : IDisposable
     /// 为本帧启用阴影 pass：End() 会先把已收集的 draw 提交到 <paramref name="shadowTarget"/>
     /// （用 <paramref name="depthMaterial"/>，面剔除翻转为 Front 消 acne），再提交颜色 pass。
     /// 须在 Begin 之后、End 之前调用。depthMaterial 的顶点 uniform 需为单个
-    /// WorldLightViewProjection 矩阵（见 DepthOnly.hlsl）。
+    /// WorldLightViewProjection 矩阵；默认实现见 <see cref="ShadowDepthShaders3D"/>。
     /// 实例化 draw 在提供匹配布局的 instancedDepthMaterial 时进入阴影 pass。
     /// 提供 skinnedDepthMaterial 时蒙皮 draw 使用它，并将 palette 写入 vertex slots 2/3。
     /// </summary>
@@ -174,26 +174,47 @@ public sealed class Renderer3D : IDisposable
         if (!ReferenceEquals(shadowTarget.GraphicsDevice, _graphicsDevice))
             throw new InvalidOperationException("Shadow target and Renderer3D must belong to the same GraphicsDevice.");
 
-        _cascades = null;
-        _shadowViewport = null;
         _shadowTarget = shadowTarget;
         _shadowMaterial = depthMaterial;
         _skinnedShadowMaterial = skinnedDepthMaterial;
-        _shadowLightViewProjection = lightViewProjection;
+        _shadowViews.Clear();
+        _shadowViews.Add((lightViewProjection, null));
+    }
+
+    /// <summary>
+    /// 多视图阴影 pass（级联、atlas 等）：同一批不透明 draw 依次按每个光源矩阵画进对应 viewport。
+    /// 两个数组一一对应；矩阵怎么算、shader 怎么采样由调用方决定。
+    /// </summary>
+    public void SetShadowPass(
+        IDrawableTarget shadowTarget,
+        Material depthMaterial,
+        ReadOnlySpan<Matrix4x4> lightViewProjections,
+        ReadOnlySpan<RectInt> viewports,
+        Material? skinnedDepthMaterial = null)
+    {
+        if (lightViewProjections.IsEmpty || lightViewProjections.Length != viewports.Length)
+            throw new ArgumentException("Each shadow view needs one light matrix and one viewport.", nameof(viewports));
+        SetShadowPass(shadowTarget, depthMaterial, lightViewProjections[0], skinnedDepthMaterial);
+        _shadowViews.Clear();
+        for (var i = 0; i < lightViewProjections.Length; i++)
+            _shadowViews.Add((lightViewProjections[i], viewports[i]));
     }
 
     public void SetShadowPass(CascadedShadowMap cascades, Material depthMaterial, Material? skinnedDepthMaterial = null)
     {
-        SetShadowPass(cascades.Target, depthMaterial, cascades.Matrices[0], skinnedDepthMaterial);
-        _cascades = cascades;
+        ArgumentNullException.ThrowIfNull(cascades);
+        Span<RectInt> viewports = stackalloc RectInt[CascadedShadowMap.CascadeCount];
+        for (var i = 0; i < viewports.Length; i++)
+            viewports[i] = cascades.Viewport(i);
+        SetShadowPass(cascades.Target, depthMaterial, cascades.Matrices, viewports, skinnedDepthMaterial);
     }
 
-    /// <summary>只对本次 Begin/End 生效，提交 draw 时统一写入标准管线的光照槽位。</summary>
-    public void SetLighting(SceneLighting3D lighting)
+    /// <summary>只对本次 Begin/End 生效：颜色 pass 提交每个 draw 前调用 <paramref name="binder"/> 绑定画风自己的光照等数据。</summary>
+    public void SetMaterialBinder(IMaterialBinder3D binder)
     {
         EnsureActive();
-        ArgumentNullException.ThrowIfNull(lighting);
-        _lighting = lighting;
+        ArgumentNullException.ThrowIfNull(binder);
+        _binder = binder;
     }
 
     public void DrawModel(DassetModelAsset model, IReadOnlyList<(Material, RenderState3D)> materials,
@@ -280,8 +301,8 @@ public sealed class Renderer3D : IDisposable
 
     /// <summary>
     /// Queues one skinned mesh transform for a direct draw shader：joint palette 随 draw 拷贝一份
-    /// （调用侧的数组可能被后续帧复用）。材质须用蒙皮变体 shader（Standard3DSkinned），
-    /// palette 在提交时写入 vertex uniform slots 2/3。
+    /// （调用侧的数组可能被后续帧复用）。材质须用读 palette 的蒙皮 shader
+    /// （如标准画风的 Standard3DSkinned），palette 在提交时写入 vertex uniform slots 2/3。
     /// </summary>
     public void Draw(Mesh mesh, Material material, in Matrix4x4 world, in RenderState3D state,
         ReadOnlySpan<Matrix4x4> jointPalette, in DassetBounds? localBounds = null)
@@ -479,15 +500,9 @@ public sealed class Renderer3D : IDisposable
             if (_shadowTarget != null && _shadowMaterial != null)
             {
                 // 阴影 pass 只看不透明队：半透明写深度图会得到错误的实心影子，本期不进。
-                for (var cascade = 0; cascade < (_cascades != null ? 4 : 1); cascade++)
-                {
-                    if (_cascades != null)
-                    {
-                        _shadowLightViewProjection = _cascades.Matrices[cascade];
-                        _shadowViewport = _cascades.Viewport(cascade);
-                    }
-                    for (var i = 0; i < transparentStart; i++) SubmitShadow(_shadowTarget, _items[i]);
-                }
+                foreach (var (lightViewProjection, viewport) in _shadowViews)
+                    for (var i = 0; i < transparentStart; i++)
+                        SubmitShadow(_shadowTarget, _items[i], lightViewProjection, viewport);
             }
 
             foreach (var item in _items)
@@ -509,7 +524,7 @@ public sealed class Renderer3D : IDisposable
                     }
                 }
 
-                _lighting?.Apply(item.Material, camera);
+                _binder?.Bind(item.Material, camera);
                 if (item.IsInstanced)
                     SubmitInstances(target, camera, item);
                 else
@@ -524,9 +539,8 @@ public sealed class Renderer3D : IDisposable
             _shadowTarget = null;
             _shadowMaterial = null;
             _skinnedShadowMaterial = null;
-            _lighting = null;
-            _cascades = null;
-            _shadowViewport = null;
+            _binder = null;
+            _shadowViews.Clear();
         }
     }
 
@@ -577,7 +591,7 @@ public sealed class Renderer3D : IDisposable
     /// 实例化 draw 仅使用调用方提供的配套深度变体，避免自定义实例动画与颜色 pass 不一致。
     /// 蒙皮 draw 仅在提供 skinnedDepthMaterial 时提交，并写入与颜色 pass 相同的 palette。
     /// </summary>
-    private void SubmitShadow(IDrawableTarget shadowTarget, DrawItem item)
+    private void SubmitShadow(IDrawableTarget shadowTarget, DrawItem item, in Matrix4x4 lightViewProjection, RectInt? viewport)
     {
         var material = item.IsInstanced ? item.InstancedDepthMaterial
             : item.JointPalette != null ? _skinnedShadowMaterial : _shadowMaterial;
@@ -585,7 +599,7 @@ public sealed class Renderer3D : IDisposable
             return;
         material.Vertex.SetUniformBuffer(new ShadowDirectVertexUniforms
         {
-            WorldLightViewProjection = item.IsInstanced ? _shadowLightViewProjection : item.World * _shadowLightViewProjection,
+            WorldLightViewProjection = item.IsInstanced ? lightViewProjection : item.World * lightViewProjection,
         });
 
         if (item.JointPalette != null)
@@ -597,7 +611,7 @@ public sealed class Renderer3D : IDisposable
             DepthCompare = DepthCompare.Less,
             DepthTestEnabled = true,
             DepthWriteEnabled = true,
-            Viewport = _shadowViewport,
+            Viewport = viewport,
         };
         if (item.IsInstanced)
         {

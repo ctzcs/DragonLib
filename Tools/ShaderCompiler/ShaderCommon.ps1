@@ -10,6 +10,7 @@ function Get-ShaderHash([string]$Path) {
 }
 
 # include 的变化也会改变编译结果，清单必须递归记录依赖，不能只锁住入口文件。
+# 显式按 UTF-8 读：Windows PowerShell 5.1 默认按 ANSI 解码，中文注释会吞掉换行，漏掉后面的 #include。
 function Get-ShaderSources([string]$Source) {
     $pending = [System.Collections.Generic.Stack[string]]::new()
     $seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
@@ -18,7 +19,7 @@ function Get-ShaderSources([string]$Source) {
         $path = $pending.Pop()
         if (!$seen.Add($path)) { continue }
         $path
-        foreach ($line in Get-Content -LiteralPath $path) {
+        foreach ($line in Get-Content -LiteralPath $path -Encoding UTF8) {
             if ($line -match '^\s*#include\s+"([^"]+)"') {
                 $pending.Push((Resolve-Path -LiteralPath (Join-Path (Split-Path $path) $Matches[1])).Path)
             }

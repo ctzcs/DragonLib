@@ -5,8 +5,11 @@ using Foster.Framework;
 
 namespace Engine.Rendering;
 
-/// <summary>一帧的标准管线光照；Renderer3D 在提交颜色 draw 前写入，避免共享材质残留上一相机的数据。</summary>
-public sealed class SceneLighting3D
+/// <summary>
+/// 一帧的标准画风光照。通过 <see cref="Renderer3D.SetMaterialBinder"/> 交给渲染器，
+/// 提交颜色 draw 前写入，避免共享材质残留上一相机的数据。
+/// </summary>
+public sealed class SceneLighting3D : IMaterialBinder3D
 {
     public Vector3 Direction = Vector3.Normalize(new Vector3(-0.5f, -1f, 0.35f));
     public Vector3 DirectionalColor = Vector3.One;
@@ -43,7 +46,7 @@ public sealed class SceneLighting3D
             Cascades != null ? 1f / Cascades.Target.Width : ShadowMap != null ? 1f / ShadowMap.Target.Width : 0f, ShadowBias, ShadowDarkness),
     };
 
-    public void Apply(Material material, Camera3D camera)
+    public void Bind(Material material, Camera3D camera)
     {
         if (EnvironmentMap is { IsDisposed: false } environment)
         {

@@ -314,3 +314,11 @@ demo 加载失败时保留当前模型、显示错误；切换当帧和返回场
 四条通用验收通过，130 项 CPU 测试（3 + 127）；两驱动头盔读回均为 8422 个可见像素、零视锥剔除，图像检查通过。
 DragonLib 提交 `98f01b9`，DragonLib.Tests 提交 `525c628`，仅本地提交。
 用户需重新启动 Game0，再打开 glTF Model Demo 勾选 DamagedHelmet；浏览器/Metal 实际渲染仍未验证。
+
+## 后续调整：机制与标准画风解耦（2026-10-14）
+
+- 光照模型、天空/IBL、tonemap 和后处理按游戏风格取舍。代码仍在 Engine（不另建项目，避免多一个引用），C# 移到 `Rendering/Standard/`，命名空间不变；机制层不引用它。边界见 [README](README.md#核心与画风的边界)。
+- `Renderer3D.SetLighting(SceneLighting3D)` 改为 `SetMaterialBinder(IMaterialBinder3D)`；新增 `IModelMaterials3D`，`MaterialCache` 改为构造时绑定 `Standard3DShaders`。
+- `SetShadowPass` 新增“多个矩阵 + viewport”重载，级联重载基于它实现；深度 shader 由 `ShadowDepthShaders3D` 提供。
+- `RenderTarget3D.Composite` 改为接收处理颜色的材质；标准画风用 `Tonemapper3D.Composite(target, ...)`。
+- ECS 的 `MeshRenderSystem` 改为注入 `IModelMaterials3D`；`SceneLight3DCollector.Collect` 输出点光列表和方向光参数，不再依赖 `SceneLighting3D`。

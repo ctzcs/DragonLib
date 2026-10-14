@@ -8,7 +8,7 @@ API 不依赖 ECS，不修改 Foster。示例及验证程序均在同级 DragonL
 lighting.SpotLights.Add(new SpotLight3D(position, direction, range: 20,
     color: Vector3.One, intensity: 3, innerAngle: .2f, outerAngle: .45f));
 renderer.Begin(target.Target, camera);
-renderer.SetLighting(lighting);
+renderer.SetMaterialBinder(lighting); // lighting: 标准画风的 SceneLighting3D
 renderer.DrawModel(model, materials, world);
 renderer.End();
 ```

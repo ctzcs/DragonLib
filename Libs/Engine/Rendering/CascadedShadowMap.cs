@@ -8,7 +8,8 @@ namespace Engine.Rendering;
 public sealed class CascadedShadowMap : IDisposable
 {
     private readonly ShadowMap _map;
-    public Matrix4x4[] Matrices { get; } = new Matrix4x4[4];
+    public const int CascadeCount = 4;
+    public Matrix4x4[] Matrices { get; } = new Matrix4x4[CascadeCount];
     public Vector4 Splits { get; private set; }
     public float Lambda = .6f;
     public float MaxDistance = 100f;

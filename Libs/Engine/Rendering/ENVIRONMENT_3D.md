@@ -37,7 +37,7 @@ lighting.EnvironmentMap = environment;
 lighting.EnvironmentIntensity = 1;
 lighting.EnvironmentRotation = 0; // 弧度；天空与 IBL 使用相同角度。
 renderer.Begin(target.Target, camera);
-renderer.SetLighting(lighting);
+renderer.SetMaterialBinder(lighting);
 // Draw / DrawModel …
 renderer.End();
 post.Composite(target, camera, batcher, width, height);

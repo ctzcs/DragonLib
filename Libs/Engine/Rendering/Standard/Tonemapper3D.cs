@@ -18,10 +18,17 @@ public sealed class Tonemapper3D : IDisposable
             new ShaderStageSpec(1, 1, "fragment_main"), new ShaderStageSpec(0, 1, "vertex_main"));
     }
 
-    internal void Push(Batcher batcher, bool outputSrgb)
+    /// <summary>把 3D 目标合成到 batcher：HDR 目标先 tonemap，LDR 目标原样绘制。</summary>
+    public void Composite(RenderTarget3D target, Batcher batcher, int width, int height, bool outputSrgb = true)
     {
+        ArgumentNullException.ThrowIfNull(target);
+        if (!target.IsHdr)
+        {
+            target.Composite(batcher, width, height);
+            return;
+        }
         _shader.Material.Fragment.SetUniformBuffer(new Vector4(MathF.Max(0f, Exposure), (float)Mode, outputSrgb ? 1f : 0f, 0f));
-        batcher.PushMaterial(_shader.Material);
+        target.Composite(batcher, width, height, _shader.Material);
     }
 
     public static float LinearToSrgb(float value) => value <= 0.0031308f ? 12.92f * value : 1.055f * MathF.Pow(value, 1f / 2.4f) - 0.055f;

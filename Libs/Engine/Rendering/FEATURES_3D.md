@@ -4,11 +4,13 @@
 
 天空、离线环境预计算和 IBL 见 [ENVIRONMENT_3D.md](ENVIRONMENT_3D.md)，使用普通 2D 经纬度贴图，不要求修改 Foster。
 
+标准材质、光照、天空/IBL、tonemap 和后处理代码在 `Standard/` 子目录，与机制层的边界见 [README](README.md#核心与画风的边界)。
+
 聚光灯、LOD 与可选遮挡接口见 [VISIBILITY_LIGHTS_3D.md](VISIBILITY_LIGHTS_3D.md)。
 
 独立动画事件、状态机、根运动和 CCD IK 见 [ANIMATION_3D.md](../Animation/ANIMATION_3D.md)。
 
-标准管线由 `Standard3DShaders` 拥有 shader 和默认白贴图，`MaterialCache` 由模型装配材质。每帧 `Renderer3D.Begin` 后设置 `SceneLighting3D`，再排队 draw。共享材质在每次提交前更新光照；模型卸载时清空缓存。
+标准管线由 `Standard3DShaders` 拥有 shader 和默认白贴图，`new MaterialCache(shaders)` 由模型装配材质。每帧 `Renderer3D.Begin` 后 `SetMaterialBinder(sceneLighting)`，再排队 draw。共享材质在每次提交前更新光照；模型卸载时清空缓存。
 
 `CascadedShadowMap` 使用四级 2×2 深度 atlas。先设置相机 viewport，再 `Update(camera, direction)` 和 `Clear()`；把同一对象放入 `SceneLighting3D.Cascades`，并调用 `Renderer3D.SetShadowPass(cascades, shaders.Depth, shaders.SkinnedDepth)`。`MaxDistance` 限制覆盖距离，`Lambda` 混合线性/对数分段，`BlendFraction` 控制重叠，`DebugColors` 显示级联。简单 `ShadowMap` 路径仍可单独使用。两者采样都把 NDC 向上 y 转为纹理向下 y；PCF 被限制在当前 tile 内。
 

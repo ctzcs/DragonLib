@@ -52,19 +52,16 @@ public static class StandardMaterial3D
         => index >= 0 && index < textures.Count ? textures[index] : null;
 }
 
-/// <summary>按模型对象缓存，避免同名模型热重载后继续引用已释放的贴图；卸载模型时调用 Clear。</summary>
-public sealed class MaterialCache
+/// <summary>
+/// 标准画风的模型材质：按模型对象缓存，避免同名模型热重载后继续引用已释放的贴图；卸载模型时调用 Clear。
+/// 生命周期不得超过构造时传入的 <see cref="Standard3DShaders"/>。
+/// </summary>
+public sealed class MaterialCache(Standard3DShaders shaders) : IModelMaterials3D
 {
     private readonly Dictionary<DassetModelAsset, IReadOnlyList<(Material, RenderState3D)>> _models = [];
-    private Standard3DShaders? _shaders;
 
-    public IReadOnlyList<(Material Material, RenderState3D State)> Get(DassetModelAsset model, Standard3DShaders shaders)
+    public IReadOnlyList<(Material Material, RenderState3D State)> Get(DassetModelAsset model)
     {
-        if (!ReferenceEquals(_shaders, shaders))
-        {
-            Clear();
-            _shaders = shaders;
-        }
         if (_models.TryGetValue(model, out var cached))
             return cached;
         var materials = new (Material, RenderState3D)[model.Primitives.Count];

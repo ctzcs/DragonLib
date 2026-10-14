@@ -112,28 +112,49 @@ demo 的轨道相机（SkinningDemo/GltfSceneDemo/GltfModelDemo/LightSandboxDemo
 - 资产管线/格式：[`Libs/Engine/Assets/README.md`](../Assets/README.md)
 - FBX→glTF→dasset cook 工具链：[`Tools/FbxToGltf/README.md`](../../../Tools/FbxToGltf/README.md)
 
-## 标准 3D 管线
+## 核心与画风的边界
 
-`Standard3DShaders` 持有 Engine 内嵌的静态、蒙皮与两种深度 shader，以及白色默认贴图。
-`MaterialCache.Get(model, shaders)` 按模型对象缓存逐 primitive 材质；卸载/热重载模型时清空缓存。
-游戏在 `Renderer3D.Begin` 后调用 `SetLighting(SceneLighting3D)`，需要阴影时再调用
-`SetShadowPass(shadow.Target, shaders.Depth, shadow.LightViewProjection, shaders.SkinnedDepth)`。
+3D 代码分两层，都在 Engine 里，命名空间都是 `Engine.Rendering`：与画风无关的机制在 `Rendering/` 根目录；
+光照模型、天空/IBL、tonemap 和后处理属于画风，一套写实向的标准实现放在 `Rendering/Standard/`。
+机制层不引用 `Standard/`；游戏可以直接用标准画风，也可以照着它写卡通、平涂等自己的画风，绕开它不影响其余功能。
+
+| 机制（`Rendering/`） | 标准画风（`Rendering/Standard/`） |
+| --- | --- |
+| `Renderer3D` 排队、视锥/遮挡剔除、透明分队、阴影 pass 调度 | `Standard3DShaders`、`StandardMaterial3D`、`MaterialCache` |
+| `RenderTarget3D`（含 HDR 目标）、`ShadowMap`、`CascadedShadowMap` 矩阵 | `SceneLighting3D`（光照、阴影采样、IBL 的 uniform 布局） |
+| `ShadowDepthShaders3D`（DepthOnly / DepthOnlySkinned）、`DebugDraw3D` | `EnvironmentBake3D`、`EnvironmentMap3D`、`SkyRenderer3D` |
+| `PointLight3D`、`SpotLight3D` 数据与打包、LOD、`IOcclusionCuller3D` | `Tonemapper3D`、`PostProcessor3D` |
+
+画风通过两个接口接入 `Renderer3D`：
+
+- `IMaterialBinder3D.Bind(material, camera)`：`Begin` 后用 `SetMaterialBinder` 设置，颜色 pass 提交每个 draw 前调用，
+  写入光照、阴影贴图等每帧数据。`SceneLighting3D` 是标准实现。
+- `IModelMaterials3D.Get(model)`：为模型逐 primitive 提供材质与渲染状态，交给 `DrawModel`。`MaterialCache` 是标准实现。
+
+阴影 pass 只约定深度材质的 vertex uniform（b0 为 WorldLightViewProjection，蒙皮另读 b2/b3 palette），
+默认实现是 `ShadowDepthShaders3D`。`SetShadowPass` 接受单个光源矩阵，或一组矩阵加 viewport（级联、atlas）；
+`CascadedShadowMap` 重载只是后者的便捷写法。阴影怎么采样由画风的 shader 决定。
+
 `DrawModel` 统一处理材质、蒙皮 palette、primitive 选择和局部包围盒；无 palette 时使用 bind pose。
-ECS 游戏可用 `MeshRenderSystem.Submit` 排队，Begin/End 和目标的生命周期仍由游戏管理。
-方向光和点光配置可以随 level/prefab 序列化，`SceneLight3DCollector` 收集到光照对象。
+ECS 游戏可用 `MeshRenderSystem.Submit(world, assets, renderer, materials)` 排队，Begin/End 和目标的生命周期仍由游戏管理。
+方向光和点光组件可以随 level/prefab 序列化，`SceneLight3DCollector` 把它们收集成点光列表和方向光参数，写进哪套光照由游戏决定。
 
-shader 源码位于 `Rendering/Shaders/`，运行 `build.ps1` 生成四种后端产物。
+写自己的画风时按需替换：实现 `IMaterialBinder3D` 写自己 shader 的 uniform 和贴图槽；实现 `IModelMaterials3D` 从 `DassetMaterial` 装配材质；
+阴影沿用 `ShadowMap` / `CascadedShadowMap` 和 `ShadowDepthShaders3D` 写深度，在自己的片元 shader 里采样；HDR 目标把自己的 tonemap 材质传给 `RenderTarget3D.Composite`。
+
+shader 源码位于 `Rendering/Shaders/`（机制和标准画风共用一个目录），运行 `build.ps1` 生成四种后端产物。
 `Verify-Shaders.ps1` 同时校验入口、递归 include 依赖和产物，修改公共片元逻辑后必须重新生成。
 
 ## 色彩管线
 
 桌面 MyFoster 与 Web 均提供浮点颜色、硬件 sRGB 和 mipmap 扩展。
 `RenderTarget3D.HdrEnabled` 请求 RGBA16F；`IsHdr` 反映实际是否启用，缺失支持时回退 Color。
-`SceneLighting3D.HdrEnabled` 应使用目标的 `IsHdr`：HDR 计算线性光照，LDR 保留原有 gamma 光照观感。
+标准画风的 `SceneLighting3D.HdrEnabled` 应使用目标的 `IsHdr`：HDR 计算线性光照，LDR 保留原有 gamma 光照观感。
 模型颜色贴图使用 sRGB，数据贴图使用线性格式，共用源图时分别上传；模型贴图生成 mip 链并使用 mip sampler。
 `DebugDraw3D` 使用 MyFoster/Web 的线段拓扑，逐帧清空顶点缓冲计数，避免线段减少时绘制残留几何。
-HDR 合成需传入 `Tonemapper3D`，支持 ACES/Reinhard 和曝光；普通屏幕输出显式 sRGB 编码。
-合成到 sRGB 颜色附件时传 `outputSrgb:false`，避免重复编码。原 LDR Batcher 合成路径保留。
+HDR 颜色不能直接显示：`RenderTarget3D.Composite` 对 HDR 目标要求传入处理颜色的材质。
+标准画风用 `Tonemapper3D.Composite(target, batcher, width, height)`，支持 ACES/Reinhard 和曝光，普通屏幕输出显式 sRGB 编码；
+合成到 sRGB 颜色附件时传 `outputSrgb:false`，避免重复编码。LDR 目标可直接用 `RenderTarget3D.Composite`。
 后端调查及限制见 `COLOR_PIPELINE_FEASIBILITY.md`。
 
 ## 扩展接口
